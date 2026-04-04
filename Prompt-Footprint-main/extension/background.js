@@ -1,7 +1,7 @@
 // PromptFootprint Background Service Worker
 // Handles communication between content script and backend API
 
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
 const USER_ID_KEY = 'pf_userId';
 
 // Initialize user ID on install
