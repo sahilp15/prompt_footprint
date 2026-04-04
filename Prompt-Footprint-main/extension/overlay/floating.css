@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap');
+
+#pf-floating-overlay {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 99999;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.pf-floating-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(20, 20, 22, 0.95);
+  border: 1px solid rgba(42, 42, 46, 0.8);
+  border-radius: 24px;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.pf-floating-pill:hover {
+  background: rgba(28, 28, 31, 0.98);
+  border-color: rgba(52, 211, 153, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.4);
+}
+
+.pf-floating-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34D399;
+  flex-shrink: 0;
+}
+
+.pf-floating-dot.pf-pulse {
+  animation: pf-dot-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pf-dot-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+}
+
+.pf-floating-label {
+  font-weight: 600;
+  font-size: 12px;
+  color: #F5F5F7;
+  letter-spacing: 0.5px;
+}
+
+.pf-floating-status {
+  font-size: 11px;
+  color: #A1A1A6;
+  font-weight: 400;
+}

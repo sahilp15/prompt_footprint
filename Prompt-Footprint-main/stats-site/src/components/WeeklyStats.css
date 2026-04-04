@@ -1,0 +1,65 @@
+.weekly-page { display: flex; flex-direction: column; gap: 40px; }
+
+.page-header { margin-bottom: 8px; }
+.page-title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
+.page-subtitle { font-size: 14px; color: var(--text-muted); }
+
+.page-loading { text-align: center; padding: 80px; color: var(--text-muted); font-size: 14px; }
+.page-error {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 80px; text-align: center; color: var(--text-muted); font-size: 14px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: var(--transition);
+}
+.metric-card:hover { border-color: var(--border); }
+
+.metric-icon {
+  width: 40px; height: 40px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+}
+
+.metric-value { display: flex; align-items: baseline; gap: 4px; }
+.metric-number { font-family: var(--font-mono); font-size: 22px; font-weight: 600; }
+.metric-unit { font-size: 12px; color: var(--text-muted); }
+.metric-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.section-title { font-size: 18px; font-weight: 600; margin-bottom: 20px; }
+.chart-section { display: flex; flex-direction: column; gap: 0; }
+.chart-section .section-title { margin-bottom: 24px; }
+
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 16px;
+}
+.chart-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+
+.chart-tooltip {
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px; font-size: 12px; min-width: 140px;
+}
+.tooltip-date { color: var(--text-muted); margin-bottom: 8px; font-size: 11px; }
+.tooltip-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.tooltip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.tooltip-label { color: var(--text-secondary); }
+.tooltip-value { font-family: var(--font-mono); color: var(--text-primary); margin-left: auto; }
+
+@media (max-width: 768px) {
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .page-title { font-size: 22px; }
+}

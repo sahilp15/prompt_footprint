@@ -1,0 +1,43 @@
+{
+  "name": "PromptFootprint",
+  "version": "1.0",
+  "manifest_version": 3,
+  "description": "Visualize the environmental impact of every AI prompt — energy, water, and CO2",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://beneficial-transformation-production-2959.up.railway.app/api/*"
+  ],
+  "background": {
+    "service_worker": "extension/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": [
+        "extension/lib/constants.js",
+        "extension/lib/tokenEstimator.js",
+        "extension/lib/environmentalModel.js",
+        "extension/content.js"
+      ],
+      "css": [
+        "extension/overlay/floating.css",
+        "extension/overlay/modal.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "extension/popup/popup.html",
+    "default_icon": {
+      "48": "Images/PF_Icon.png",
+      "128": "Images/PF_Icon.png"
+    }
+  },
+  "options_page": "extension/dashboard/dashboard.html",
+  "icons": {
+    "48": "Images/PF_Icon.png",
+    "128": "Images/PF_Icon.png"
+  }
+}
