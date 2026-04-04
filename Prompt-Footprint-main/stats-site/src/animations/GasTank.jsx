@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { motion, useAnimation } from 'framer-motion'
 
-const MAX_CO2_G = 20 // reference max grams
+const MAX_CO2_G = 20
 
 export default function GasTank({ co2G = 0 }) {
   const fillPercent = Math.min((co2G / MAX_CO2_G) * 100, 100)
@@ -14,14 +14,13 @@ export default function GasTank({ co2G = 0 }) {
     })
   }, [fillPercent])
 
-  // 404g CO2 per mile driven
   const carMiles = (co2G / 404).toFixed(4)
-  const fillColor = fillPercent < 40 ? '#6B7280' : fillPercent < 70 ? '#9CA3AF' : '#D1D5DB'
+  const fillColor = fillPercent < 40 ? '#7A8C5A' : fillPercent < 70 ? '#9AAD6A' : '#B8CC80'
 
   return (
     <div className="anim-card">
       <div className="anim-label">CO2 Emissions</div>
-      <div className="anim-value">{co2G.toFixed(4)} g</div>
+      <div className="anim-value" style={{ color: '#7A8C5A' }}>{co2G.toFixed(4)} g</div>
       <div className="anim-sub">of a {MAX_CO2_G}g reference</div>
 
       <div className="tank-wrapper">
@@ -36,11 +35,9 @@ export default function GasTank({ co2G = 0 }) {
             </linearGradient>
           </defs>
 
-          {/* Tank body outline */}
           <ellipse cx="60" cy="100" rx="40" ry="75"
-            fill="none" stroke="#2A2A2E" strokeWidth="3" />
+            fill="none" stroke="#243524" strokeWidth="3" />
 
-          {/* Fill - clipped to tank shape, grow from bottom */}
           <g clipPath="url(#gasTankClip)">
             <motion.rect
               x="20"
@@ -48,32 +45,28 @@ export default function GasTank({ co2G = 0 }) {
               width="80"
               height="150"
               fill="url(#gasGrad)"
-              style={{ transformOrigin: '60px 175px' }}
+              style={{ transformBox: 'fill-box', transformOrigin: 'bottom' }}
               animate={controls}
               initial={{ scaleY: 0 }}
             />
           </g>
 
-          {/* Scale marks */}
           {[25, 50, 75].map(pct => {
             const yPos = 25 + (150 * (100 - pct) / 100)
             return (
               <g key={pct}>
-                <line x1="20" y1={yPos} x2="30" y2={yPos} stroke="#2A2A2E" strokeWidth="1.5" />
-                <text x="32" y={yPos + 3} fill="#6E6E73" fontSize="7">{pct}%</text>
+                <line x1="20" y1={yPos} x2="30" y2={yPos} stroke="#243524" strokeWidth="1.5" />
+                <text x="32" y={yPos + 3} fill="#6B7D5E" fontSize="7">{pct}%</text>
               </g>
             )
           })}
 
-          {/* Valve on top */}
-          <rect x="52" y="16" width="16" height="12" rx="3" fill="#222225" stroke="#2A2A2E" strokeWidth="2" />
-          <rect x="56" y="10" width="8" height="8" rx="2" fill="#2A2A2E" />
-
-          {/* Glass sheen */}
+          <rect x="52" y="16" width="16" height="12" rx="3" fill="#162416" stroke="#243524" strokeWidth="2" />
+          <rect x="56" y="10" width="8" height="8" rx="2" fill="#243524" />
           <ellipse cx="42" cy="80" rx="8" ry="20" fill="white" fillOpacity="0.04" />
         </svg>
 
-        <div className="tank-pct">{fillPercent.toFixed(1)}%</div>
+        <div className="tank-pct" style={{ color: '#7A8C5A' }}>{fillPercent.toFixed(1)}%</div>
       </div>
 
       <div className="anim-context">
