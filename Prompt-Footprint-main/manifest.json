@@ -7,7 +7,7 @@
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
-    "https://beneficial-transformation-production-2959.up.railway.app/api/*"
+    "https://promptfootprint-production.up.railway.app/*"
   ],
   "background": {
     "service_worker": "extension/background.js"

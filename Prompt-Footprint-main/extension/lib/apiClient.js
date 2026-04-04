@@ -1,5 +1,5 @@
 // API client for communicating with the PromptFootprint backend
-const API_BASE_URL = 'https://beneficial-transformation-production-2959.up.railway.app/api';
+const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
 
 const apiClient = {
   async post(endpoint, body) {

@@ -1,5 +1,5 @@
 const USER_ID_KEY = 'pf_userId';
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const overlayToggle = document.getElementById('pf-overlay-toggle');
@@ -90,6 +90,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Stats website button
   statsBtn.addEventListener('click', () => {
-    chrome.tabs.create({ url: `http://localhost:5173?userId=${userId}` });
+    chrome.tabs.create({ url: `https://prompt-footprint-2bjl.vercel.app?userId=${userId}` });
   });
 });
