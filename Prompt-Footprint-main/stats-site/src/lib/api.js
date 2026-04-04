@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://beneficial-transformation-production-2959.up.railway.app/api';
+const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
 
 export function getUserIdFromUrl() {
   const params = new URLSearchParams(window.location.search);

@@ -1,5 +1,5 @@
 const USER_ID_KEY = 'pf_userId';
-const API_BASE_URL = 'https://beneficial-transformation-production-2959.up.railway.app/api';
+const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const result = await chrome.storage.local.get([USER_ID_KEY]);

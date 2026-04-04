@@ -326,7 +326,7 @@
 
     document.getElementById('pf-modal-close-btn').addEventListener('click', () => toggleModal(false));
     document.getElementById('pf-open-stats-btn').addEventListener('click', () => {
-      const statsUrl = `http://localhost:5173?userId=${userId}`;
+      const statsUrl = `https://prompt-footprint-2bjl.vercel.app?userId=${userId}`;
       window.open(statsUrl, '_blank');
     });
   }
