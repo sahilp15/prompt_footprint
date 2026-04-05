@@ -67,11 +67,11 @@ function renderSessions(sessions) {
             <div class="pf-session-metric-label">Tokens</div>
           </div>
           <div class="pf-session-metric">
-            <div class="pf-session-metric-value" style="color: var(--pf-accent-amber)">${session.totalEnergyWh.toFixed(3)}</div>
+            <div class="pf-session-metric-value" style="color:var(--pf-accent-amber)">${session.totalEnergyWh.toFixed(3)}</div>
             <div class="pf-session-metric-label">Wh</div>
           </div>
           <div class="pf-session-metric">
-            <div class="pf-session-metric-value" style="color: var(--pf-accent-blue)">${session.totalWaterMl.toFixed(3)}</div>
+            <div class="pf-session-metric-value" style="color:var(--pf-accent-blue)">${session.totalWaterMl.toFixed(3)}</div>
             <div class="pf-session-metric-label">mL</div>
           </div>
           <div class="pf-session-metric">

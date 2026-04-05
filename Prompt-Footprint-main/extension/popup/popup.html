@@ -9,71 +9,85 @@
 </head>
 <body>
   <div class="pf-popup">
-    <div class="pf-popup-header">
-      <div class="pf-popup-brand">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Header -->
+    <div class="pf-header">
+      <div class="pf-brand">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pf-accent-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>
         </svg>
-        <span class="pf-popup-title">PromptFootprint</span>
+        <span class="pf-brand-name">PromptFootprint</span>
       </div>
-      <div class="pf-popup-status" id="pf-status">
+      <div class="pf-status" id="pf-status">
         <span class="pf-status-dot"></span>
         <span class="pf-status-text">Inactive</span>
       </div>
     </div>
 
-    <div class="pf-popup-section">
-      <div class="pf-popup-row">
-        <div class="pf-popup-row-label">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="1" y="6" width="22" height="12" rx="2" ry="2"></rect>
-            <line x1="1" y1="10" x2="23" y2="10"></line>
-          </svg>
-          <span>Show overlay</span>
+    <!-- Stats section -->
+    <div class="pf-stats" id="pf-stats">
+      <div class="pf-stats-label">This Week's Impact</div>
+      <div class="pf-stats-grid">
+
+        <div class="pf-stat-card pf-stat-tokens">
+          <div class="pf-stat-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+          </div>
+          <div class="pf-stat-value" id="pf-tokens">—</div>
+          <div class="pf-stat-name">tokens</div>
+          <div class="pf-stat-context" id="pf-tokens-ctx"></div>
         </div>
-        <label class="pf-toggle">
-          <input type="checkbox" id="pf-overlay-toggle" checked>
-          <span class="pf-toggle-slider"></span>
-        </label>
+
+        <div class="pf-stat-card pf-stat-water">
+          <div class="pf-stat-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"></path></svg>
+          </div>
+          <div class="pf-stat-value" id="pf-water">—</div>
+          <div class="pf-stat-name">water</div>
+          <div class="pf-stat-context" id="pf-water-ctx"></div>
+        </div>
+
+        <div class="pf-stat-card pf-stat-energy">
+          <div class="pf-stat-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          </div>
+          <div class="pf-stat-value" id="pf-energy">—</div>
+          <div class="pf-stat-name">energy</div>
+          <div class="pf-stat-context" id="pf-energy-ctx"></div>
+        </div>
+
+        <div class="pf-stat-card pf-stat-co2">
+          <div class="pf-stat-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"></path><path d="M9.6 4.6A2 2 0 1 1 11 8H2"></path><path d="M12.6 19.4A2 2 0 1 0 14 16H2"></path></svg>
+          </div>
+          <div class="pf-stat-value" id="pf-co2">—</div>
+          <div class="pf-stat-name">CO₂</div>
+          <div class="pf-stat-context" id="pf-co2-ctx"></div>
+        </div>
+
       </div>
     </div>
 
-    <div class="pf-popup-section">
-      <div class="pf-popup-row-label" style="margin-bottom: 10px;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-        <span>Energy multiplier</span>
-        <span class="pf-multiplier-value" id="pf-multiplier-display">1.0x</span>
-      </div>
-      <input type="range" id="pf-multiplier" class="pf-range" min="1" max="14" step="0.1" value="1">
-      <div class="pf-range-labels">
-        <span>GPT-4o</span>
-        <span>GPT-5 (high)</span>
-      </div>
+    <!-- Overlay toggle -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">Show overlay on ChatGPT</span>
+      <label class="pf-toggle">
+        <input type="checkbox" id="pf-overlay-toggle" checked>
+        <span class="pf-toggle-track">
+          <span class="pf-toggle-thumb"></span>
+        </span>
+      </label>
     </div>
 
-    <div class="pf-popup-actions">
-      <button class="pf-btn pf-btn-secondary" id="pf-open-dashboard">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="7" height="7"></rect>
-          <rect x="14" y="3" width="7" height="7"></rect>
-          <rect x="14" y="14" width="7" height="7"></rect>
-          <rect x="3" y="14" width="7" height="7"></rect>
-        </svg>
-        Dashboard
-      </button>
-      <button class="pf-btn pf-btn-primary" id="pf-open-stats">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="20" x2="18" y2="10"></line>
-          <line x1="12" y1="20" x2="12" y2="4"></line>
-          <line x1="6" y1="20" x2="6" y2="14"></line>
-        </svg>
-        Stats Website
+    <!-- Actions -->
+    <div class="pf-actions">
+      <button class="pf-btn" id="pf-open-stats">
+        View Full Stats
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
       </button>
     </div>
+
   </div>
-
   <script src="popup.js"></script>
 </body>
 </html>
