@@ -80,6 +80,11 @@ export default function HowItWorks() {
             <p className="how-hero-sub">
               From tokens to terawatt-hours — the complete picture of AI's environmental cost
             </p>
+            <div className="how-hero-byline">
+              <span className="how-hero-author">By Sahil Parasharami</span>
+              <span className="how-hero-byline-dot">·</span>
+              <span className="how-hero-article">"Estimating the Environmental Cost of AI Inference"</span>
+            </div>
           </Header>
         }
       >

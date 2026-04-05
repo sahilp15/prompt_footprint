@@ -47,39 +47,45 @@
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
-  max-width: 420px;
+  max-width: 400px;
+  background: rgba(250, 247, 240, 0.80);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  border: 1px solid rgba(212, 197, 169, 0.6);
 }
 
 .anim-hero-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 5px 13px;
   border-radius: 999px;
-  background: rgba(120, 164, 40, 0.15);
-  border: 1px solid rgba(120, 164, 40, 0.3);
-  color: #78A428;
+  background: rgba(91, 124, 58, 0.14);
+  border: 1px solid rgba(91, 124, 58, 0.45);
+  color: #3A5C20;
   font-size: 12px;
-  font-weight: 500;
-  margin-bottom: 16px;
+  font-weight: 600;
+  margin-bottom: 14px;
   letter-spacing: 0.3px;
 }
 
 .anim-hero-title {
-  font-size: 42px;
+  font-size: 38px;
   font-weight: 800;
-  letter-spacing: -1px;
+  letter-spacing: -0.8px;
   line-height: 1.1;
   color: var(--text-primary);
-  margin-bottom: 14px;
-  text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+  margin-bottom: 12px;
 }
 
 .anim-hero-sub {
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   line-height: 1.6;
-  max-width: 360px;
+  max-width: 320px;
+  opacity: 0.75;
 }
 
 /* ─── Animation grid ──────────────────────────────── */

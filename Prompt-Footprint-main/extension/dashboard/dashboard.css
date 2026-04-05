@@ -17,8 +17,9 @@
 
 .pf-dash-brand h1 {
   font-size: 24px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.3px;
+  color: var(--pf-text-primary);
 }
 
 .pf-dash-subtitle {
@@ -36,7 +37,7 @@
 }
 
 .pf-summary-card {
-  background: var(--pf-bg-secondary);
+  background: var(--pf-bg-card);
   border: 1px solid var(--pf-border-subtle);
   border-radius: var(--pf-radius);
   padding: 20px;
@@ -54,11 +55,11 @@
   justify-content: center;
 }
 
-.pf-summary-icon.pf-icon-tokens { background: rgba(52, 211, 153, 0.1); color: var(--pf-accent-green); }
-.pf-summary-icon.pf-icon-energy { background: rgba(251, 191, 36, 0.1); color: var(--pf-accent-amber); }
-.pf-summary-icon.pf-icon-water { background: rgba(96, 165, 250, 0.1); color: var(--pf-accent-blue); }
-.pf-summary-icon.pf-icon-co2 { background: rgba(161, 161, 166, 0.1); color: var(--pf-text-secondary); }
-.pf-summary-icon.pf-icon-sessions { background: rgba(248, 113, 113, 0.1); color: var(--pf-accent-red); }
+.pf-summary-icon.pf-icon-tokens  { background: rgba(91, 124, 58, 0.10); color: var(--pf-accent-green); }
+.pf-summary-icon.pf-icon-energy  { background: rgba(193, 127, 36, 0.10); color: var(--pf-accent-amber); }
+.pf-summary-icon.pf-icon-water   { background: rgba(46, 107, 138, 0.10); color: var(--pf-accent-blue); }
+.pf-summary-icon.pf-icon-co2     { background: rgba(160, 82, 45, 0.10); color: var(--pf-accent-red); }
+.pf-summary-icon.pf-icon-sessions { background: rgba(139, 115, 85, 0.10); color: var(--pf-text-muted); }
 
 .pf-summary-value {
   font-family: var(--pf-font-mono);
@@ -96,7 +97,7 @@
 }
 
 .pf-session-card {
-  background: var(--pf-bg-secondary);
+  background: var(--pf-bg-card);
   border: 1px solid var(--pf-border-subtle);
   border-radius: var(--pf-radius);
   overflow: hidden;
@@ -119,6 +120,7 @@
 .pf-session-date {
   font-size: 13px;
   font-weight: 500;
+  color: var(--pf-text-primary);
 }
 
 .pf-session-metric {
@@ -129,6 +131,7 @@
   font-family: var(--pf-font-mono);
   font-size: 13px;
   font-weight: 500;
+  color: var(--pf-text-primary);
 }
 
 .pf-session-metric-label {
@@ -172,6 +175,7 @@
   font-family: var(--pf-font-mono);
   text-align: right;
   font-size: 12px;
+  color: var(--pf-text-secondary);
 }
 
 .pf-empty {
@@ -184,8 +188,5 @@
 @media (max-width: 768px) {
   .pf-dashboard { padding: 24px 16px; }
   .pf-dash-summary { grid-template-columns: repeat(2, 1fr); }
-  .pf-session-header {
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
+  .pf-session-header { grid-template-columns: 1fr 1fr; gap: 12px; }
 }

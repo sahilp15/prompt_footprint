@@ -31,7 +31,30 @@
   color: var(--text-secondary);
   line-height: 1.6;
   max-width: 460px;
-  margin: 0 auto;
+  margin: 0 auto 16px;
+}
+
+.how-hero-byline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.how-hero-author {
+  font-weight: 600;
+  color: var(--accent-green);
+}
+
+.how-hero-byline-dot {
+  color: var(--text-muted);
+}
+
+.how-hero-article {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .how-hero-card {
