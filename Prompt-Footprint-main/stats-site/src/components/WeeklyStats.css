@@ -1,5 +1,90 @@
 .weekly-page { display: flex; flex-direction: column; gap: 40px; }
 
+/* ─── Mission Section ─────────────────────────────── */
+.mission-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 48px 40px;
+  margin-bottom: 8px;
+}
+
+.mission-inner {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 48px;
+  align-items: center;
+}
+
+.mission-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(91, 124, 58, 0.10);
+  border: 1px solid rgba(91, 124, 58, 0.25);
+  color: var(--accent-green);
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  letter-spacing: 0.3px;
+}
+
+.mission-heading {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.mission-body {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 20px;
+  max-width: 520px;
+}
+
+.mission-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.mission-pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.mission-note {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 480px;
+}
+
+.mission-globe {
+  width: 100%;
+  max-width: 380px;
+}
+
+@media (max-width: 900px) {
+  .mission-inner { grid-template-columns: 1fr; }
+  .mission-globe { max-width: 280px; margin: 0 auto; }
+  .mission-section { padding: 32px 24px; }
+  .mission-heading { font-size: 26px; }
+}
+
 .page-header { margin-bottom: 8px; }
 .page-title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
 .page-subtitle { font-size: 14px; color: var(--text-muted); }

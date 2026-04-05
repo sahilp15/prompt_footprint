@@ -1,8 +1,9 @@
 import { Routes, Route, NavLink, useSearchParams } from 'react-router-dom'
-import { Droplets, Zap, Wind, BarChart3, Sparkles } from 'lucide-react'
+import { Droplets, Zap, Wind, BarChart3, Sparkles, BookOpen } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
 import SessionList from './components/SessionList'
 import AnimationPage from './components/AnimationPage'
+import HowItWorks from './components/HowItWorks'
 import './App.css'
 
 function App() {
@@ -28,6 +29,9 @@ function App() {
             <NavLink to={`/animations${q}`} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Sparkles size={16} /><span>Visualize</span>
             </NavLink>
+            <NavLink to={`/how${q}`} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              <BookOpen size={16} /><span>How It Works</span>
+            </NavLink>
           </div>
         </div>
       </nav>
@@ -44,6 +48,7 @@ function App() {
             <Route path="/" element={<WeeklyStats />} />
             <Route path="/sessions" element={<SessionList />} />
             <Route path="/animations" element={<AnimationPage />} />
+            <Route path="/how" element={<HowItWorks />} />
           </Routes>
         )}
       </main>

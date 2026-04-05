@@ -1,8 +1,9 @@
-import { Zap, Droplets, Wind, TrendingUp, Hash } from 'lucide-react'
+import { Zap, Droplets, Wind, TrendingUp, Hash, Leaf } from 'lucide-react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
 import { useWeeklyStats } from '../hooks/useStats'
+import Globe from './ui/globe-cdn'
 import './WeeklyStats.css'
 
 function MetricCard({ icon: Icon, label, value, unit, color }) {
@@ -59,6 +60,36 @@ export default function WeeklyStats() {
 
   return (
     <div className="weekly-page">
+      {/* About Our Mission */}
+      <section className="mission-section">
+        <div className="mission-inner">
+          <div className="mission-text">
+            <div className="mission-badge">
+              <Leaf size={13} />
+              <span>About Our Mission</span>
+            </div>
+            <h2 className="mission-heading">Every Prompt Has a Price</h2>
+            <p className="mission-body">
+              AI models run in massive data centers that consume enormous amounts of electricity and water for cooling.
+              Each token you generate contributes to real-world energy use, water evaporation, and carbon emissions.
+              PromptFootprint makes that invisible cost visible — so you can make informed choices about your AI usage.
+            </p>
+            <div className="mission-pills">
+              <span className="mission-pill">🌊 Water-cooled data centers</span>
+              <span className="mission-pill">⚡ Grid-powered inference</span>
+              <span className="mission-pill">🌍 13 global locations tracked</span>
+            </div>
+            <p className="mission-note">
+              The globe shows the 13 major AI data center regions we track. Larger dots indicate higher
+              carbon intensity and water stress — regions where your prompts have the biggest footprint.
+            </p>
+          </div>
+          <div className="mission-globe">
+            <Globe />
+          </div>
+        </div>
+      </section>
+
       <div className="page-header">
         <h1 className="page-title">Weekly Impact</h1>
         <p className="page-subtitle">Your AI environmental footprint for the past 7 days</p>
@@ -81,15 +112,15 @@ export default function WeeklyStats() {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="gradEnergy" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#FBBF24" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#FBBF24" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#C17F24" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#C17F24" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1F1F23" />
-              <XAxis dataKey="date" tick={{ fill: '#6E6E73', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6E6E73', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+              <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="Energy" stroke="#FBBF24" strokeWidth={2} fill="url(#gradEnergy)" name="Energy (Wh)" />
+              <Area type="monotone" dataKey="Energy" stroke="#C17F24" strokeWidth={2} fill="url(#gradEnergy)" name="Energy (Wh)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -100,15 +131,15 @@ export default function WeeklyStats() {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="gradWater" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#60A5FA" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#60A5FA" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#2E6B8A" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#2E6B8A" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1F1F23" />
-              <XAxis dataKey="date" tick={{ fill: '#6E6E73', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6E6E73', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+              <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="Water" stroke="#60A5FA" strokeWidth={2} fill="url(#gradWater)" name="Water (mL)" />
+              <Area type="monotone" dataKey="Water" stroke="#2E6B8A" strokeWidth={2} fill="url(#gradWater)" name="Water (mL)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -119,15 +150,15 @@ export default function WeeklyStats() {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="gradCo2" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#A1A1A6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#A1A1A6" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#8B7355" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#8B7355" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1F1F23" />
-              <XAxis dataKey="date" tick={{ fill: '#6E6E73', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6E6E73', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+              <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="CO2" stroke="#A1A1A6" strokeWidth={2} fill="url(#gradCo2)" name="CO2 (g)" />
+              <Area type="monotone" dataKey="CO2" stroke="#8B7355" strokeWidth={2} fill="url(#gradCo2)" name="CO2 (g)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
