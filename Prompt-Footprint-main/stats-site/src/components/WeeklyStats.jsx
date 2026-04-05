@@ -1,6 +1,6 @@
 import { Zap, Droplets, Wind, TrendingUp, Hash, Leaf } from 'lucide-react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import { useWeeklyStats } from '../hooks/useStats'
 import Globe from './ui/globe-cdn'
@@ -21,18 +21,27 @@ function MetricCard({ icon: Icon, label, value, unit, color }) {
   )
 }
 
-const CustomTooltip = ({ active, payload, label }) => {
+const MultiTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
+  const entry = payload[0].payload
   return (
     <div className="chart-tooltip">
       <div className="tooltip-date">{label}</div>
-      {payload.map(p => (
-        <div key={p.dataKey} className="tooltip-row">
-          <span className="tooltip-dot" style={{ background: p.color }} />
-          <span className="tooltip-label">{p.name}:</span>
-          <span className="tooltip-value">{p.value?.toFixed(4)}</span>
-        </div>
-      ))}
+      <div className="tooltip-row">
+        <span className="tooltip-dot" style={{ background: '#C17F24' }} />
+        <span className="tooltip-label">Energy:</span>
+        <span className="tooltip-value">{entry.energyWh.toFixed(5)} Wh</span>
+      </div>
+      <div className="tooltip-row">
+        <span className="tooltip-dot" style={{ background: '#2E6B8A' }} />
+        <span className="tooltip-label">Water:</span>
+        <span className="tooltip-value">{entry.waterMl.toFixed(4)} mL</span>
+      </div>
+      <div className="tooltip-row">
+        <span className="tooltip-dot" style={{ background: '#8B7355' }} />
+        <span className="tooltip-label">CO2:</span>
+        <span className="tooltip-value">{entry.co2G.toFixed(5)} g</span>
+      </div>
     </div>
   )
 }
@@ -51,11 +60,20 @@ export default function WeeklyStats() {
   const { totals, daily } = data || { totals: {}, daily: [] }
   const fmt = (v, d = 4) => (v || 0).toFixed(d)
 
+  const fmtDate = d => new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+
+  const maxEnergy = Math.max(...(daily || []).map(d => d.energyWh || 0), 1e-9)
+  const maxWater  = Math.max(...(daily || []).map(d => d.waterMl  || 0), 1e-9)
+  const maxCo2    = Math.max(...(daily || []).map(d => d.co2G     || 0), 1e-9)
+
   const chartData = (daily || []).map(d => ({
-    date: new Date(d.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-    Energy: parseFloat(d.energyWh?.toFixed(5) || 0),
-    Water: parseFloat(d.waterMl?.toFixed(4) || 0),
-    CO2: parseFloat(d.co2G?.toFixed(5) || 0),
+    date:     fmtDate(d.date),
+    energyWh: d.energyWh || 0,
+    waterMl:  d.waterMl  || 0,
+    co2G:     d.co2G     || 0,
+    Energy:   ((d.energyWh || 0) / maxEnergy) * 100,
+    Water:    ((d.waterMl  || 0) / maxWater)  * 100,
+    CO2:      ((d.co2G     || 0) / maxCo2)    * 100,
   }))
 
   return (
@@ -107,59 +125,25 @@ export default function WeeklyStats() {
         <h2 className="section-title">Daily Breakdown</h2>
 
         <div className="chart-card">
-          <div className="chart-label">Energy (Wh)</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="gradEnergy" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#C17F24" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#C17F24" stopOpacity={0} />
-                </linearGradient>
-              </defs>
+          <div className="chart-label">Daily Impact — % of week's peak per metric</div>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
               <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="Energy" stroke="#C17F24" strokeWidth={2} fill="url(#gradEnergy)" name="Energy (Wh)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-card">
-          <div className="chart-label">Water (mL)</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="gradWater" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2E6B8A" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#2E6B8A" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-              <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="Water" stroke="#2E6B8A" strokeWidth={2} fill="url(#gradWater)" name="Water (mL)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-card">
-          <div className="chart-label">CO2 (g)</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="gradCo2" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8B7355" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#8B7355" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-              <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="CO2" stroke="#8B7355" strokeWidth={2} fill="url(#gradCo2)" name="CO2 (g)" />
-            </AreaChart>
+              <YAxis
+                tickFormatter={v => `${Math.round(v)}%`}
+                domain={[0, 100]}
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={42}
+              />
+              <Tooltip content={<MultiTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12, color: 'var(--text-secondary)' }} />
+              <Line type="monotone" dataKey="Energy" stroke="#C17F24" strokeWidth={2} dot={false} name="Energy (Wh)" />
+              <Line type="monotone" dataKey="Water"  stroke="#2E6B8A" strokeWidth={2} dot={false} name="Water (mL)" />
+              <Line type="monotone" dataKey="CO2"    stroke="#8B7355" strokeWidth={2} dot={false} name="CO2 (g)" />
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
