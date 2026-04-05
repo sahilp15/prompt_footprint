@@ -77,10 +77,10 @@ export default function WeeklyStats() {
             <div className="mission-pills">
               <span className="mission-pill">🌊 Water-cooled data centers</span>
               <span className="mission-pill">⚡ Grid-powered inference</span>
-              <span className="mission-pill">🌍 13 global locations tracked</span>
+              <span className="mission-pill">🌍 8 key data centers tracked</span>
             </div>
             <p className="mission-note">
-              The globe shows the 13 major AI data center regions we track. Larger dots indicate higher
+              The globe shows 8 major AI data center regions. Larger dots indicate higher
               carbon intensity and water stress — regions where your prompts have the biggest footprint.
             </p>
           </div>

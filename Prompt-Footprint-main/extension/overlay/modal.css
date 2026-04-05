@@ -1,49 +1,50 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:wght@400;500;600;700&display=swap');
 
 #pf-modal-overlay {
   position: fixed;
   bottom: 24px;
   right: 24px;
   z-index: 99998;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Source Serif 4', serif;
   transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 #pf-modal-overlay.pf-modal-hidden {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(16px);
+  transform: translateY(12px);
 }
 
 .pf-modal-container {
-  width: 320px;
-  background: rgba(20, 20, 22, 0.97);
-  border: 1px solid rgba(42, 42, 46, 0.8);
-  border-radius: 16px;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  width: 300px;
+  background: rgba(250, 247, 240, 0.98);
+  border: 1px solid #D4C5A9;
+  border-radius: 14px;
+  box-shadow: 0 8px 40px rgba(44, 24, 16, 0.18);
   overflow: hidden;
 }
 
+/* ── Header ──────────────────── */
 .pf-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(42, 42, 46, 0.5);
+  padding: 13px 16px;
+  border-bottom: 1px solid #E8E0D0;
+  background: #FAF7F0;
 }
 
 .pf-modal-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #F5F5F7;
-  letter-spacing: 0.3px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2C1810;
+  letter-spacing: -0.1px;
 }
 
 .pf-modal-close {
   background: none;
   border: none;
-  color: #6E6E73;
+  color: #8B7355;
   cursor: pointer;
   padding: 4px;
   border-radius: 6px;
@@ -51,96 +52,94 @@
   align-items: center;
   justify-content: center;
   transition: all 200ms ease;
+  line-height: 1;
 }
 
 .pf-modal-close:hover {
-  color: #F5F5F7;
-  background: rgba(42, 42, 46, 0.5);
+  color: #2C1810;
+  background: #EDE8DC;
 }
 
+/* ── Sections ────────────────── */
 .pf-modal-section {
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(42, 42, 46, 0.3);
+  padding: 12px 16px;
+  border-bottom: 1px solid #E8E0D0;
 }
 
 .pf-modal-section-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: #6E6E73;
+  font-size: 10px;
+  font-weight: 600;
+  color: #8B7355;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 12px;
+  letter-spacing: 1.2px;
+  margin-bottom: 10px;
 }
 
+/* ── Stats grid ──────────────── */
 .pf-modal-stats-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 8px;
 }
 
 .pf-modal-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
-.pf-modal-stat-icon {
-  margin-bottom: 2px;
-}
-
-.pf-icon-energy { color: #FBBF24; }
-.pf-icon-water { color: #60A5FA; }
-.pf-icon-co2 { color: #A1A1A6; }
+.pf-modal-stat-icon { margin-bottom: 1px; }
+.pf-icon-energy { color: #C17F24; }
+.pf-icon-water  { color: #2E6B8A; }
+.pf-icon-co2    { color: #8B7355; }
 
 .pf-modal-stat-value {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  font-weight: 500;
-  color: #F5F5F7;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2C1810;
 }
 
 .pf-modal-stat-label {
-  font-size: 10px;
-  color: #6E6E73;
+  font-size: 9px;
+  color: #8B7355;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
 }
 
-.pf-stat-small .pf-modal-stat-value {
-  font-size: 12px;
-}
+/* 4-column for last query */
+.pf-stat-small .pf-modal-stat-value { font-size: 11px; }
+.pf-modal-stats-grid:has(.pf-stat-small) { grid-template-columns: repeat(4, 1fr); }
 
-.pf-modal-stats-grid:has(.pf-stat-small) {
-  grid-template-columns: repeat(4, 1fr);
-}
-
+/* ── Footer ──────────────────── */
 .pf-modal-footer {
-  padding: 16px 20px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  background: #FAF7F0;
 }
 
 .pf-modal-query-count {
   font-size: 11px;
-  color: #6E6E73;
+  color: #8B7355;
 }
 
 .pf-modal-btn {
-  padding: 8px 16px;
-  background: rgba(52, 211, 153, 0.12);
-  color: #34D399;
-  border: 1px solid rgba(52, 211, 153, 0.2);
-  border-radius: 8px;
-  font-family: 'Space Grotesk', sans-serif;
+  padding: 7px 14px;
+  background: #5B7C3A;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-family: 'Source Serif 4', serif;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 200ms ease;
 }
 
 .pf-modal-btn:hover {
-  background: rgba(52, 211, 153, 0.2);
-  border-color: rgba(52, 211, 153, 0.4);
+  background: #4A6830;
+  transform: translateY(-1px);
 }

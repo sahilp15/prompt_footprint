@@ -1,57 +1,42 @@
 const USER_ID_KEY = 'pf_userId';
-const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
+const API_BASE = 'https://promptfootprint-production.up.railway.app/api';
 
-// ── Real-life impact conversions ──────────────────────────────────────────
+// ── Real-world impact conversions ─────────────────────────────────────────
+// These are shown in the popup instead of raw numbers.
+// Raw numbers live on the stats website.
+
 function waterConversion(ml) {
-  if (ml <= 0) return '';
-  if (ml < 0.05) return '< 1 eye drop';
-  if (ml < 2)    return `≈ ${Math.round(ml * 20)} eye drops`;
-  if (ml < 15)   return `≈ ${(ml / 5).toFixed(1)} tsp`;
-  if (ml < 250)  return `≈ ${Math.round(ml / 250 * 100)}% of a glass`;
-  return `≈ ${(ml / 250).toFixed(1)} glasses`;
+  if (ml <= 0)   return { main: '0 drops', sub: 'of water' };
+  if (ml < 0.05) return { main: '< 1 drop',  sub: 'of water' };
+  if (ml < 1.5)  return { main: `≈ ${Math.round(ml * 20)} drops`, sub: 'of water' };
+  if (ml < 5)    return { main: `≈ ${(ml / 5).toFixed(1)} tsp`,   sub: 'of water' };
+  if (ml < 250)  return { main: `≈ ${Math.round(ml / 250 * 100)}%`, sub: 'of a glass of water' };
+  return           { main: `≈ ${(ml / 250).toFixed(1)} glasses`, sub: 'of water' };
 }
 
 function energyConversion(wh) {
-  if (wh <= 0) return '';
-  // Phone uses ~3 W average → 1 Wh = 1200 s of phone use
+  if (wh <= 0)   return { main: '< 1 sec', sub: 'of phone use' };
+  // Phone uses ~3 W → 1 Wh = 1200 s of phone screen-on time
   const seconds = wh * 1200;
-  if (seconds < 1)  return '< 1s of phone use';
-  if (seconds < 60) return `≈ ${Math.round(seconds)}s of phone use`;
-  if (seconds < 3600) return `≈ ${Math.round(seconds / 60)}min phone use`;
-  return `≈ ${(seconds / 3600).toFixed(1)}h phone use`;
+  if (seconds < 2)   return { main: '< 2 sec',  sub: 'of phone screen-on' };
+  if (seconds < 60)  return { main: `≈ ${Math.round(seconds)}s`, sub: 'of phone screen-on' };
+  if (seconds < 3600) return { main: `≈ ${Math.round(seconds / 60)} min`, sub: 'of phone screen-on' };
+  return              { main: `≈ ${(seconds / 3600).toFixed(1)} hrs`, sub: 'of phone screen-on' };
 }
 
 function co2Conversion(g) {
-  if (g <= 0) return '';
-  // Car emits ~200 g/km → 1 g CO₂ = 5 m driven
+  if (g <= 0)    return { main: '< 1 cm', sub: 'driven by car' };
+  // Car emits ~200 g/km → 1 g = 5 m driven
   const meters = g * 5;
-  if (meters < 0.5)  return `≈ ${Math.round(meters * 100)}cm by car`;
-  if (meters < 1000) return `≈ ${meters.toFixed(1)}m by car`;
-  return `≈ ${(meters / 1000).toFixed(2)}km by car`;
+  if (meters < 1)    return { main: `≈ ${Math.round(meters * 100)} cm`, sub: 'driven by car' };
+  if (meters < 1000) return { main: `≈ ${meters.toFixed(1)} m`, sub: 'driven by car' };
+  return               { main: `≈ ${(meters / 1000).toFixed(2)} km`, sub: 'driven by car' };
 }
 
 function fmtTokens(n) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
-}
-
-function fmtWater(ml) {
-  if (ml < 1)    return `${ml.toFixed(2)} mL`;
-  if (ml < 100)  return `${ml.toFixed(1)} mL`;
-  return `${ml.toFixed(0)} mL`;
-}
-
-function fmtEnergy(wh) {
-  if (wh < 0.01)  return `${(wh * 1000).toFixed(2)} mWh`;
-  if (wh < 1)     return `${wh.toFixed(3)} Wh`;
-  return `${wh.toFixed(2)} Wh`;
-}
-
-function fmtCO2(g) {
-  if (g < 0.01)  return `${(g * 1000).toFixed(1)} mg`;
-  if (g < 1)     return `${g.toFixed(3)} g`;
-  return `${g.toFixed(2)} g`;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────
@@ -61,11 +46,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusDot     = document.querySelector('.pf-status-dot');
   const statusText    = document.querySelector('.pf-status-text');
 
-  // Get userId
   const stored = await chrome.storage.local.get([USER_ID_KEY]);
   const userId = stored[USER_ID_KEY];
 
-  // Check if active on ChatGPT
+  // Active-tab status
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const isOnChatGPT = tab?.url?.includes('chatgpt.com') || tab?.url?.includes('chat.openai.com');
   if (isOnChatGPT) {
@@ -74,35 +58,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (userId) {
-    // Load config
+    // Load config (overlay toggle state)
     try {
-      const cfg = await fetch(`${API_BASE_URL}/config?userId=${userId}`).then(r => r.json());
+      const cfg = await fetch(`${API_BASE}/config?userId=${userId}`).then(r => r.json());
       overlayToggle.checked = cfg.overlayEnabled !== false;
     } catch (_) {}
 
-    // Load weekly stats
+    // Load weekly stats and display as conversions
     try {
-      const data = await fetch(`${API_BASE_URL}/sessions/weekly?userId=${userId}`).then(r => r.json());
+      const data = await fetch(`${API_BASE}/sessions/weekly?userId=${userId}`).then(r => r.json());
       const t = data?.totals || {};
-      const tokens  = t.totalTokens    || 0;
-      const water   = t.totalWaterMl   || 0;
-      const energy  = t.totalEnergyWh  || 0;
-      const co2     = t.totalCo2G      || 0;
+      const tokens = t.totalTokens   || 0;
+      const water  = t.totalWaterMl  || 0;
+      const energy = t.totalEnergyWh || 0;
+      const co2    = t.totalCo2G     || 0;
 
-      document.getElementById('pf-tokens').textContent   = fmtTokens(tokens);
-      document.getElementById('pf-water').textContent    = fmtWater(water);
-      document.getElementById('pf-energy').textContent   = fmtEnergy(energy);
-      document.getElementById('pf-co2').textContent      = fmtCO2(co2);
+      // Tokens: show count (it's meaningful as a count)
+      document.getElementById('pf-tokens').textContent = fmtTokens(tokens);
 
-      const tokensCtx = document.getElementById('pf-tokens-ctx');
-      const sessions  = data?.daily?.length || 0;
-      if (sessions)  tokensCtx.textContent = `${sessions} day${sessions !== 1 ? 's' : ''} tracked`;
+      // Water: show real-world equivalent
+      const w = waterConversion(water);
+      document.getElementById('pf-water').textContent    = w.main;
+      document.getElementById('pf-water-sub').textContent = w.sub;
 
-      document.getElementById('pf-water-ctx').textContent  = waterConversion(water);
-      document.getElementById('pf-energy-ctx').textContent = energyConversion(energy);
-      document.getElementById('pf-co2-ctx').textContent    = co2Conversion(co2);
+      // Energy: show real-world equivalent
+      const e = energyConversion(energy);
+      document.getElementById('pf-energy').textContent    = e.main;
+      document.getElementById('pf-energy-sub').textContent = e.sub;
+
+      // CO₂: show real-world equivalent
+      const c = co2Conversion(co2);
+      document.getElementById('pf-co2').textContent    = c.main;
+      document.getElementById('pf-co2-sub').textContent = c.sub;
     } catch (_) {
-      // API unavailable — leave dashes
+      // API unavailable — leave dashes shown
     }
   }
 
@@ -110,7 +99,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   overlayToggle.addEventListener('change', () => {
     const overlayEnabled = overlayToggle.checked;
     if (userId) {
-      fetch(`${API_BASE_URL}/config`, {
+      fetch(`${API_BASE}/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, overlayEnabled }),
@@ -121,11 +110,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Stats website button
+  // Stats website
   statsBtn.addEventListener('click', () => {
-    const url = userId
-      ? `https://prompt-footprint-2bjl.vercel.app?userId=${userId}`
-      : 'https://prompt-footprint-2bjl.vercel.app';
-    chrome.tabs.create({ url });
+    chrome.tabs.create({
+      url: userId
+        ? `https://prompt-footprint-2bjl.vercel.app?userId=${userId}`
+        : 'https://prompt-footprint-2bjl.vercel.app',
+    });
   });
 });
