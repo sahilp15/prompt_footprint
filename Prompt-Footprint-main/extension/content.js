@@ -368,27 +368,52 @@
     }
   }
 
+  // Real-world conversion helpers — same logic as popup.js
+  function _fmtWater(ml) {
+    if (ml <= 0)   return '0 drops';
+    if (ml < 0.05) return '< 1 drop';
+    if (ml < 1.5)  return `≈ ${Math.round(ml * 20)} drops`;
+    if (ml < 5)    return `≈ ${(ml / 5).toFixed(1)} tsp`;
+    if (ml < 250)  return `≈ ${Math.round(ml / 250 * 100)}% of a glass`;
+    return           `≈ ${(ml / 250).toFixed(1)} glasses`;
+  }
+  function _fmtEnergy(wh) {
+    if (wh <= 0)   return '< 1 sec phone';
+    const s = wh * 1200;
+    if (s < 2)     return '< 2 sec phone';
+    if (s < 60)    return `≈ ${Math.round(s)}s phone`;
+    if (s < 3600)  return `≈ ${Math.round(s / 60)} min phone`;
+    return           `≈ ${(s / 3600).toFixed(1)} hr phone`;
+  }
+  function _fmtCo2(g) {
+    if (g <= 0)    return '< 1 cm by car';
+    const m = g * 5;
+    if (m < 1)     return `≈ ${Math.round(m * 100)} cm by car`;
+    if (m < 1000)  return `≈ ${m.toFixed(1)} m by car`;
+    return           `≈ ${(m / 1000).toFixed(2)} km by car`;
+  }
+
   function updateModalStats() {
-    const fmt = (v, unit) => `${v.toFixed(3)} ${unit}`;
+    const fmtRaw = (v, unit) => `${v.toFixed(3)} ${unit}`;
 
-    // Session totals
+    // Session totals — human-readable conversions
     const energyEl = document.getElementById('pf-session-energy');
-    const waterEl = document.getElementById('pf-session-water');
-    const co2El = document.getElementById('pf-session-co2');
-    if (energyEl) energyEl.textContent = fmt(sessionStats.totalEnergyWh, 'Wh');
-    if (waterEl) waterEl.textContent = fmt(sessionStats.totalWaterMl, 'mL');
-    if (co2El) co2El.textContent = fmt(sessionStats.totalCo2G, 'g');
+    const waterEl  = document.getElementById('pf-session-water');
+    const co2El    = document.getElementById('pf-session-co2');
+    if (energyEl) energyEl.textContent = _fmtEnergy(sessionStats.totalEnergyWh);
+    if (waterEl)  waterEl.textContent  = _fmtWater(sessionStats.totalWaterMl);
+    if (co2El)    co2El.textContent    = _fmtCo2(sessionStats.totalCo2G);
 
-    // Last query
+    // Last query — raw values (individual queries are tiny, context matters)
     if (lastQueryImpact) {
-      const tokensEl = document.getElementById('pf-query-tokens');
+      const tokensEl  = document.getElementById('pf-query-tokens');
       const qEnergyEl = document.getElementById('pf-query-energy');
-      const qWaterEl = document.getElementById('pf-query-water');
-      const qCo2El = document.getElementById('pf-query-co2');
-      if (tokensEl) tokensEl.textContent = lastQueryImpact.totalTokens;
-      if (qEnergyEl) qEnergyEl.textContent = fmt(lastQueryImpact.energyWh, 'Wh');
-      if (qWaterEl) qWaterEl.textContent = fmt(lastQueryImpact.waterMl, 'mL');
-      if (qCo2El) qCo2El.textContent = fmt(lastQueryImpact.co2G, 'g');
+      const qWaterEl  = document.getElementById('pf-query-water');
+      const qCo2El    = document.getElementById('pf-query-co2');
+      if (tokensEl)  tokensEl.textContent  = lastQueryImpact.totalTokens;
+      if (qEnergyEl) qEnergyEl.textContent = fmtRaw(lastQueryImpact.energyWh, 'Wh');
+      if (qWaterEl)  qWaterEl.textContent  = fmtRaw(lastQueryImpact.waterMl,  'mL');
+      if (qCo2El)    qCo2El.textContent    = fmtRaw(lastQueryImpact.co2G,     'g');
     }
 
     // Query count
