@@ -1,0 +1,384 @@
+.how-page { display: flex; flex-direction: column; }
+
+/* ─── Hero ─────────────────────────────────────────── */
+.how-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(91, 124, 58, 0.10);
+  border: 1px solid rgba(91, 124, 58, 0.25);
+  color: var(--accent-green);
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  letter-spacing: 0.3px;
+}
+
+.how-hero-title {
+  font-family: var(--font-serif);
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.how-hero-sub {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.how-hero-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 48px 40px;
+  box-shadow: var(--shadow);
+  width: 100%;
+}
+
+.how-hero-card-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.how-flow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.how-flow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.how-flow-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+}
+
+.how-flow-num {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.how-flow-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.how-flow-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.how-flow-arrow {
+  font-size: 20px;
+  color: var(--border);
+  flex-shrink: 0;
+}
+
+/* ─── Content Sections ──────────────────────────────── */
+.how-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: -60px;
+}
+
+.how-section {
+  padding: 56px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.how-section:last-child { border-bottom: none; }
+
+.how-section-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--accent-green);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.how-section-title {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+  line-height: 1.3;
+}
+
+.how-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 760px;
+}
+
+.how-section-body p {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.75;
+}
+
+.how-section-body strong { color: var(--text-primary); }
+
+/* ─── Formula Box ──────────────────────────────────── */
+.how-formula-box {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.how-formula-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.how-formula {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--accent-green);
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.how-formula-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.how-formula-legend span {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.how-formula-legend strong { color: var(--text-secondary); }
+
+/* ─── Table ────────────────────────────────────────── */
+.how-table-wrap {
+  overflow-x: auto;
+  margin: 24px 0 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.how-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.how-table thead tr {
+  background: var(--bg-secondary);
+}
+
+.how-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.how-table td {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.how-table tbody tr:hover { background: var(--bg-secondary); }
+
+.how-table-model {
+  color: var(--text-primary) !important;
+  font-weight: 500;
+}
+
+.how-table code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-amber);
+  background: rgba(193, 127, 36, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.how-table-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.tier-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tier-low {
+  background: rgba(91, 124, 58, 0.12);
+  color: var(--accent-green);
+  border: 1px solid rgba(91, 124, 58, 0.25);
+}
+
+.tier-medium {
+  background: rgba(193, 127, 36, 0.12);
+  color: var(--accent-amber);
+  border: 1px solid rgba(193, 127, 36, 0.25);
+}
+
+.tier-high {
+  background: rgba(160, 82, 45, 0.12);
+  color: var(--accent-red);
+  border: 1px solid rgba(160, 82, 45, 0.25);
+}
+
+/* ─── Scaling Cards ──────────────────────────────────  */
+.how-scaling-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 8px 0;
+}
+
+.how-scaling-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+}
+
+.how-scaling-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.how-scaling-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.how-scaling-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ─── PDF Link ─────────────────────────────────────── */
+.how-pdf-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  background: var(--accent-green);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  transition: var(--transition);
+  margin: 8px 0 24px;
+}
+
+.how-pdf-link:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+/* ─── References ─────────────────────────────────────  */
+.how-refs {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.how-ref {
+  display: flex;
+  gap: 14px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.how-ref-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-green);
+  font-weight: 600;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.how-ref-body { color: var(--text-secondary); }
+.how-ref-body em { color: var(--text-primary); font-style: italic; }
+
+.how-ref-link {
+  color: var(--accent-blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.how-ref-link:hover { opacity: 0.8; }
+
+/* ─── Responsive ─────────────────────────────────────  */
+@media (max-width: 900px) {
+  .how-hero-title { font-size: 32px; }
+  .how-scaling-grid { grid-template-columns: 1fr; }
+  .how-hero-card { padding: 32px 24px; }
+  .how-flow { gap: 8px; }
+  .how-flow-arrow { font-size: 16px; }
+}
+
+@media (max-width: 600px) {
+  .how-hero-title { font-size: 26px; }
+  .how-section-title { font-size: 22px; }
+  .how-flow { flex-direction: column; gap: 12px; }
+  .how-flow-arrow { transform: rotate(90deg); }
+}

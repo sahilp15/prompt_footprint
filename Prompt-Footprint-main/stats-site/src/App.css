@@ -2,9 +2,9 @@
 
 .nav {
   position: sticky; top: 0; z-index: 100;
-  background: rgba(10, 18, 10, 0.90);
+  background: rgba(250, 247, 240, 0.92);
   backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 .nav-inner {
   max-width: 1120px; margin: 0 auto; padding: 0 32px;
@@ -12,15 +12,15 @@
 }
 .nav-brand { display: flex; align-items: center; gap: 10px; }
 .nav-logo { color: var(--accent-green); }
-.nav-title { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+.nav-title { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; color: var(--text-primary); }
 .nav-links { display: flex; gap: 4px; }
 .nav-link {
   display: flex; align-items: center; gap: 6px; padding: 8px 16px;
   border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
-  color: var(--text-muted); transition: var(--transition);
+  color: var(--text-secondary); transition: var(--transition);
 }
-.nav-link:hover { color: var(--text-secondary); background: var(--bg-tertiary); }
-.nav-link.active { color: var(--accent-green); background: rgba(120, 164, 40, 0.12); border: 1px solid rgba(120, 164, 40, 0.2); }
+.nav-link:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.nav-link.active { color: var(--accent-green); background: rgba(91, 124, 58, 0.10); border: 1px solid rgba(91, 124, 58, 0.25); }
 
 .main { flex: 1; max-width: 1120px; width: 100%; margin: 0 auto; padding: 40px 32px 80px; }
 

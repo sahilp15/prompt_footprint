@@ -1,4 +1,4 @@
-import { RefreshCw, Leaf } from 'lucide-react'
+import { Leaf } from 'lucide-react'
 import { MeshGradient } from '@paper-design/shaders-react'
 import { useWeeklyStats } from '../hooks/useStats'
 import WaterTank from '../animations/WaterTank'
@@ -26,9 +26,9 @@ export default function AnimationPage() {
       <div className="anim-hero">
         <MeshGradient
           className="anim-hero-gradient"
-          colors={['#0A1A0A', '#4A6741', '#2D5A1B', '#6B8E23', '#1A2E10']}
+          colors={['#FAF0E0', '#D4C5A9', '#B8A882', '#8B7355', '#6B5A3A']}
           speed={0.25}
-          backgroundColor="#0A120A"
+          backgroundColor="#FAF7F0"
         />
         <div className="anim-hero-spline">
           <SplineScene
@@ -66,10 +66,6 @@ export default function AnimationPage() {
         </div>
       </div>
 
-      <div className="anim-footer">
-        <RefreshCw size={14} />
-        <span>Animations replay every time you open this page</span>
-      </div>
     </div>
   )
 }
