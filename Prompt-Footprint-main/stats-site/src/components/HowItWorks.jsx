@@ -83,7 +83,7 @@ export default function HowItWorks() {
             <div className="how-hero-byline">
               <span className="how-hero-author">By Sahil Parasharami</span>
               <span className="how-hero-byline-dot">·</span>
-              <span className="how-hero-article">"Estimating the Environmental Cost of AI Inference"</span>
+              <span className="how-hero-article">"A Token-Level Framework for Quantifying ChatGPT's Environmental Impacts and a Browser-Based Intervention for Reducing Prompt Resource Use"</span>
             </div>
           </Header>
         }

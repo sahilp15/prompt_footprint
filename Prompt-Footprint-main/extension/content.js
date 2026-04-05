@@ -15,6 +15,11 @@
 
   // Initialize
   async function init() {
+    // Inject overlay UI immediately — before any async/network calls
+    // so the capsule is visible on first page load without delay.
+    injectFloatingOverlay();
+    injectModalOverlay();
+
     // Get user ID from background
     const result = await sendMessage({ type: 'GET_USER_ID' });
     userId = result.userId;
@@ -23,6 +28,9 @@
     const configResult = await sendMessage({ type: 'GET_CONFIG' });
     if (configResult && !configResult.error) {
       config = { ...config, ...configResult };
+      // Sync overlay visibility with saved config
+      const overlay = document.getElementById('pf-floating-overlay');
+      if (overlay && !config.overlayEnabled) overlay.style.display = 'none';
     }
 
     // Create session
@@ -40,10 +48,6 @@
       // Store session ID for tab close detection
       chrome.storage.session.set({ [`session_${getTabInfo()}`]: currentSessionId });
     }
-
-    // Inject overlay UI
-    injectFloatingOverlay();
-    injectModalOverlay();
 
     // Start observing DOM
     startObserver();
@@ -94,6 +98,26 @@
             checkForMessages(node);
           }
         });
+      } else if (mutation.type === 'characterData') {
+        // Streaming text is still arriving — reset the debounce timer so we
+        // capture the FULL response, not just what arrived in the first 1.5s.
+        if (responseDebounceTimer !== null && pendingUserMessage) {
+          clearTimeout(responseDebounceTimer);
+          responseDebounceTimer = setTimeout(() => {
+            const assistantMsgs = document.querySelectorAll('[data-message-author-role="assistant"]');
+            const latest = assistantMsgs[assistantMsgs.length - 1];
+            if (latest && pendingUserMessage) {
+              const msgId = latest.getAttribute('data-message-id');
+              const text = extractText(latest);
+              if (text) {
+                if (msgId) processedMessageIds.add(msgId);
+                processQuery(pendingUserMessage.text, text);
+                pendingUserMessage = null;
+              }
+            }
+            responseDebounceTimer = null;
+          }, 1500);
+        }
       }
     }
   }
@@ -127,6 +151,7 @@
             processQuery(pendingUserMessage.text, text);
             pendingUserMessage = null;
           }
+          responseDebounceTimer = null;
         }, 1500);
       }
     });
@@ -166,6 +191,7 @@
             processQuery(pendingUserMessage.text, text);
             pendingUserMessage = null;
           }
+          responseDebounceTimer = null;
         }, 1500);
       }
     });
