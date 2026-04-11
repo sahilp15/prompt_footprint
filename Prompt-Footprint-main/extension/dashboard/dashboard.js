@@ -6,8 +6,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const userId = result[USER_ID_KEY];
 
   if (!userId) {
-    document.getElementById('pf-sessions-list').innerHTML =
-      '<div class="pf-empty">No user ID found. Visit ChatGPT to initialize tracking.</div>';
+    const listEl = document.getElementById('pf-sessions-list');
+    const errDiv = document.createElement('div');
+    errDiv.className = 'pf-empty';
+    errDiv.textContent = 'No user ID found. Visit ChatGPT to initialize tracking.';
+    listEl.replaceChildren(errDiv);
     return;
   }
 
@@ -17,8 +20,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderSummary(sessions);
     renderSessions(sessions);
   } catch (err) {
-    document.getElementById('pf-sessions-list').innerHTML =
-      '<div class="pf-empty">Could not connect to the PromptFootprint server. Make sure the backend is running.</div>';
+    const listEl = document.getElementById('pf-sessions-list');
+    const errDiv = document.createElement('div');
+    errDiv.className = 'pf-empty';
+    errDiv.textContent = 'Could not connect to the PromptFootprint server. Make sure the backend is running.';
+    listEl.replaceChildren(errDiv);
   }
 });
 
@@ -38,65 +44,113 @@ function renderSummary(sessions) {
   document.getElementById('pf-total-sessions').textContent = sessions.length;
 }
 
+// SECURITY: Build session cards using DOM APIs instead of innerHTML
+// to prevent XSS from any server-provided data.
 function renderSessions(sessions) {
   const container = document.getElementById('pf-sessions-list');
 
   if (sessions.length === 0) {
-    container.innerHTML = '<div class="pf-empty">No sessions recorded yet. Start chatting with ChatGPT to begin tracking.</div>';
+    const empty = document.createElement('div');
+    empty.className = 'pf-empty';
+    empty.textContent = 'No sessions recorded yet. Start chatting with ChatGPT to begin tracking.';
+    container.replaceChildren(empty);
     return;
   }
 
-  container.innerHTML = sessions.map((session, i) => {
+  const fragment = document.createDocumentFragment();
+
+  sessions.forEach((session, i) => {
     const start = new Date(session.startTime);
     const end = session.endTime ? new Date(session.endTime) : null;
     const duration = end ? formatDuration(end - start) : 'Active';
     const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const timeStr = start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
     const queries = session.queries || [];
 
-    return `
-      <div class="pf-session-card">
-        <div class="pf-session-header" onclick="toggleQueries(${i})">
-          <div class="pf-session-date">
-            ${dateStr} <span style="color: var(--pf-text-muted)">${timeStr}</span>
-            <span style="color: var(--pf-text-muted); font-size: 11px; margin-left: 8px;">${duration}</span>
-          </div>
-          <div class="pf-session-metric">
-            <div class="pf-session-metric-value">${session.totalTokens.toLocaleString()}</div>
-            <div class="pf-session-metric-label">Tokens</div>
-          </div>
-          <div class="pf-session-metric">
-            <div class="pf-session-metric-value" style="color:var(--pf-accent-amber)">${session.totalEnergyWh.toFixed(3)}</div>
-            <div class="pf-session-metric-label">Wh</div>
-          </div>
-          <div class="pf-session-metric">
-            <div class="pf-session-metric-value" style="color:var(--pf-accent-blue)">${session.totalWaterMl.toFixed(3)}</div>
-            <div class="pf-session-metric-label">mL</div>
-          </div>
-          <div class="pf-session-metric">
-            <div class="pf-session-metric-value">${session.totalCo2G.toFixed(3)}</div>
-            <div class="pf-session-metric-label">g CO2</div>
-          </div>
-          <div class="pf-session-metric">
-            <div class="pf-session-metric-value">${session.queryCount}</div>
-            <div class="pf-session-metric-label">Queries</div>
-          </div>
-        </div>
-        <div class="pf-session-queries" id="pf-queries-${i}">
-          ${queries.length > 0 ? queries.map((q, j) => `
-            <div class="pf-query-row">
-              <span class="pf-query-num">#${j + 1}</span>
-              <span class="pf-query-val">${q.totalTokens} tokens</span>
-              <span class="pf-query-val" style="color: var(--pf-accent-amber)">${q.energyWh.toFixed(4)} Wh</span>
-              <span class="pf-query-val" style="color: var(--pf-accent-blue)">${q.waterMl.toFixed(4)} mL</span>
-              <span class="pf-query-val">${q.co2G.toFixed(4)} g</span>
-            </div>
-          `).join('') : '<div style="padding: 12px 0; color: var(--pf-text-muted); font-size: 12px;">No query details available</div>'}
-        </div>
-      </div>
-    `;
-  }).join('');
+    const card = document.createElement('div');
+    card.className = 'pf-session-card';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'pf-session-header';
+    header.addEventListener('click', () => toggleQueries(i));
+
+    // Date section
+    const dateDiv = document.createElement('div');
+    dateDiv.className = 'pf-session-date';
+    dateDiv.appendChild(document.createTextNode(dateStr + ' '));
+    const timeSpan = document.createElement('span');
+    timeSpan.style.color = 'var(--pf-text-muted)';
+    timeSpan.textContent = timeStr;
+    dateDiv.appendChild(timeSpan);
+    const durSpan = document.createElement('span');
+    durSpan.style.cssText = 'color: var(--pf-text-muted); font-size: 11px; margin-left: 8px;';
+    durSpan.textContent = duration;
+    dateDiv.appendChild(durSpan);
+    header.appendChild(dateDiv);
+
+    // Metrics
+    const metrics = [
+      { val: session.totalTokens.toLocaleString(), label: 'Tokens' },
+      { val: session.totalEnergyWh.toFixed(3), label: 'Wh', color: 'var(--pf-accent-amber)' },
+      { val: session.totalWaterMl.toFixed(3), label: 'mL', color: 'var(--pf-accent-blue)' },
+      { val: session.totalCo2G.toFixed(3), label: 'g CO2' },
+      { val: String(session.queryCount), label: 'Queries' },
+    ];
+    metrics.forEach(m => {
+      const metricDiv = document.createElement('div');
+      metricDiv.className = 'pf-session-metric';
+      const valDiv = document.createElement('div');
+      valDiv.className = 'pf-session-metric-value';
+      if (m.color) valDiv.style.color = m.color;
+      valDiv.textContent = m.val;
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'pf-session-metric-label';
+      labelDiv.textContent = m.label;
+      metricDiv.appendChild(valDiv);
+      metricDiv.appendChild(labelDiv);
+      header.appendChild(metricDiv);
+    });
+
+    card.appendChild(header);
+
+    // Queries section
+    const queriesDiv = document.createElement('div');
+    queriesDiv.className = 'pf-session-queries';
+    queriesDiv.id = `pf-queries-${i}`;
+
+    if (queries.length > 0) {
+      queries.forEach((q, j) => {
+        const row = document.createElement('div');
+        row.className = 'pf-query-row';
+        const spanData = [
+          { cls: 'pf-query-num', text: `#${j + 1}` },
+          { cls: 'pf-query-val', text: `${q.totalTokens} tokens` },
+          { cls: 'pf-query-val', text: `${q.energyWh.toFixed(4)} Wh`, color: 'var(--pf-accent-amber)' },
+          { cls: 'pf-query-val', text: `${q.waterMl.toFixed(4)} mL`, color: 'var(--pf-accent-blue)' },
+          { cls: 'pf-query-val', text: `${q.co2G.toFixed(4)} g` },
+        ];
+        spanData.forEach(s => {
+          const span = document.createElement('span');
+          span.className = s.cls;
+          if (s.color) span.style.color = s.color;
+          span.textContent = s.text;
+          row.appendChild(span);
+        });
+        queriesDiv.appendChild(row);
+      });
+    } else {
+      const noQ = document.createElement('div');
+      noQ.style.cssText = 'padding: 12px 0; color: var(--pf-text-muted); font-size: 12px;';
+      noQ.textContent = 'No query details available';
+      queriesDiv.appendChild(noQ);
+    }
+
+    card.appendChild(queriesDiv);
+    fragment.appendChild(card);
+  });
+
+  container.replaceChildren(fragment);
 }
 
 function toggleQueries(index) {

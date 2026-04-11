@@ -10,17 +10,35 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// SECURITY: Restrict CORS to known origins only
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow Chrome extensions, localhost dev servers, and no-origin requests
-    if (!origin ||
-        origin.startsWith('chrome-extension://') ||
-        origin.startsWith('http://localhost') ||
-        origin.startsWith('https://localhost')) {
+    // Allow requests with no origin (extensions, server-to-server, curl)
+    if (!origin) {
       callback(null, true);
-    } else {
-      callback(null, true); // Allow all in dev; restrict in production
+      return;
     }
+
+    // Allow Chrome extensions
+    if (origin.startsWith('chrome-extension://')) {
+      callback(null, true);
+      return;
+    }
+
+    // Allow the stats site
+    if (origin === 'https://prompt-footprint-2bjl.vercel.app') {
+      callback(null, true);
+      return;
+    }
+
+    // Allow localhost in development only
+    if (process.env.NODE_ENV !== 'production' &&
+        (origin.startsWith('http://localhost') || origin.startsWith('https://localhost'))) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS: Origin ${origin} not allowed`));
   },
   credentials: true
 }));
@@ -41,8 +59,15 @@ async function start() {
   try {
     await sequelize.authenticate();
     console.log('Database connected');
-    await sequelize.sync({ alter: true });
-    console.log('Models synced');
+
+    // SECURITY: Only auto-sync schema in development; use migrations in production
+    if (process.env.NODE_ENV === 'production') {
+      console.log('Production mode — skipping schema sync (use migrations)');
+    } else {
+      await sequelize.sync({ alter: true });
+      console.log('Models synced (dev mode)');
+    }
+
     app.listen(PORT, () => {
       console.log(`PromptFootprint API running on port ${PORT}`);
     });

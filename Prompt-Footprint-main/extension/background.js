@@ -4,6 +4,14 @@
 const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
 const USER_ID_KEY = 'pf_userId';
 
+// SECURITY: Allowed API endpoints (whitelist)
+const ALLOWED_ENDPOINTS = new Set([
+  '/sessions',
+  '/queries',
+  '/config',
+  '/sessions/weekly'
+]);
+
 // Initialize user ID on install
 chrome.runtime.onInstalled.addListener(async () => {
   const result = await chrome.storage.local.get([USER_ID_KEY]);
@@ -14,8 +22,42 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
+// SECURITY: Validate that the sender is our own extension
+function isValidSender(sender) {
+  if (sender.id !== chrome.runtime.id) {
+    return false;
+  }
+  // For content script messages, verify the sender URL
+  if (sender.tab) {
+    const senderUrl = sender.url || sender.tab.url || '';
+    if (!senderUrl.startsWith('https://chatgpt.com') &&
+        !senderUrl.startsWith('https://chat.openai.com') &&
+        !senderUrl.startsWith('chrome-extension://')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// SECURITY: Validate that an endpoint is on the allowlist
+function isAllowedEndpoint(endpoint) {
+  if (!endpoint || typeof endpoint !== 'string') return false;
+  // Reject path traversal
+  if (endpoint.includes('..') || endpoint.includes('//')) return false;
+  // Strip dynamic UUID segments for matching (e.g. /sessions/:id)
+  const baseEndpoint = endpoint.replace(/\/[0-9a-f-]{36}$/i, '');
+  return ALLOWED_ENDPOINTS.has(baseEndpoint) || ALLOWED_ENDPOINTS.has(endpoint);
+}
+
 // Message handler for content script communication
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // SECURITY: Only accept messages from our own extension
+  if (!isValidSender(sender)) {
+    console.warn('[PromptFootprint] Rejected message from unauthorized sender:', sender.id);
+    sendResponse({ error: 'Unauthorized sender' });
+    return false;
+  }
+
   if (message.type === 'GET_USER_ID') {
     chrome.storage.local.get([USER_ID_KEY], (result) => {
       sendResponse({ userId: result[USER_ID_KEY] });
@@ -49,9 +91,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  // Unknown message type
+  sendResponse({ error: 'Unknown message type' });
+  return false;
 });
 
 async function handleApiRequest({ method, endpoint, body, params }) {
+  // SECURITY: Validate endpoint against allowlist
+  if (!isAllowedEndpoint(endpoint)) {
+    throw new Error(`Disallowed API endpoint: ${endpoint}`);
+  }
+
   const url = new URL(`${API_BASE_URL}${endpoint}`);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
