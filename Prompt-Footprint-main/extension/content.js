@@ -422,9 +422,20 @@
   }
 
   // Listen for config changes from popup
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === 'CONFIG_UPDATED') {
-      config = { ...config, ...message.config };
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    // SECURITY: Only accept messages from our own extension
+    if (sender.id !== chrome.runtime.id) return;
+
+    if (message.type === 'CONFIG_UPDATED' && message.config) {
+      // SECURITY: Only accept known config keys with validated types
+      if (typeof message.config.overlayEnabled === 'boolean') {
+        config.overlayEnabled = message.config.overlayEnabled;
+      }
+      if (typeof message.config.energyPerTokenMultiplier === 'number' &&
+          message.config.energyPerTokenMultiplier > 0 &&
+          message.config.energyPerTokenMultiplier <= 20) {
+        config.energyPerTokenMultiplier = message.config.energyPerTokenMultiplier;
+      }
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay) {
         overlay.style.display = config.overlayEnabled ? 'block' : 'none';

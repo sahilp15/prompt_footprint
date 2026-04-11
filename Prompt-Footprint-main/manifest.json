@@ -6,9 +6,11 @@
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://chat.openai.com/*",
-    "https://promptfootprint-production.up.railway.app/*"
+    "https://chat.openai.com/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' https://promptfootprint-production.up.railway.app; style-src 'self'; img-src 'self'; font-src 'self'; frame-src 'none';"
+  },
   "background": {
     "service_worker": "extension/background.js"
   },
@@ -22,6 +24,7 @@
         "extension/content.js"
       ],
       "css": [
+        "extension/styles/fonts.css",
         "extension/overlay/floating.css",
         "extension/overlay/modal.css"
       ],

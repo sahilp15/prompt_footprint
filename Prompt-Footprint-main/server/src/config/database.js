@@ -5,7 +5,13 @@ const sequelize = new Sequelize(process.env.DATABASE_URL || 'postgres://localhos
   dialect: 'postgres',
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
   dialectOptions: process.env.DATABASE_URL ? {
-    ssl: { require: true, rejectUnauthorized: false }
+    ssl: {
+      require: true,
+      rejectUnauthorized: process.env.NODE_ENV === 'production',
+      ...(process.env.DATABASE_CA_CERT && {
+        ca: process.env.DATABASE_CA_CERT
+      })
+    }
   } : {},
   pool: {
     max: 5,
