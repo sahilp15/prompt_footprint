@@ -60,9 +60,10 @@ async function start() {
     await sequelize.authenticate();
     console.log('Database connected');
 
-    // SECURITY: Only auto-sync schema in development; use migrations in production
+    // SECURITY: Use safe schema sync in production (no alter/drop), use alter in dev
     if (process.env.NODE_ENV === 'production') {
-      console.log('Production mode — skipping schema sync (use migrations)');
+      await sequelize.sync();
+      console.log('Production mode — models synced safely (no alter)');
     } else {
       await sequelize.sync({ alter: true });
       console.log('Models synced (dev mode)');
