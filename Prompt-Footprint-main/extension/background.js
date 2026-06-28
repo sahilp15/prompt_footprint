@@ -1,57 +1,36 @@
 // PromptFootprint Background Service Worker
-// Handles communication between content script and backend API
+// Local-first: there is no remote backend. The worker manages the anonymous
+// user id, maps tabs to sessions so they can be closed on tab removal, and
+// opens the dashboard. All persistence goes through lib/storage.js
+// (chrome.storage.local).
 
-const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
-const USER_ID_KEY = 'pf_userId';
+importScripts('lib/storage.js');
 
-// SECURITY: Allowed API endpoints (whitelist)
-const ALLOWED_ENDPOINTS = new Set([
-  '/sessions',
-  '/queries',
-  '/config',
-  '/sessions/weekly'
-]);
+// Supported platform origins (must match manifest host_permissions).
+const ALLOWED_ORIGINS = [
+  'https://chatgpt.com',
+  'https://chat.openai.com',
+  'https://claude.ai',
+];
 
 // Initialize user ID on install
 chrome.runtime.onInstalled.addListener(async () => {
-  const result = await chrome.storage.local.get([USER_ID_KEY]);
-  if (!result[USER_ID_KEY]) {
-    const userId = crypto.randomUUID();
-    await chrome.storage.local.set({ [USER_ID_KEY]: userId });
-    console.log('[PromptFootprint] User ID created:', userId);
-  }
+  await PFStorage.getUserId(); // creates one if missing
 });
 
-// SECURITY: Validate that the sender is our own extension
+// SECURITY: Validate that the sender is our own extension on a supported page.
 function isValidSender(sender) {
-  if (sender.id !== chrome.runtime.id) {
-    return false;
-  }
-  // For content script messages, verify the sender URL
+  if (sender.id !== chrome.runtime.id) return false;
   if (sender.tab) {
     const senderUrl = sender.url || sender.tab.url || '';
-    if (!senderUrl.startsWith('https://chatgpt.com') &&
-        !senderUrl.startsWith('https://chat.openai.com') &&
-        !senderUrl.startsWith('chrome-extension://')) {
-      return false;
-    }
+    const ok = senderUrl.startsWith('chrome-extension://') ||
+               ALLOWED_ORIGINS.some((o) => senderUrl.startsWith(o));
+    if (!ok) return false;
   }
   return true;
 }
 
-// SECURITY: Validate that an endpoint is on the allowlist
-function isAllowedEndpoint(endpoint) {
-  if (!endpoint || typeof endpoint !== 'string') return false;
-  // Reject path traversal
-  if (endpoint.includes('..') || endpoint.includes('//')) return false;
-  // Strip dynamic UUID segments for matching (e.g. /sessions/:id)
-  const baseEndpoint = endpoint.replace(/\/[0-9a-f-]{36}$/i, '');
-  return ALLOWED_ENDPOINTS.has(baseEndpoint) || ALLOWED_ENDPOINTS.has(endpoint);
-}
-
-// Message handler for content script communication
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // SECURITY: Only accept messages from our own extension
   if (!isValidSender(sender)) {
     console.warn('[PromptFootprint] Rejected message from unauthorized sender:', sender.id);
     sendResponse({ error: 'Unauthorized sender' });
@@ -59,83 +38,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'GET_USER_ID') {
-    chrome.storage.local.get([USER_ID_KEY], (result) => {
-      sendResponse({ userId: result[USER_ID_KEY] });
-    });
+    PFStorage.getUserId().then((userId) => sendResponse({ userId }));
     return true;
   }
 
-  if (message.type === 'API_REQUEST') {
-    handleApiRequest(message.payload)
-      .then(sendResponse)
-      .catch(err => sendResponse({ error: err.message }));
+  // Associate the calling tab with its session so we can close it on tab close.
+  if (message.type === 'REGISTER_SESSION') {
+    const tabId = sender.tab?.id;
+    const sessionId = message.payload?.sessionId;
+    if (tabId != null && sessionId) {
+      chrome.storage.session.set({ [`session_${tabId}`]: sessionId }, () => sendResponse({ ok: true }));
+    } else {
+      sendResponse({ ok: false });
+    }
     return true;
   }
 
   if (message.type === 'END_SESSION') {
-    handleEndSession(message.payload)
-      .then(sendResponse)
-      .catch(err => sendResponse({ error: err.message }));
+    PFStorage.endSession(message.payload?.sessionId)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ error: err.message }));
     return true;
   }
 
-  if (message.type === 'GET_CONFIG') {
-    chrome.storage.local.get([USER_ID_KEY], async (result) => {
-      try {
-        const resp = await fetch(`${API_BASE_URL}/config?userId=${result[USER_ID_KEY]}`);
-        const config = await resp.json();
-        sendResponse(config);
-      } catch (err) {
-        sendResponse({ overlayEnabled: true, energyPerTokenMultiplier: 1.0 });
-      }
-    });
-    return true;
+  if (message.type === 'OPEN_DASHBOARD') {
+    chrome.runtime.openOptionsPage();
+    sendResponse({ ok: true });
+    return false;
   }
 
-  // Unknown message type
   sendResponse({ error: 'Unknown message type' });
   return false;
 });
 
-async function handleApiRequest({ method, endpoint, body, params }) {
-  // SECURITY: Validate endpoint against allowlist
-  if (!isAllowedEndpoint(endpoint)) {
-    throw new Error(`Disallowed API endpoint: ${endpoint}`);
-  }
-
-  const url = new URL(`${API_BASE_URL}${endpoint}`);
-  if (params) {
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  }
-
-  const options = {
-    method: method || 'GET',
-    headers: { 'Content-Type': 'application/json' }
-  };
-
-  if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-    options.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(url.toString(), options);
-  return response.json();
-}
-
-async function handleEndSession({ sessionId }) {
-  return handleApiRequest({
-    method: 'PATCH',
-    endpoint: `/sessions/${sessionId}`,
-    body: { endTime: new Date().toISOString() }
-  });
-}
-
-// End session when tab is closed
+// End session when its tab is closed.
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.session.get([`session_${tabId}`], (result) => {
-    const sessionId = result[`session_${tabId}`];
+  const key = `session_${tabId}`;
+  chrome.storage.session.get([key], (result) => {
+    const sessionId = result[key];
     if (sessionId) {
-      handleEndSession({ sessionId });
-      chrome.storage.session.remove([`session_${tabId}`]);
+      PFStorage.endSession(sessionId);
+      chrome.storage.session.remove([key]);
     }
   });
 });
