@@ -379,8 +379,8 @@
   // ── Prompt optimizer ───────────────────────────────────────────────────--
   // When the user types a long prompt, suggest a shorter version and show the
   // estimated savings BEFORE they send. Fully local (no network).
-  const OPTIMIZER_MIN_CHARS = 200;   // only analyze longer prompts
-  const OPTIMIZER_MIN_TOKENS = 5;    // only suggest if it saves something real
+  const OPTIMIZER_MIN_CHARS = 150;   // only analyze longer prompts
+  const OPTIMIZER_MIN_TOKENS = 3;    // only suggest if it saves something real
   const OPTIMIZER_DEBOUNCE_MS = 600;
   let optimizerTimer = null;
   let optimizerActiveInput = null;
@@ -389,7 +389,10 @@
   function getInputText(el) {
     if (!el) return '';
     if (el.tagName === 'TEXTAREA') return el.value || '';
-    return el.textContent || '';
+    // For contenteditable, walk up to the actual editable root in case we
+    // received a child element (e.g. a <p> inside ProseMirror).
+    const root = el.isContentEditable ? el : (el.closest?.('[contenteditable="true"]') || el);
+    return root.textContent || '';
   }
 
   function setInputText(el, text) {
@@ -467,8 +470,13 @@
     injectOptimizerChip();
     // Single delegated listener — the composer element may be re-created.
     document.addEventListener('input', (e) => {
-      const el = e.target;
-      if (!el || !el.matches?.(adapter.inputSelector)) return;
+      // The input event often fires on a child of the contenteditable (e.g. a <p>
+      // inside ProseMirror). Walk up to find the actual input element.
+      const target = e.target;
+      const el = target.matches?.(adapter.inputSelector)
+        ? target
+        : target.closest?.(adapter.inputSelector) || null;
+      if (!el) return;
       clearTimeout(optimizerTimer);
       optimizerTimer = setTimeout(() => analyzeInput(el), OPTIMIZER_DEBOUNCE_MS);
     }, true);

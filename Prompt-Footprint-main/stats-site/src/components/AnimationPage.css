@@ -31,6 +31,10 @@
   z-index: 0;
 }
 
+.anim-hero-gradient-css {
+  background: linear-gradient(135deg, #FAF0E0 0%, #D4C5A9 30%, #B8A882 60%, #8B7355 100%);
+}
+
 .anim-hero-spline {
   position: absolute;
   right: -40px;
