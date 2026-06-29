@@ -50,7 +50,11 @@
     hostMatches: ['chatgpt.com', 'chat.openai.com'],
     rootSelector: 'main',
     messageSelector: '[data-message-author-role]',
-    inputSelector: '#prompt-textarea, [contenteditable="true"][data-lexical-editor]',
+    inputSelector: '#prompt-textarea, [contenteditable="true"][data-lexical-editor], textarea[data-id]',
+    // The Stop button only exists while a response is streaming, so its
+    // presence is the most reliable "model is generating" signal.
+    stopSelector: 'button[data-testid="stop-button"], button[aria-label*="Stop" i]',
+    sendSelector: 'button[data-testid="send-button"], #composer-submit-button, button[aria-label*="Send" i]',
     getRole(el) {
       return el.getAttribute?.('data-message-author-role') || null;
     },
@@ -61,6 +65,12 @@
       const msgs = document.querySelectorAll('[data-message-author-role="assistant"]');
       return msgs[msgs.length - 1] || null;
     },
+    isGenerating() {
+      return !!document.querySelector(this.stopSelector);
+    },
+    getSendButton() {
+      return document.querySelector(this.sendSelector) || null;
+    },
     extractText,
   };
 
@@ -69,7 +79,9 @@
   // assistant turns inside elements carrying the .font-claude-message class.
   // Claude does not expose a per-message id, so we assign our own.
   const CLAUDE_USER = '[data-testid="user-message"]';
-  const CLAUDE_ASSISTANT = '.font-claude-message, [data-testid="assistant-message"]';
+  // Keep the historical class + testid selectors, plus a streaming-content
+  // fallback, so a class rename doesn't silently break assistant capture.
+  const CLAUDE_ASSISTANT = '.font-claude-message, [data-testid="assistant-message"], [data-is-streaming] .font-claude-message, div[data-is-streaming]';
   const claude = {
     id: 'claude',
     name: 'Claude',
@@ -77,6 +89,8 @@
     rootSelector: 'main',
     messageSelector: `${CLAUDE_USER}, ${CLAUDE_ASSISTANT}`,
     inputSelector: 'div[contenteditable="true"].ProseMirror, div[contenteditable="true"]',
+    stopSelector: 'button[aria-label*="Stop" i]',
+    sendSelector: 'button[aria-label*="Send" i]',
     getRole(el) {
       if (el.matches?.(CLAUDE_USER)) return 'user';
       if (el.matches?.(CLAUDE_ASSISTANT)) return 'assistant';
@@ -89,8 +103,17 @@
       return assignPfId(el);
     },
     getLatestAssistant() {
-      const msgs = document.querySelectorAll(CLAUDE_ASSISTANT);
+      const msgs = document.querySelectorAll('.font-claude-message, [data-testid="assistant-message"]');
       return msgs[msgs.length - 1] || null;
+    },
+    isGenerating() {
+      // Claude marks the streaming turn with data-is-streaming="true"; the Stop
+      // button is the cross-version fallback.
+      return !!document.querySelector('[data-is-streaming="true"]') ||
+             !!document.querySelector(this.stopSelector);
+    },
+    getSendButton() {
+      return document.querySelector(this.sendSelector) || null;
     },
     extractText,
   };

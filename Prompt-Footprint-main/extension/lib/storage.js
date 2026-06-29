@@ -27,6 +27,7 @@
   const USER_ID_KEY = 'pf_userId';
   const CONFIG_KEY = 'pf_config';
   const SESSION_PREFIX = 'pf_session_';
+  const SAVINGS_KEY = 'pf_savings';
 
   const DEFAULT_CONFIG = { overlayEnabled: true, energyPerTokenMultiplier: 1.0 };
 
@@ -175,6 +176,60 @@
     return computePlatformBreakdown(sessions);
   }
 
+  // ── Savings (prompt-optimizer Apply clicks) ──────────────────────────────
+  // Tracks ONLY savings the user actually realized by clicking "Apply" on a
+  // suggestion — never ignored suggestions. Aggregated totals plus a per-day
+  // series so the dashboard can chart savings over time.
+  function emptySavings() {
+    return {
+      applyCount: 0,
+      totalTokensSaved: 0,
+      totalEnergyWh: 0,
+      totalWaterMl: 0,
+      totalCo2G: 0,
+      daily: {},
+    };
+  }
+
+  async function getSavings() {
+    const res = await getLocal([SAVINGS_KEY]);
+    return { ...emptySavings(), ...(res[SAVINGS_KEY] || {}) };
+  }
+
+  // Merge one Apply event into the aggregate. `entry` carries the realized
+  // savings for that click; missing fields default to 0.
+  function mergeSavings(current, entry, day) {
+    const s = { ...emptySavings(), ...(current || {}) };
+    const tokens = entry.savedTokens || 0;
+    const energyWh = entry.savedEnergyWh || 0;
+    const waterMl = entry.savedWaterMl || 0;
+    const co2G = entry.savedCo2G || 0;
+
+    s.applyCount += 1;
+    s.totalTokensSaved += tokens;
+    s.totalEnergyWh += energyWh;
+    s.totalWaterMl += waterMl;
+    s.totalCo2G += co2G;
+
+    const key = day || new Date().toISOString().slice(0, 10);
+    const bucket = s.daily[key] || { count: 0, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0 };
+    bucket.count += 1;
+    bucket.tokens += tokens;
+    bucket.energyWh += energyWh;
+    bucket.waterMl += waterMl;
+    bucket.co2G += co2G;
+    s.daily = { ...s.daily, [key]: bucket };
+    return s;
+  }
+
+  async function addSavings(entry) {
+    if (!entry) return null;
+    const current = await getSavings();
+    const next = mergeSavings(current, entry);
+    await setLocal({ [SAVINGS_KEY]: next });
+    return next;
+  }
+
   // ── Pure aggregation helpers (unit-testable, no chrome dependency) ─────────
   function computeTotals(sessions) {
     return sessions.reduce(
@@ -257,6 +312,7 @@
     USER_ID_KEY,
     CONFIG_KEY,
     SESSION_PREFIX,
+    SAVINGS_KEY,
     DEFAULT_CONFIG,
     hasChrome,
     getUserId,
@@ -269,7 +325,11 @@
     getSessions,
     getWeeklyStats,
     getPlatformBreakdown,
+    getSavings,
+    addSavings,
     // pure helpers
+    emptySavings,
+    mergeSavings,
     computeTotals,
     computeWeeklyStats,
     computePlatformBreakdown,

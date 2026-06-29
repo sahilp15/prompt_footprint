@@ -9,9 +9,10 @@
 //
 // There is no remote backend anymore (the project is local-first).
 
-import { demoSessions, demoQueries, demoWeekly } from './demoData';
+import { demoSessions, demoQueries, demoWeekly, demoSavings } from './demoData';
 
 const SESSION_PREFIX = 'pf_session_';
+const SAVINGS_KEY = 'pf_savings';
 
 export function isExtensionContext() {
   return typeof chrome !== 'undefined' && !!chrome.storage && !!chrome.storage.local;
@@ -84,4 +85,23 @@ export async function fetchQueries(sessionId) {
     return s ? s.queries || [] : [];
   }
   return demoQueries(sessionId);
+}
+
+const EMPTY_SAVINGS = {
+  applyCount: 0,
+  totalTokensSaved: 0,
+  totalEnergyWh: 0,
+  totalWaterMl: 0,
+  totalCo2G: 0,
+  daily: {},
+};
+
+// Savings the user realized by clicking "Apply" on optimizer suggestions.
+// Written by the content script under the `pf_savings` key.
+export async function fetchSavings() {
+  if (isExtensionContext()) {
+    const all = await getAllLocal();
+    return { ...EMPTY_SAVINGS, ...(all[SAVINGS_KEY] || {}) };
+  }
+  return demoSavings();
 }

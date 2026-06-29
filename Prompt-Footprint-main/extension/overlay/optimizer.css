@@ -1,4 +1,6 @@
-/* PromptFootprint — prompt optimizer suggestion chip */
+/* PromptFootprint — prompt optimizer suggestion chip
+   Branded to match the PromptFootprint site/popup: warm parchment surface,
+   Source Serif body, JetBrains Mono for figures, earthy-green accents. */
 
 #pf-optimizer-chip {
   position: fixed;
@@ -7,13 +9,13 @@
   transform: translateX(-50%) translateY(8px);
   z-index: 2147483646;
   width: min(440px, calc(100vw - 32px));
-  background: #ffffff;
-  color: #1f2937;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(250, 247, 240, 0.98);
+  color: #2C1810;
+  border: 1px solid #D4C5A9;
   border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 8px 40px rgba(44, 24, 16, 0.18);
   padding: 14px 16px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Source Serif 4', serif;
   font-size: 13px;
   line-height: 1.45;
   opacity: 0;
@@ -27,46 +29,63 @@
   pointer-events: auto;
 }
 
+/* When dragged, the chip is pinned via left/top, so neutralize the centering
+   transform and disable the slide transition for direct tracking. */
+#pf-optimizer-chip.pf-opt-dragging {
+  transition: none;
+}
+
 .pf-opt-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
   font-weight: 600;
-  color: #5b7c3a;
+  color: #5B7C3A;
   margin-bottom: 6px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 
+#pf-optimizer-chip.pf-opt-dragging .pf-opt-head { cursor: grabbing; }
+
 .pf-opt-badge {
-  font-size: 10.5px;
-  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: #6b7280;
-  background: #f0efea;
+  color: #8B7355;
+  background: #EDE8DC;
   border-radius: 999px;
   padding: 2px 8px;
 }
 
 .pf-opt-badge-ai {
   color: #fff;
-  background: linear-gradient(135deg, #6d5ae6, #8b5cf6);
+  background: #5B7C3A;
 }
 
 .pf-opt-savings {
-  color: #374151;
+  color: #5C4A3A;
   margin-bottom: 8px;
 }
 
-.pf-opt-savings strong { color: #5b7c3a; }
+.pf-opt-savings strong {
+  color: #5B7C3A;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
 
 .pf-opt-preview {
-  background: #f6f5f1;
+  background: #F5F0E8;
+  border: 1px solid #E8E0D0;
   border-radius: 8px;
   padding: 8px 10px;
   max-height: 96px;
   overflow-y: auto;
-  color: #4b5563;
+  color: #5C4A3A;
   font-size: 12.5px;
   white-space: pre-wrap;
   margin-bottom: 10px;
@@ -79,23 +98,25 @@
 }
 
 .pf-opt-actions button {
-  font: inherit;
+  font-family: 'Source Serif 4', serif;
+  font-size: 13px;
   font-weight: 600;
   border-radius: 8px;
   padding: 6px 14px;
   cursor: pointer;
   border: 1px solid transparent;
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 #pf-opt-apply {
-  background: #5b7c3a;
+  background: #5B7C3A;
   color: #fff;
 }
-#pf-opt-apply:hover { background: #4d6a31; }
+#pf-opt-apply:hover { background: #4A6830; transform: translateY(-1px); }
 
 #pf-opt-dismiss {
   background: transparent;
-  color: #6b7280;
-  border-color: rgba(0, 0, 0, 0.12);
+  color: #8B7355;
+  border-color: #D4C5A9;
 }
-#pf-opt-dismiss:hover { background: #f3f4f6; }
+#pf-opt-dismiss:hover { background: #EDE8DC; }

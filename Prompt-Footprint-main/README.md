@@ -118,7 +118,13 @@ data only when opened as the extension's dashboard.
 - **No prompt or response text is ever stored** — only token counts, timing, and
   computed metrics.
 - Each user gets an anonymous UUID generated on first install.
-- All data lives **on your device**; nothing is transmitted to any server.
+- All tracking data lives **on your device** (`chrome.storage.local`).
+- **Exception:** the optional AI rewrite tier of the Energy Saver sends your
+  in-progress draft prompt to an external optimization proxy to generate a
+  shorter-prompt suggestion. See [`docs/PRIVACY.md`](docs/PRIVACY.md) for the full
+  policy and Chrome Web Store readiness checklist, and
+  [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md) for the (proposed, not yet built) optional
+  login/sync design. Manual test steps: [`docs/TESTING.md`](docs/TESTING.md).
 
 ## Adding a platform
 

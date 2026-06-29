@@ -15,19 +15,28 @@
 
   let currentSessionId = null;
   let userId = null;
-  let config = { overlayEnabled: true, energyPerTokenMultiplier: 1.0 };
+  let config = { overlayEnabled: true, energyPerTokenMultiplier: 1.0, debug: false };
   let processedMessageIds = new Set();
   let pendingUserMessage = null;
+  let lastSubmitAt = 0;               // timestamp of the last submit-hook capture
+  let lastFinalizedText = '';         // guard against finalizing the same response twice
   let sessionStats = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0 };
   let lastQueryImpact = null;
+
+  // Verbose logging is opt-in (pf_config.debug) so production stays quiet.
+  function log(...args) {
+    if (config.debug) console.log('[PromptFootprint]', ...args);
+  }
 
   // Response capture is POLLING-based, not mutation-based. ChatGPT and Claude
   // stream responses by replacing DOM nodes (childList) rather than mutating
   // text nodes (characterData), so a characterData debounce misses most of the
   // stream. Instead we poll the latest assistant element's text and only
-  // finalize once it has stopped growing for SETTLE_DELAY_MS.
+  // finalize once it has stopped growing for SETTLE_DELAY_MS *and* the platform
+  // is no longer generating (Stop button gone).
   const RESPONSE_POLL_MS = 500;       // how often to sample the assistant text
-  const SETTLE_DELAY_MS = 2500;       // text must be stable this long to finalize
+  const SETTLE_DELAY_MS = 2000;       // text must be stable this long to finalize
+  const SUBMIT_DEDUP_MS = 3000;       // ignore observer user-bubble within this of a submit
   const MAX_NO_RESPONSE_MS = 30000;   // give up if no assistant text ever appears
   const HARD_CAP_MS = 240000;         // force-finalize a never-settling response
   let responseWatchTimer = null;
@@ -59,9 +68,44 @@
     }
 
     startObserver();
+    setupSubmitHook();
     setupPromptOptimizer();
     startWatchdog();
-    console.log(`[PromptFootprint] Initialized on ${adapter.name}. Session:`, currentSessionId);
+    log(`Initialized on ${adapter.name}. Session:`, currentSessionId);
+  }
+
+  // ── Submit hook (primary user-prompt trigger) ───────────────────────────--
+  // Capturing the prompt at submit time is resilient to chat-bubble selector
+  // drift: we read the composer text the instant the user sends, before the
+  // host UI clears it. The MutationObserver remains a fallback for programmatic
+  // submits; a short dedup window stops the two paths from double-counting.
+  function setupSubmitHook() {
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      const el = e.target;
+      if (!el || !el.matches?.(adapter.inputSelector) &&
+          !el.closest?.(adapter.inputSelector)) return;
+      captureSubmittedPrompt();
+    }, true);
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target?.closest?.(adapter.sendSelector || 'button');
+      if (!btn) return;
+      if (adapter.sendSelector && !btn.matches?.(adapter.sendSelector) &&
+          !btn.closest?.(adapter.sendSelector)) return;
+      captureSubmittedPrompt();
+    }, true);
+  }
+
+  function captureSubmittedPrompt() {
+    const input = document.querySelector(adapter.inputSelector);
+    const text = input ? getInputText(input).trim() : '';
+    if (!text) return;
+    lastSubmitAt = Date.now();
+    pendingUserMessage = { id: `submit-${lastSubmitAt}`, text, startTime: lastSubmitAt };
+    updateFloatingStatus('recording');
+    startResponseWatch();
+    log('Prompt captured via submit hook:', text.length, 'chars');
   }
 
   // ── Robustness watchdog ────────────────────────────────────────────────--
@@ -126,7 +170,7 @@
     const observeTarget = () => {
       if (!document.body) return false;
       observer.observe(document.body, { childList: true, subtree: true });
-      console.log('[PromptFootprint] Observer attached to document.body');
+      log('Observer attached to document.body');
       return true;
     };
     if (!observeTarget()) {
@@ -178,8 +222,13 @@
       const text = adapter.extractText(el);
       if (!text) return;
 
-      pendingUserMessage = { id: messageId, text, startTime: Date.now() };
       processedMessageIds.add(messageId);
+
+      // The submit hook is the primary trigger; if it fired moments ago this is
+      // the same turn surfacing in the DOM, so don't start a second capture.
+      if (Date.now() - lastSubmitAt < SUBMIT_DEDUP_MS || pendingUserMessage) return;
+
+      pendingUserMessage = { id: messageId, text, startTime: Date.now() };
       updateFloatingStatus('recording');
       startResponseWatch();
     });
@@ -213,7 +262,15 @@
       return;
     }
 
-    // Stable for long enough → finalize.
+    // Model is still working (thinking/streaming) even if the visible text is
+    // momentarily stable → keep the stability clock from advancing.
+    const generating = typeof adapter.isGenerating === 'function' && adapter.isGenerating();
+    if (generating) {
+      responseWatch.lastChange = now;
+      return;
+    }
+
+    // Stable for long enough AND not generating → finalize.
     if (text && now - responseWatch.lastChange >= SETTLE_DELAY_MS) {
       finalizeResponse(latest, text, responseWatch.lastChange);
       return;
@@ -239,7 +296,13 @@
     const msgId = latestEl ? adapter.getMessageId(latestEl) : null;
     stopResponseWatch();
     pendingUserMessage = null;
+
+    // Guard against logging the same assistant response twice (e.g. observer +
+    // poll racing, or a re-render re-triggering capture).
+    if (text && text === lastFinalizedText) { updateFloatingStatus('saved'); return; }
+    lastFinalizedText = text;
     if (msgId) processedMessageIds.add(msgId);
+
     const responseTimeMs = Math.max(0, endTime - startTime);
     processQuery(prompt, text, responseTimeMs);
   }
@@ -278,7 +341,7 @@
 
     updateFloatingStatus('saved');
     updateModalStats();
-    console.log('[PromptFootprint] Query logged:', { ...impact, responseTimeMs });
+    log('Query logged:', { ...impact, responseTimeMs });
   }
 
   // ── Floating Overlay ───────────────────────────────────────────────────--
@@ -509,8 +572,8 @@
     const chip = document.createElement('div');
     chip.id = 'pf-optimizer-chip';
     chip.innerHTML = `
-      <div class="pf-opt-head">
-        <span>✦ Shorter prompt suggested</span>
+      <div class="pf-opt-head" id="pf-opt-drag">
+        <span class="pf-opt-title">✦ Shorter prompt suggested</span>
         <span class="pf-opt-badge" id="pf-opt-badge">Local</span>
       </div>
       <div class="pf-opt-savings" id="pf-opt-savings"></div>
@@ -521,13 +584,99 @@
       </div>
     `;
     document.body.appendChild(chip);
+    restoreOptimizerPosition(chip);
+    makeOptimizerDraggable(chip);
     document.getElementById('pf-opt-dismiss').addEventListener('click', hideOptimizerChip);
     document.getElementById('pf-opt-apply').addEventListener('click', () => {
       if (optimizerActiveInput && optimizerSuggestion) {
         setInputText(optimizerActiveInput, optimizerSuggestion.shortened);
+        recordSavings(optimizerSuggestion);
       }
       hideOptimizerChip();
     });
+  }
+
+  // Persist savings the user actually realized by clicking Apply (never ignored
+  // suggestions) so the dashboard's Savings tab can total them.
+  function recordSavings(result) {
+    if (!result || !extAlive() || !PFStorage.addSavings) return;
+    try {
+      PFStorage.addSavings({
+        savedTokens: result.savedTokens || 0,
+        savedEnergyWh: result.savedEnergyWh || 0,
+        savedWaterMl: result.savedWaterMl || 0,
+        savedCo2G: result.savedCo2G || 0,
+      });
+      log('Savings recorded:', result.savedTokens, 'tokens');
+    } catch (_) {
+      // Extension context invalidated — non-fatal.
+    }
+  }
+
+  // ── Draggable chip ──────────────────────────────────────────────────────--
+  // The chip defaults above the composer but the user can drag it anywhere by
+  // its header; the position is remembered across pages.
+  function makeOptimizerDraggable(chip) {
+    const handle = chip.querySelector('#pf-opt-drag');
+    if (!handle) return;
+    let startX = 0, startY = 0, originLeft = 0, originTop = 0, dragging = false;
+
+    handle.addEventListener('pointerdown', (e) => {
+      // Ignore drags that start on interactive children (e.g. the badge).
+      dragging = true;
+      const rect = chip.getBoundingClientRect();
+      originLeft = rect.left;
+      originTop = rect.top;
+      startX = e.clientX;
+      startY = e.clientY;
+      handle.setPointerCapture?.(e.pointerId);
+      chip.classList.add('pf-opt-dragging');
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const w = chip.offsetWidth, h = chip.offsetHeight;
+      const left = Math.max(8, Math.min(window.innerWidth - w - 8, originLeft + (e.clientX - startX)));
+      const top = Math.max(8, Math.min(window.innerHeight - h - 8, originTop + (e.clientY - startY)));
+      applyOptimizerPosition(chip, left, top);
+    });
+    const end = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      chip.classList.remove('pf-opt-dragging');
+      handle.releasePointerCapture?.(e.pointerId);
+      const rect = chip.getBoundingClientRect();
+      saveOptimizerPosition(rect.left, rect.top);
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
+  // Pin the chip to explicit coordinates (overriding the CSS bottom/centered default).
+  function applyOptimizerPosition(chip, left, top) {
+    chip.style.left = `${left}px`;
+    chip.style.top = `${top}px`;
+    chip.style.bottom = 'auto';
+    chip.style.transform = 'none';
+  }
+
+  function saveOptimizerPosition(left, top) {
+    if (!extAlive()) return;
+    try { chrome.storage.local.set({ pf_optimizer_pos: { left, top } }); } catch (_) {}
+  }
+
+  function restoreOptimizerPosition(chip) {
+    if (!extAlive()) return;
+    try {
+      chrome.storage.local.get(['pf_optimizer_pos'], (res) => {
+        void chrome.runtime.lastError;
+        const p = res && res.pf_optimizer_pos;
+        if (p && typeof p.left === 'number' && typeof p.top === 'number') {
+          const left = Math.max(8, Math.min(window.innerWidth - 60, p.left));
+          const top = Math.max(8, Math.min(window.innerHeight - 60, p.top));
+          applyOptimizerPosition(chip, left, top);
+        }
+      });
+    } catch (_) {}
   }
 
   function hideOptimizerChip() {
@@ -543,9 +692,12 @@
     const savingsEl = document.getElementById('pf-opt-savings');
     const previewEl = document.getElementById('pf-opt-preview');
     const badgeEl = document.getElementById('pf-opt-badge');
+    const typoNote = result.typosFixed > 0
+      ? ` · <strong>${result.typosFixed} ${result.typosFixed === 1 ? 'typo' : 'typos'}</strong> fixed`
+      : '';
     savingsEl.innerHTML =
       `Save <strong>~${result.savedTokens} tokens</strong> (${result.savedPct}%) · ` +
-      `${_fmtWater(result.savedWaterMl)} · ${_fmtEnergy(result.savedEnergyWh)}`;
+      `${_fmtWater(result.savedWaterMl)} · ${_fmtEnergy(result.savedEnergyWh)}${typoNote}`;
     previewEl.textContent = result.shortened;
     if (badgeEl) {
       badgeEl.textContent = source === 'ai' ? 'AI' : 'Local';
@@ -562,7 +714,7 @@
       return;
     }
     const result = PFPromptOptimizer.analyze(text, adapter.id);
-    if (result.changed && result.savedTokens >= OPTIMIZER_MIN_TOKENS) {
+    if (result.changed && (result.savedTokens >= OPTIMIZER_MIN_TOKENS || result.typosFixed > 0)) {
       optimizerActiveInput = el;
       optimizerSuggestion = result;
       optimizerSource = 'local';

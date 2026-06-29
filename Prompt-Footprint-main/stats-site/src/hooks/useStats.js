@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchWeeklyStats, fetchSessions } from '../lib/api';
+import { fetchWeeklyStats, fetchSessions, fetchSavings } from '../lib/api';
 
 // The data layer resolves context itself (extension local data vs. demo),
 // so the hooks no longer require a userId.
@@ -32,4 +32,19 @@ export function useSessions() {
   }, []);
 
   return { sessions, loading, error };
+}
+
+export function useSavings() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchSavings()
+      .then(setData)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return { data, loading, error };
 }

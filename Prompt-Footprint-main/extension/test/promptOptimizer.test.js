@@ -66,3 +66,31 @@ test('collapseRepeats removes duplicate words', () => {
   assert.ok(!/\bthe the\b/i.test(out));
   assert.ok(!/\bto to\b/i.test(out));
 });
+
+test('shorten removes conversational filler words and phrases', () => {
+  const out = O.shorten('So like, you know, I mean basically just sort kind of the array');
+  assert.ok(!/\blike\b/i.test(out));
+  assert.ok(!/\byou know\b/i.test(out));
+  assert.ok(!/\bi mean\b/i.test(out));
+  assert.ok(!/\bkind of\b/i.test(out));
+  assert.ok(/sort/i.test(out) && /array/i.test(out));
+});
+
+test('fixTypos corrects common misspellings and counts them', () => {
+  const { text, count } = O.fixTypos('I recieve teh seperate files');
+  assert.ok(/receive/.test(text));
+  assert.ok(/\bthe\b/.test(text));
+  assert.ok(/separate/.test(text));
+  assert.strictEqual(count, 3);
+});
+
+test('fixTypos is a no-op for clean text', () => {
+  const { count } = O.fixTypos('Summarize this article in three points.');
+  assert.strictEqual(count, 0);
+});
+
+test('analyze reports typosFixed and flags change for typo-only prompts', () => {
+  const r = O.analyze('Summarize teh article', 'chatgpt');
+  assert.strictEqual(r.typosFixed, 1);
+  assert.ok(r.changed);
+});
