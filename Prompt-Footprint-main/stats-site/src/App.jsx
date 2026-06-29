@@ -1,37 +1,13 @@
-import { Component } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, Zap, BarChart3, Sparkles, BookOpen, GraduationCap, Trophy } from 'lucide-react'
+import { Droplets, Zap, BarChart3, Leaf, BookOpen, GraduationCap, Trophy } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
 import SessionList from './components/SessionList'
-import AnimationPage from './components/AnimationPage'
+import Savings from './components/Savings'
 import HowItWorks from './components/HowItWorks'
 import Guide from './components/Guide'
 import Awards from './components/Awards'
 import { isDemoMode } from './lib/api'
 import './App.css'
-
-class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { hasError: false }
-  }
-  static getDerivedStateFromError() {
-    return { hasError: true }
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: '2rem', textAlign: 'center', color: '#6B7D5E' }}>
-          <p>3D animations couldn't load in this context.</p>
-          <button onClick={() => this.setState({ hasError: false })} style={{ marginTop: '1rem', padding: '0.5rem 1rem', cursor: 'pointer' }}>
-            Try again
-          </button>
-        </div>
-      )
-    }
-    return this.props.children
-  }
-}
 
 function App() {
   const demo = isDemoMode()
@@ -51,8 +27,8 @@ function App() {
             <NavLink to="/sessions" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Zap size={16} /><span>Sessions</span>
             </NavLink>
-            <NavLink to="/animations" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <Sparkles size={16} /><span>Visualize</span>
+            <NavLink to="/savings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              <Leaf size={16} /><span>Savings</span>
             </NavLink>
             <NavLink to="/learn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <GraduationCap size={16} /><span>Learn</span>
@@ -78,7 +54,7 @@ function App() {
         <Routes>
           <Route path="/" element={<WeeklyStats />} />
           <Route path="/sessions" element={<SessionList />} />
-          <Route path="/animations" element={<ErrorBoundary><AnimationPage /></ErrorBoundary>} />
+          <Route path="/savings" element={<Savings />} />
           <Route path="/learn" element={<Guide />} />
           <Route path="/how" element={<HowItWorks />} />
           <Route path="/awards" element={<Awards />} />

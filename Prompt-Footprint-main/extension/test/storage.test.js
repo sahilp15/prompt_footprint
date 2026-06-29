@@ -56,3 +56,25 @@ test('computePlatformBreakdown groups by platform', () => {
   assert.strictEqual(map.chatgpt.sessionCount, 2);
   assert.strictEqual(map.claude.totalTokens, 50);
 });
+
+test('mergeSavings accumulates totals, applyCount and per-day buckets', () => {
+  let s = S.emptySavings();
+  s = S.mergeSavings(s, { savedTokens: 10, savedEnergyWh: 0.01, savedWaterMl: 0.03, savedCo2G: 0.004 }, '2026-06-29');
+  s = S.mergeSavings(s, { savedTokens: 5, savedEnergyWh: 0.005, savedWaterMl: 0.015, savedCo2G: 0.002 }, '2026-06-29');
+  s = S.mergeSavings(s, { savedTokens: 7, savedEnergyWh: 0.007, savedWaterMl: 0.021, savedCo2G: 0.003 }, '2026-06-30');
+
+  assert.strictEqual(s.applyCount, 3);
+  assert.strictEqual(s.totalTokensSaved, 22);
+  assert.ok(Math.abs(s.totalEnergyWh - 0.022) < 1e-9);
+  assert.strictEqual(s.daily['2026-06-29'].count, 2);
+  assert.strictEqual(s.daily['2026-06-29'].tokens, 15);
+  assert.strictEqual(s.daily['2026-06-30'].count, 1);
+  assert.strictEqual(s.daily['2026-06-30'].tokens, 7);
+});
+
+test('emptySavings is a clean zeroed aggregate', () => {
+  const s = S.emptySavings();
+  assert.strictEqual(s.applyCount, 0);
+  assert.strictEqual(s.totalTokensSaved, 0);
+  assert.deepStrictEqual(s.daily, {});
+});

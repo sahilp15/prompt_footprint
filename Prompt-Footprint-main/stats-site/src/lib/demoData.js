@@ -79,6 +79,33 @@ export function demoQueries(sessionId) {
   return s ? s.queries : [];
 }
 
+// Sample Apply-savings for the public showcase: a week of optimizer usage.
+export function demoSavings(now = Date.now()) {
+  const perDay = [
+    { count: 2, tokens: 38 },
+    { count: 1, tokens: 22 },
+    { count: 3, tokens: 71 },
+    { count: 0, tokens: 0 },
+    { count: 2, tokens: 49 },
+    { count: 4, tokens: 96 },
+    { count: 1, tokens: 18 },
+  ];
+  const daily = {};
+  const totals = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
+  for (let i = 6; i >= 0; i--) {
+    const key = new Date(now - i * DAY).toISOString().slice(0, 10);
+    const spec = perDay[6 - i];
+    const i2 = impact(spec.tokens);
+    daily[key] = { count: spec.count, tokens: spec.tokens, energyWh: i2.energyWh, waterMl: i2.waterMl, co2G: i2.co2G };
+    totals.applyCount += spec.count;
+    totals.totalTokensSaved += spec.tokens;
+    totals.totalEnergyWh += i2.energyWh;
+    totals.totalWaterMl += i2.waterMl;
+    totals.totalCo2G += i2.co2G;
+  }
+  return { ...totals, daily };
+}
+
 export function demoWeekly() {
   const now = Date.now();
   const sessions = buildSessions(now);

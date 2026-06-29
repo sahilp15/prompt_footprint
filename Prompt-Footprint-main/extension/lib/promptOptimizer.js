@@ -100,7 +100,61 @@
     /\bvery\b/gi,
     /\bquite\b/gi,
     /\bsimply\b/gi,
+    /\blike\b/gi,
+    /\bum+\b/gi,
+    /\buh+\b/gi,
   ];
+
+  // Conversational filler phrases (multi-word; removed wholesale).
+  const FILLER_FILLER_PHRASES = [
+    /\byou know\b/gi,
+    /\bi mean\b/gi,
+    /\bsort of\b/gi,
+    /\bkind of\b/gi,
+  ];
+
+  // Common misspellings → correct spelling. Offline and curated (no dictionary).
+  // Case-insensitive whole-word match; this is intentionally conservative —
+  // only unambiguous, high-frequency typos that never change meaning.
+  const COMMON_TYPOS = [
+    [/\bteh\b/gi, 'the'], [/\bthe the\b/gi, 'the'], [/\badn\b/gi, 'and'],
+    [/\brecieve\b/gi, 'receive'], [/\brecieved\b/gi, 'received'],
+    [/\bseperate\b/gi, 'separate'], [/\bdefinately\b/gi, 'definitely'],
+    [/\boccured\b/gi, 'occurred'], [/\boccuring\b/gi, 'occurring'],
+    [/\buntill\b/gi, 'until'], [/\bwich\b/gi, 'which'], [/\bthier\b/gi, 'their'],
+    [/\bbecuase\b/gi, 'because'], [/\bbecasue\b/gi, 'because'], [/\bbecuse\b/gi, 'because'],
+    [/\bcalender\b/gi, 'calendar'], [/\bcollegue\b/gi, 'colleague'],
+    [/\benviroment\b/gi, 'environment'], [/\bgovernment\b/gi, 'government'],
+    [/\bgaurantee\b/gi, 'guarantee'], [/\bbeleive\b/gi, 'believe'],
+    [/\bacheive\b/gi, 'achieve'],
+    [/\baccross\b/gi, 'across'], [/\bbasicly\b/gi, 'basically'],
+    [/\bcomming\b/gi, 'coming'], [/\bdoesnt\b/gi, "doesn't"], [/\bdont\b/gi, "don't"],
+    [/\bcant\b/gi, "can't"], [/\bwont\b/gi, "won't"],
+    [/\bexplaination\b/gi, 'explanation'], [/\bfreind\b/gi, 'friend'],
+    [/\bgrammer\b/gi, 'grammar'], [/\bneccessary\b/gi, 'necessary'],
+    [/\bnecesary\b/gi, 'necessary'], [/\bpriviledge\b/gi, 'privilege'],
+    [/\bpublically\b/gi, 'publicly'], [/\bquestionaire\b/gi, 'questionnaire'],
+    [/\bsucessful\b/gi, 'successful'], [/\btomatos\b/gi, 'tomatoes'],
+    [/\btruely\b/gi, 'truly'], [/\bwierd\b/gi, 'weird'],
+    [/\bwriteable\b/gi, 'writable'], [/\byoure\b/gi, "you're"], [/\bthats\b/gi, "that's"],
+  ];
+
+  // Count and apply typo fixes; returns { text, count }.
+  function fixTypos(text) {
+    let count = 0;
+    let out = text;
+    for (const [rx, rep] of COMMON_TYPOS) {
+      out = out.replace(rx, (m) => {
+        count += 1;
+        // Preserve leading capitalization of the original token.
+        if (m[0] === m[0].toUpperCase() && rep[0] !== rep[0].toUpperCase()) {
+          return rep[0].toUpperCase() + rep.slice(1);
+        }
+        return rep;
+      });
+    }
+    return { text: out, count };
+  }
 
   function normalizeWhitespace(text) {
     return text
@@ -121,8 +175,10 @@
   // Produce a shortened version of the prompt.
   function shorten(text) {
     if (!text || typeof text !== 'string') return '';
-    let out = text.replace(LEADING_GREETING, '');
+    let out = fixTypos(text).text;
+    out = out.replace(LEADING_GREETING, '');
     for (const rx of FILLER_PHRASES) out = out.replace(rx, ' ');
+    for (const rx of FILLER_FILLER_PHRASES) out = out.replace(rx, ' ');
     for (const [rx, rep] of PHRASE_REPLACEMENTS) out = out.replace(rx, rep);
     for (const rx of FILLER_WORDS) out = out.replace(rx, ' ');
     out = collapseRepeats(out);
@@ -144,11 +200,12 @@
     const savedTokens = Math.max(0, originalTokens - newTokens);
 
     const impact = _M.calculateImpact(savedTokens, { platform: platform || 'chatgpt' });
+    const typosFixed = fixTypos(original).count;
 
     return {
       original,
       shortened,
-      changed: shortened.trim() !== original.trim() && savedTokens > 0,
+      changed: (shortened.trim() !== original.trim() && savedTokens > 0) || typosFixed > 0,
       originalTokens,
       newTokens,
       savedTokens,
@@ -156,6 +213,7 @@
       savedEnergyWh: impact.energyWh,
       savedWaterMl: impact.waterMl,
       savedCo2G: impact.co2G,
+      typosFixed,
     };
   }
 
@@ -165,7 +223,7 @@
     return savings(original, shorten(original), platform);
   }
 
-  const PFPromptOptimizer = { shorten, analyze, savings, normalizeWhitespace };
+  const PFPromptOptimizer = { shorten, analyze, savings, normalizeWhitespace, fixTypos };
 
   if (root) root.PFPromptOptimizer = PFPromptOptimizer;
   if (typeof module !== 'undefined' && module.exports) module.exports = PFPromptOptimizer;

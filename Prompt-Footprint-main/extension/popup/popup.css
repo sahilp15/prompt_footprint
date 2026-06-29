@@ -171,3 +171,16 @@
 
 .pf-btn:hover { opacity: 0.88; transform: translateY(-1px); }
 .pf-btn:active { transform: translateY(0); }
+
+/* ── Disclosure ───────────────── */
+.pf-disclosure {
+  padding: 10px 16px 14px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--pf-text-muted);
+  border-top: 1px solid var(--pf-border-subtle);
+}
+.pf-disclosure a {
+  color: var(--pf-accent-green);
+  text-decoration: underline;
+}
