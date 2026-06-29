@@ -53,7 +53,7 @@ export default function WeeklyStats() {
   if (error) return (
     <div className="page-error">
       <Wind size={40} />
-      <p>Could not connect to server. Make sure the backend is running on port 3001.</p>
+      <p>Could not load stats: {error}</p>
     </div>
   )
 

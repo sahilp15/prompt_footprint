@@ -24,12 +24,14 @@
         "extension/lib/constants.js",
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",
+        "extension/lib/promptOptimizer.js",
         "extension/content.js"
       ],
       "css": [
         "extension/styles/fonts.css",
         "extension/overlay/floating.css",
-        "extension/overlay/modal.css"
+        "extension/overlay/modal.css",
+        "extension/overlay/optimizer.css"
       ],
       "run_at": "document_idle"
     }

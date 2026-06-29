@@ -22,6 +22,11 @@
   let sessionStats = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0 };
   let lastQueryImpact = null;
 
+  // How long to wait after the last streamed character before treating the
+  // assistant response as complete. Also subtracted from the measured
+  // response time so timing reflects generation, not this debounce window.
+  const SETTLE_DELAY_MS = 1500;
+
   // Initialize
   async function init() {
     // Inject overlay UI immediately — before any async/storage calls
@@ -48,6 +53,7 @@
     }
 
     startObserver();
+    setupPromptOptimizer();
     console.log(`[PromptFootprint] Initialized on ${adapter.name}. Session:`, currentSessionId);
   }
 
@@ -95,7 +101,7 @@
         // capture the FULL response, not just what arrived in the first 1.5s.
         if (responseDebounceTimer !== null && pendingUserMessage) {
           clearTimeout(responseDebounceTimer);
-          responseDebounceTimer = setTimeout(finalizeAssistantResponse, 1500);
+          responseDebounceTimer = setTimeout(finalizeAssistantResponse, SETTLE_DELAY_MS);
         }
       }
     }
@@ -131,7 +137,7 @@
       } else if (role === 'assistant' && pendingUserMessage) {
         // Debounce: wait for streaming to complete.
         clearTimeout(responseDebounceTimer);
-        responseDebounceTimer = setTimeout(finalizeAssistantResponse, 1500);
+        responseDebounceTimer = setTimeout(finalizeAssistantResponse, SETTLE_DELAY_MS);
       }
     });
   }
@@ -149,15 +155,20 @@
     if (!text) return;
 
     if (msgId) processedMessageIds.add(msgId);
-    const responseTimeMs = Date.now() - pendingUserMessage.startTime;
+    // Subtract the trailing streaming-settle wait so the measured time
+    // approximates generation time, not our debounce window.
+    const responseTimeMs = Math.max(0, Date.now() - pendingUserMessage.startTime - SETTLE_DELAY_MS);
     processQuery(pendingUserMessage.text, text, responseTimeMs);
     pendingUserMessage = null;
   }
 
   async function processQuery(promptText, responseText, responseTimeMs) {
     const multiplier = config.energyPerTokenMultiplier || 1.0;
-    // NOTE: Phase 3 makes this model platform- and response-time-aware.
-    const impact = calculateQueryImpact(promptText, responseText, multiplier);
+    const impact = calculateQueryImpact(promptText, responseText, {
+      platform: adapter.id,
+      responseTimeMs,
+      multiplier,
+    });
 
     lastQueryImpact = impact;
     sessionStats.totalTokens += impact.totalTokens;
@@ -363,6 +374,104 @@
     // Query count
     const countEl = document.getElementById('pf-query-count');
     if (countEl) countEl.textContent = `${sessionStats.queryCount} ${sessionStats.queryCount === 1 ? 'query' : 'queries'} this session`;
+  }
+
+  // ── Prompt optimizer ───────────────────────────────────────────────────--
+  // When the user types a long prompt, suggest a shorter version and show the
+  // estimated savings BEFORE they send. Fully local (no network).
+  const OPTIMIZER_MIN_CHARS = 200;   // only analyze longer prompts
+  const OPTIMIZER_MIN_TOKENS = 5;    // only suggest if it saves something real
+  const OPTIMIZER_DEBOUNCE_MS = 600;
+  let optimizerTimer = null;
+  let optimizerActiveInput = null;
+  let optimizerSuggestion = null;
+
+  function getInputText(el) {
+    if (!el) return '';
+    if (el.tagName === 'TEXTAREA') return el.value || '';
+    return el.textContent || '';
+  }
+
+  function setInputText(el, text) {
+    el.focus();
+    if (el.tagName === 'TEXTAREA') {
+      el.value = text;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    // contenteditable (ChatGPT / Claude): select all, then insertText so the
+    // host editor framework (Lexical / ProseMirror) registers the change.
+    const sel = window.getSelection();
+    sel.selectAllChildren(el);
+    document.execCommand('insertText', false, text);
+  }
+
+  function injectOptimizerChip() {
+    if (document.getElementById('pf-optimizer-chip')) return;
+    const chip = document.createElement('div');
+    chip.id = 'pf-optimizer-chip';
+    chip.innerHTML = `
+      <div class="pf-opt-head">✦ Shorter prompt suggested</div>
+      <div class="pf-opt-savings" id="pf-opt-savings"></div>
+      <div class="pf-opt-preview" id="pf-opt-preview"></div>
+      <div class="pf-opt-actions">
+        <button id="pf-opt-dismiss" type="button">Dismiss</button>
+        <button id="pf-opt-apply" type="button">Apply</button>
+      </div>
+    `;
+    document.body.appendChild(chip);
+    document.getElementById('pf-opt-dismiss').addEventListener('click', hideOptimizerChip);
+    document.getElementById('pf-opt-apply').addEventListener('click', () => {
+      if (optimizerActiveInput && optimizerSuggestion) {
+        setInputText(optimizerActiveInput, optimizerSuggestion.shortened);
+      }
+      hideOptimizerChip();
+    });
+  }
+
+  function hideOptimizerChip() {
+    const chip = document.getElementById('pf-optimizer-chip');
+    if (chip) chip.classList.remove('pf-opt-visible');
+    optimizerSuggestion = null;
+  }
+
+  function showOptimizerChip(result) {
+    const chip = document.getElementById('pf-optimizer-chip');
+    if (!chip) return;
+    const savingsEl = document.getElementById('pf-opt-savings');
+    const previewEl = document.getElementById('pf-opt-preview');
+    savingsEl.innerHTML =
+      `Save <strong>~${result.savedTokens} tokens</strong> (${result.savedPct}%) · ` +
+      `${_fmtWater(result.savedWaterMl)} · ${_fmtEnergy(result.savedEnergyWh)}`;
+    previewEl.textContent = result.shortened;
+    chip.classList.add('pf-opt-visible');
+  }
+
+  function analyzeInput(el) {
+    const text = getInputText(el);
+    if (text.length < OPTIMIZER_MIN_CHARS) {
+      hideOptimizerChip();
+      return;
+    }
+    const result = PFPromptOptimizer.analyze(text, adapter.id);
+    if (result.changed && result.savedTokens >= OPTIMIZER_MIN_TOKENS) {
+      optimizerActiveInput = el;
+      optimizerSuggestion = result;
+      showOptimizerChip(result);
+    } else {
+      hideOptimizerChip();
+    }
+  }
+
+  function setupPromptOptimizer() {
+    injectOptimizerChip();
+    // Single delegated listener — the composer element may be re-created.
+    document.addEventListener('input', (e) => {
+      const el = e.target;
+      if (!el || !el.matches?.(adapter.inputSelector)) return;
+      clearTimeout(optimizerTimer);
+      optimizerTimer = setTimeout(() => analyzeInput(el), OPTIMIZER_DEBOUNCE_MS);
+    }, true);
   }
 
   // Listen for config changes from popup

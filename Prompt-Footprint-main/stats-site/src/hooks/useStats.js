@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
-import { fetchWeeklyStats, fetchSessions, getUserIdFromUrl } from '../lib/api';
+import { fetchWeeklyStats, fetchSessions } from '../lib/api';
+
+// The data layer resolves context itself (extension local data vs. demo),
+// so the hooks no longer require a userId.
 
 export function useWeeklyStats() {
   const [data, setData] = useState(null);
@@ -7,13 +10,7 @@ export function useWeeklyStats() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const userId = getUserIdFromUrl();
-    if (!userId) {
-      setError('No userId provided in URL');
-      setLoading(false);
-      return;
-    }
-    fetchWeeklyStats(userId)
+    fetchWeeklyStats()
       .then(setData)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -28,13 +25,7 @@ export function useSessions() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const userId = getUserIdFromUrl();
-    if (!userId) {
-      setError('No userId provided in URL');
-      setLoading(false);
-      return;
-    }
-    fetchSessions(userId)
+    fetchSessions()
       .then(setSessions)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));

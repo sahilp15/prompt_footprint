@@ -1,0 +1,99 @@
+.guide-page { max-width: 920px; margin: 0 auto; }
+
+.guide-section { margin-top: 32px; }
+
+.guide-h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary, #2c1810);
+  margin-bottom: 16px;
+}
+.guide-h2-icon { color: var(--accent-amber, #c17f24); }
+
+.guide-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.guide-card {
+  display: flex;
+  gap: 14px;
+  padding: 18px;
+  background: var(--bg-secondary, #f5f0e8);
+  border: 1px solid var(--border-subtle, rgba(0,0,0,0.08));
+  border-radius: var(--radius, 12px);
+}
+
+.guide-card-icon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.guide-card-name {
+  font-weight: 700;
+  color: var(--text-primary, #2c1810);
+  margin-bottom: 4px;
+}
+
+.guide-card-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-secondary, #5c4a3a);
+}
+
+.guide-lead {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text-secondary, #5c4a3a);
+}
+.guide-lead strong { color: var(--text-primary, #2c1810); }
+
+.guide-tips {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.guide-tip {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-primary, #faf7f0);
+  border: 1px solid var(--border-subtle, rgba(0,0,0,0.08));
+  border-radius: var(--radius, 12px);
+}
+
+.guide-tip-icon { flex-shrink: 0; color: var(--accent-green, #5b7c3a); margin-top: 2px; }
+
+.guide-tip-title { font-weight: 700; color: var(--text-primary, #2c1810); margin-bottom: 3px; }
+
+.guide-tip-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary, #5c4a3a);
+}
+
+.guide-foot {
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-subtle, rgba(0,0,0,0.08));
+  font-size: 14px;
+  color: var(--text-muted, #8b7355);
+}
+.guide-foot strong { color: var(--accent-green, #5b7c3a); }
+
+@media (min-width: 720px) {
+  .guide-cards { grid-template-columns: 1fr 1fr; }
+  .guide-tips { grid-template-columns: 1fr 1fr; }
+}
