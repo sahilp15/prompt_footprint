@@ -9,9 +9,27 @@ npm test        # node:test suite (token estimation, optimizer, storage/savings,
 ## Load the extension
 1. `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the
    repo root (the folder containing `manifest.json`).
-2. (Optional) enable verbose logs: open DevTools on a chat tab and run
-   `chrome.storage.local.set({ pf_config: { overlayEnabled: true, energyPerTokenMultiplier: 1, debug: true } })`,
-   then reload the tab. Logs are prefixed `[PromptFootprint]`.
+2. Enable verbose logs: open the toolbar popup → turn on **Debug logging (dev)** (or run
+   `chrome.storage.local.set({ pf_config: { overlayEnabled: true, energyPerTokenMultiplier: 1, debug: true } })`
+   in a chat tab's console and reload). Logs are prefixed `[PromptFootprint]`.
+
+## ChatGPT lifecycle (the previously broken case — new chat + thinking/High mode)
+With Debug logging on and DevTools console open on the ChatGPT tab:
+1. **New chat**, model **High** (GPT-5.5). Type a prompt and **click send** (then repeat with
+   **Enter**). Expected console sequence:
+   - `prompt captured at submit — trigger=send-button len=… → generation started`
+   - `URL changed during active capture — keeping capture alive: …/c/<id>` (this is the bug fix:
+     the new-chat URL change no longer aborts capture)
+   - repeated `poll: still generating (signal=stop-button)` throughout "Thinking"/"Searching"
+   - `generation ended — assistant text len=… responseTimeMs=…`
+   - `storage write ok — session … tokens …`
+2. The floating pill stays **"Recording…"** through the entire thinking phase and flips to
+   **"Saved"** only after the final answer completes. It must **not** show "Saved" with 0 queries
+   mid-thinking.
+3. Dashboard → **Sessions**: exactly **one** new query with **non-zero prompt and response
+   tokens**; the query count increases by one (no duplicates).
+4. Repeat in an **existing** chat. Confirm a 0-token interaction is never saved (you'll see
+   `skip: 0-token interaction` only if it ever occurs).
 
 ## Tracking — ChatGPT (chatgpt.com) and Claude (claude.ai)
 Repeat on **both** sites:

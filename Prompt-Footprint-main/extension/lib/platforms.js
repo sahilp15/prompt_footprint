@@ -61,12 +61,39 @@
     getMessageId(el) {
       return el.getAttribute?.('data-message-id') || assignPfId(el);
     },
+    // Ordered list of signals that mean "ChatGPT is still working". Checked as a
+    // group (and logged) so the live DOM reveals the real attribute rather than
+    // relying on one guessed selector. A streaming-class check on the latest
+    // assistant turn covers builds where the Stop button markup changes.
+    generatingSignal() {
+      const stop = document.querySelector(this.stopSelector);
+      if (stop) return 'stop-button';
+      if (document.querySelector('.result-streaming, [data-message-author-role="assistant"] .result-streaming')) {
+        return 'result-streaming';
+      }
+      return null;
+    },
+    isGenerating() {
+      return !!this.generatingSignal();
+    },
+    // Positive "done" confirmation: the latest assistant turn has text, exposes
+    // its action toolbar (copy/regenerate appear only once complete), and no
+    // generation signal remains.
+    isComplete() {
+      if (this.isGenerating()) return false;
+      const latest = this.getLatestAssistant();
+      if (!latest) return false;
+      if (!extractText(latest)) return false;
+      const turn = latest.closest('[data-testid^="conversation-turn"]') || latest.parentElement || latest;
+      const toolbar = turn && (
+        turn.querySelector('[data-testid="copy-turn-action-button"]') ||
+        turn.querySelector('button[aria-label*="Copy" i]')
+      );
+      return !!toolbar;
+    },
     getLatestAssistant() {
       const msgs = document.querySelectorAll('[data-message-author-role="assistant"]');
       return msgs[msgs.length - 1] || null;
-    },
-    isGenerating() {
-      return !!document.querySelector(this.stopSelector);
     },
     getSendButton() {
       return document.querySelector(this.sendSelector) || null;
@@ -126,7 +153,18 @@
     return ADAPTERS.find((a) => a.hostMatches.some((m) => h.includes(m))) || null;
   }
 
-  const PFPlatforms = { ADAPTERS, getActiveAdapter, extractText, assignPfId };
+  // Pure completion decision (no DOM) — unit-testable. Finalize only when the
+  // model is no longer generating and there is real assistant text, confirmed by
+  // either a positive "complete" signal (action toolbar) or text that has been
+  // stable for at least `settleMs`.
+  function isResponseComplete({ generating, hasText, stableMs, settleMs, completeSignal }) {
+    if (generating) return false;
+    if (!hasText) return false;
+    if (completeSignal) return true;
+    return stableMs >= settleMs;
+  }
+
+  const PFPlatforms = { ADAPTERS, getActiveAdapter, extractText, assignPfId, isResponseComplete };
 
   if (root) root.PFPlatforms = PFPlatforms;
   if (typeof module !== 'undefined' && module.exports) module.exports = PFPlatforms;
