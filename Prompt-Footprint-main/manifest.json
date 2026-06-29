@@ -43,7 +43,7 @@
       "128": "Images/PF_Icon.png"
     }
   },
-  "options_page": "extension/dashboard/dashboard.html",
+  "options_page": "extension/dashboard/index.html",
   "icons": {
     "48": "Images/PF_Icon.png",
     "128": "Images/PF_Icon.png"
