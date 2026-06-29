@@ -41,6 +41,7 @@ function fmtTokens(n) {
 // ── Main ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   const overlayToggle = document.getElementById('pf-overlay-toggle');
+  const debugToggle   = document.getElementById('pf-debug-toggle');
   const statsBtn      = document.getElementById('pf-open-stats');
   const statusDot     = document.querySelector('.pf-status-dot');
   const statusText    = document.querySelector('.pf-status-text');
@@ -55,9 +56,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusText.textContent = 'Tracking';
   }
 
-  // Load config (overlay toggle state)
+  // Load config (overlay + debug toggle state)
   const cfg = await PFStorage.getConfig();
   overlayToggle.checked = cfg.overlayEnabled !== false;
+  if (debugToggle) debugToggle.checked = cfg.debug === true;
 
   // Load weekly stats and display as conversions
   const data = await PFStorage.getWeeklyStats(userId);
@@ -93,6 +95,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: { overlayEnabled } }).catch(() => {});
     }
   });
+
+  // Debug logging toggle (dev) — logs the full tracking lifecycle to the page
+  // console; off by default so normal users see no spam.
+  if (debugToggle) {
+    debugToggle.addEventListener('change', async () => {
+      const debug = debugToggle.checked;
+      await PFStorage.setConfig({ debug });
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: { debug } }).catch(() => {});
+      }
+    });
+  }
 
   // Full stats live in the extension's own dashboard (local-first).
   statsBtn.addEventListener('click', () => {

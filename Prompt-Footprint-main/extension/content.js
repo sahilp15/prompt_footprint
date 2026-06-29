@@ -71,7 +71,9 @@
     setupSubmitHook();
     setupPromptOptimizer();
     startWatchdog();
-    log(`Initialized on ${adapter.name}. Session:`, currentSessionId);
+    log(`content script loaded — platform=${adapter.id} (${adapter.name}) session=${currentSessionId}`);
+    log('composer detected:', document.querySelectorAll(adapter.inputSelector).length,
+        '| send button:', !!(adapter.getSendButton && adapter.getSendButton()));
   }
 
   // ── Submit hook (primary user-prompt trigger) ───────────────────────────--
@@ -85,7 +87,7 @@
       const el = e.target;
       if (!el || !el.matches?.(adapter.inputSelector) &&
           !el.closest?.(adapter.inputSelector)) return;
-      captureSubmittedPrompt();
+      captureSubmittedPrompt('enter');
     }, true);
 
     document.addEventListener('click', (e) => {
@@ -93,25 +95,31 @@
       if (!btn) return;
       if (adapter.sendSelector && !btn.matches?.(adapter.sendSelector) &&
           !btn.closest?.(adapter.sendSelector)) return;
-      captureSubmittedPrompt();
+      captureSubmittedPrompt('send-button');
     }, true);
   }
 
-  function captureSubmittedPrompt() {
+  function captureSubmittedPrompt(trigger) {
     const input = document.querySelector(adapter.inputSelector);
     const text = input ? getInputText(input).trim() : '';
-    if (!text) return;
+    if (!text) { log('submit ignored — empty composer (trigger=', trigger, ')'); return; }
+    // Ignore a second trigger for the same in-flight turn (Enter + click, or
+    // rapid re-fire) so we don't restart the watch on the same prompt.
+    if (pendingUserMessage && Date.now() - lastSubmitAt < SUBMIT_DEDUP_MS) {
+      log('submit ignored — capture already active (trigger=', trigger, ')');
+      return;
+    }
     lastSubmitAt = Date.now();
     pendingUserMessage = { id: `submit-${lastSubmitAt}`, text, startTime: lastSubmitAt };
     updateFloatingStatus('recording');
     startResponseWatch();
-    log('Prompt captured via submit hook:', text.length, 'chars');
+    log('prompt captured at submit — trigger=', trigger, 'len=', text.length, '→ generation started');
   }
 
   // ── Robustness watchdog ────────────────────────────────────────────────--
   // SPA frameworks can re-render and remove our injected UI, or navigate to a
-  // new conversation. Periodically make sure our overlays exist and reset
-  // capture state when the URL changes.
+  // new conversation. Periodically make sure our overlays exist and react to
+  // URL changes — WITHOUT discarding an in-progress capture.
   let lastUrl = location.href;
   function startWatchdog() {
     const wd = setInterval(() => {
@@ -124,13 +132,18 @@
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay) overlay.style.display = config.overlayEnabled ? 'block' : 'none';
 
-      // Detect SPA navigation (new conversation) and reset capture state.
       if (location.href !== lastUrl) {
         lastUrl = location.href;
-        stopResponseWatch();
-        pendingUserMessage = null;
         hideOptimizerChip();
-        updateFloatingStatus('saved');
+        // CRITICAL: sending the first message in a NEW chat changes the URL
+        // (/ -> /c/<id>). Cancelling here used to discard the very interaction
+        // we just started tracking. Only reset when nothing is being captured;
+        // an active capture keeps running (it has its own settle/timeout).
+        if (!pendingUserMessage && !responseWatch) {
+          updateFloatingStatus('saved');
+        } else {
+          log('URL changed during active capture — keeping capture alive:', location.href);
+        }
       }
     }, 2000);
   }
@@ -259,19 +272,30 @@
     if (text && text.length !== responseWatch.lastText.length) {
       responseWatch.lastText = text;
       responseWatch.lastChange = now;
+      log('poll: assistant text growing, len=', text.length);
       return;
     }
 
-    // Model is still working (thinking/streaming) even if the visible text is
-    // momentarily stable → keep the stability clock from advancing.
-    const generating = typeof adapter.isGenerating === 'function' && adapter.isGenerating();
+    // Model is still working (thinking/streaming/searching) even if the visible
+    // text is momentarily stable → keep the stability clock from advancing so we
+    // never finalize mid-generation.
+    const signal = typeof adapter.generatingSignal === 'function'
+      ? adapter.generatingSignal()
+      : (typeof adapter.isGenerating === 'function' && adapter.isGenerating() ? 'generating' : null);
+    const generating = !!signal;
     if (generating) {
       responseWatch.lastChange = now;
+      log('poll: still generating (signal=', signal, ') textLen=', text.length);
       return;
     }
 
-    // Stable for long enough AND not generating → finalize.
-    if (text && now - responseWatch.lastChange >= SETTLE_DELAY_MS) {
+    const stableMs = now - responseWatch.lastChange;
+    const completeSignal = typeof adapter.isComplete === 'function' && adapter.isComplete();
+    const done = PFPlatforms.isResponseComplete({
+      generating, hasText: !!text, stableMs, settleMs: SETTLE_DELAY_MS, completeSignal,
+    });
+    if (done) {
+      log('poll: complete (stableMs=', stableMs, 'completeSignal=', completeSignal, 'len=', text.length, ')');
       finalizeResponse(latest, text, responseWatch.lastChange);
       return;
     }
@@ -280,11 +304,13 @@
     if (!text && now - responseWatch.startedAt >= MAX_NO_RESPONSE_MS) {
       stopResponseWatch();
       updateFloatingStatus('saved');
+      log('poll: gave up — no assistant text after', MAX_NO_RESPONSE_MS, 'ms');
       return;
     }
 
     // Response never settles (very long generation) → force-finalize.
     if (text && now - responseWatch.startedAt >= HARD_CAP_MS) {
+      log('poll: hard cap reached — force finalizing');
       finalizeResponse(latest, text, now);
     }
   }
@@ -299,11 +325,16 @@
 
     // Guard against logging the same assistant response twice (e.g. observer +
     // poll racing, or a re-render re-triggering capture).
-    if (text && text === lastFinalizedText) { updateFloatingStatus('saved'); return; }
+    if (text && text === lastFinalizedText) {
+      log('skip: duplicate response (already finalized)');
+      updateFloatingStatus('saved');
+      return;
+    }
     lastFinalizedText = text;
     if (msgId) processedMessageIds.add(msgId);
 
     const responseTimeMs = Math.max(0, endTime - startTime);
+    log('generation ended — assistant text len=', text.length, 'responseTimeMs=', responseTimeMs);
     processQuery(prompt, text, responseTimeMs);
   }
 
@@ -314,6 +345,15 @@
       responseTimeMs,
       multiplier,
     });
+
+    // Defensive: never persist an empty interaction (both prompt and response
+    // must contribute tokens). The submit hook already requires a non-empty
+    // prompt, so this should not trigger in practice.
+    if (!impact.promptTokens || !impact.totalTokens) {
+      log('skip: 0-token interaction', { promptTokens: impact.promptTokens, totalTokens: impact.totalTokens });
+      updateFloatingStatus('saved');
+      return;
+    }
 
     lastQueryImpact = impact;
     sessionStats.totalTokens += impact.totalTokens;
@@ -334,14 +374,17 @@
           co2G: impact.co2G,
           responseTimeMs,
         });
-      } catch (_) {
-        // Extension context invalidated mid-write — non-fatal.
+        log('storage write ok — session', currentSessionId, 'tokens', impact.totalTokens);
+      } catch (e) {
+        log('storage write FAILED:', e && e.message);
       }
+    } else {
+      log('skip storage write — no session or extension context');
     }
 
     updateFloatingStatus('saved');
     updateModalStats();
-    log('Query logged:', { ...impact, responseTimeMs });
+    log('Query logged:', { promptTokens: impact.promptTokens, responseTokens: impact.responseTokens, totalTokens: impact.totalTokens, responseTimeMs });
   }
 
   // ── Floating Overlay ───────────────────────────────────────────────────--
@@ -792,6 +835,10 @@
           message.config.energyPerTokenMultiplier > 0 &&
           message.config.energyPerTokenMultiplier <= 20) {
         config.energyPerTokenMultiplier = message.config.energyPerTokenMultiplier;
+      }
+      if (typeof message.config.debug === 'boolean') {
+        config.debug = message.config.debug;
+        console.log('[PromptFootprint] debug logging', config.debug ? 'ENABLED' : 'disabled');
       }
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay) {

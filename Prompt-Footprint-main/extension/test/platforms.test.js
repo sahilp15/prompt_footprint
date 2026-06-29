@@ -41,6 +41,77 @@ test('claude adapter derives role from selectors', () => {
   assert.strictEqual(cl.getRole(otherEl), null);
 });
 
+// Minimal document stub so the DOM-based adapter methods can be unit-tested.
+function withFakeDom(matchers, fn) {
+  const prev = global.document;
+  global.document = {
+    querySelector(sel) { return matchers[sel] ? matchers[sel]() : null; },
+    querySelectorAll(sel) { const el = matchers[sel] && matchers[sel](); return el ? [el] : []; },
+  };
+  try { return fn(); } finally { global.document = prev; }
+}
+
+test('chatgpt.isGenerating: true when a stop button exists, false otherwise', () => {
+  const cg = adapter('chatgpt');
+  withFakeDom({ [cg.stopSelector]: () => ({}) }, () => {
+    assert.strictEqual(cg.isGenerating(), true);
+    assert.strictEqual(cg.generatingSignal(), 'stop-button');
+  });
+  withFakeDom({}, () => {
+    assert.strictEqual(cg.isGenerating(), false);
+    assert.strictEqual(cg.generatingSignal(), null);
+  });
+});
+
+test('chatgpt.isGenerating: detects result-streaming when no stop button', () => {
+  const cg = adapter('chatgpt');
+  withFakeDom({ '.result-streaming, [data-message-author-role="assistant"] .result-streaming': () => ({}) }, () => {
+    assert.strictEqual(cg.generatingSignal(), 'result-streaming');
+    assert.strictEqual(cg.isGenerating(), true);
+  });
+});
+
+test('chatgpt.isComplete: only when text + toolbar present and not generating', () => {
+  const cg = adapter('chatgpt');
+  // No assistant element at all → not complete.
+  withFakeDom({}, () => assert.strictEqual(cg.isComplete(), false));
+
+  // Assistant with text + copy toolbar, no stop signal → complete.
+  const turn = {
+    querySelector: (s) => (/copy/i.test(s) ? {} : null),
+  };
+  const assistantEl = {
+    cloneNode: () => ({ querySelectorAll: () => [], textContent: 'final answer' }),
+    closest: () => turn,
+    parentElement: turn,
+  };
+  withFakeDom({ '[data-message-author-role="assistant"]': () => assistantEl }, () => {
+    assert.strictEqual(cg.isComplete(), true);
+  });
+
+  // Same element but generating (stop button present) → not complete.
+  withFakeDom({
+    '[data-message-author-role="assistant"]': () => assistantEl,
+    [cg.stopSelector]: () => ({}),
+  }, () => {
+    assert.strictEqual(cg.isComplete(), false);
+  });
+});
+
+test('isResponseComplete decision table', () => {
+  const f = P.isResponseComplete;
+  // generating → never complete
+  assert.strictEqual(f({ generating: true, hasText: true, stableMs: 9999, settleMs: 2000, completeSignal: true }), false);
+  // no text → not complete
+  assert.strictEqual(f({ generating: false, hasText: false, stableMs: 9999, settleMs: 2000, completeSignal: true }), false);
+  // positive complete signal + text + not generating → complete
+  assert.strictEqual(f({ generating: false, hasText: true, stableMs: 0, settleMs: 2000, completeSignal: true }), true);
+  // no signal, stable long enough → complete
+  assert.strictEqual(f({ generating: false, hasText: true, stableMs: 2500, settleMs: 2000, completeSignal: false }), true);
+  // no signal, not yet stable → not complete
+  assert.strictEqual(f({ generating: false, hasText: true, stableMs: 500, settleMs: 2000, completeSignal: false }), false);
+});
+
 test('every adapter exposes the required interface', () => {
   for (const a of P.ADAPTERS) {
     for (const key of ['id', 'name', 'hostMatches', 'rootSelector', 'messageSelector', 'inputSelector']) {

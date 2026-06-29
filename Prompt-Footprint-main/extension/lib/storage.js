@@ -72,6 +72,7 @@
     const current = await getConfig();
     const next = { ...current };
     if (typeof patch.overlayEnabled === 'boolean') next.overlayEnabled = patch.overlayEnabled;
+    if (typeof patch.debug === 'boolean') next.debug = patch.debug;
     if (
       typeof patch.energyPerTokenMultiplier === 'number' &&
       patch.energyPerTokenMultiplier > 0 &&
