@@ -463,14 +463,23 @@
   }
 
   // ── Prompt optimizer ───────────────────────────────────────────────────--
-  // When the user types a long prompt, suggest a shorter version and show the
-  // estimated savings BEFORE they send. Fully local (no network).
+  // Grammarly-style: as the user types a long prompt we show a shorter version
+  // and the estimated savings BEFORE they send. Two tiers:
+  //   1. LOCAL heuristic — instant, offline, always available.
+  //   2. AI (Gemini via the proxy Worker) — a stronger rewrite that arrives a
+  //      moment later and replaces the local suggestion when it's better.
+  // If the proxy isn't configured or fails, only the local tier shows.
   const OPTIMIZER_MIN_CHARS = 120;   // only analyze longer prompts
   const OPTIMIZER_MIN_TOKENS = 2;    // only suggest if it saves something real
-  const OPTIMIZER_DEBOUNCE_MS = 400;
+  const OPTIMIZER_DEBOUNCE_MS = 350; // local heuristic (instant feel)
+  const AI_DEBOUNCE_MS = 1100;       // AI (waits for a typing pause)
   let optimizerTimer = null;
+  let aiTimer = null;
   let optimizerActiveInput = null;
   let optimizerSuggestion = null;
+  let optimizerSource = 'local';     // 'local' | 'ai' — what the chip shows now
+  let lastAiText = '';               // last prompt sent to the AI
+  const aiCache = new Map();         // prompt text -> AI rewrite
 
   function getInputText(el) {
     if (!el) return '';
@@ -500,7 +509,10 @@
     const chip = document.createElement('div');
     chip.id = 'pf-optimizer-chip';
     chip.innerHTML = `
-      <div class="pf-opt-head">✦ Shorter prompt suggested</div>
+      <div class="pf-opt-head">
+        <span>✦ Shorter prompt suggested</span>
+        <span class="pf-opt-badge" id="pf-opt-badge">Local</span>
+      </div>
       <div class="pf-opt-savings" id="pf-opt-savings"></div>
       <div class="pf-opt-preview" id="pf-opt-preview"></div>
       <div class="pf-opt-actions">
@@ -522,20 +534,27 @@
     const chip = document.getElementById('pf-optimizer-chip');
     if (chip) chip.classList.remove('pf-opt-visible');
     optimizerSuggestion = null;
+    optimizerSource = 'local';
   }
 
-  function showOptimizerChip(result) {
+  function showOptimizerChip(result, source) {
     const chip = document.getElementById('pf-optimizer-chip');
     if (!chip) return;
     const savingsEl = document.getElementById('pf-opt-savings');
     const previewEl = document.getElementById('pf-opt-preview');
+    const badgeEl = document.getElementById('pf-opt-badge');
     savingsEl.innerHTML =
       `Save <strong>~${result.savedTokens} tokens</strong> (${result.savedPct}%) · ` +
       `${_fmtWater(result.savedWaterMl)} · ${_fmtEnergy(result.savedEnergyWh)}`;
     previewEl.textContent = result.shortened;
+    if (badgeEl) {
+      badgeEl.textContent = source === 'ai' ? 'AI' : 'Local';
+      badgeEl.classList.toggle('pf-opt-badge-ai', source === 'ai');
+    }
     chip.classList.add('pf-opt-visible');
   }
 
+  // Tier 1 — instant local heuristic.
   function analyzeInput(el) {
     const text = getInputText(el);
     if (text.length < OPTIMIZER_MIN_CHARS) {
@@ -546,10 +565,42 @@
     if (result.changed && result.savedTokens >= OPTIMIZER_MIN_TOKENS) {
       optimizerActiveInput = el;
       optimizerSuggestion = result;
-      showOptimizerChip(result);
-    } else {
+      optimizerSource = 'local';
+      showOptimizerChip(result, 'local');
+    } else if (optimizerSource !== 'ai') {
+      // Don't clobber an AI suggestion that's already showing for this text.
       hideOptimizerChip();
     }
+  }
+
+  // Tier 2 — AI rewrite via the Gemini proxy (replaces the local suggestion
+  // when it saves more). No-op if the proxy isn't configured.
+  async function analyzeInputAI(el) {
+    const text = getInputText(el);
+    if (text.length < OPTIMIZER_MIN_CHARS) return;
+    if (text === lastAiText) return;
+    lastAiText = text;
+
+    let rewritten = aiCache.get(text);
+    if (rewritten === undefined) {
+      const resp = await sendMessage({ type: 'OPTIMIZE_PROMPT', payload: { text } });
+      rewritten = (resp && resp.rewritten) || '';
+      aiCache.set(text, rewritten);
+    }
+    if (!rewritten) return;
+    // The user may have kept typing — only apply if the input is unchanged.
+    if (getInputText(el) !== text) return;
+
+    const result = PFPromptOptimizer.savings(text, rewritten, adapter.id);
+    if (!result.changed || result.savedTokens < OPTIMIZER_MIN_TOKENS) return;
+    // Prefer AI only if it saves at least as much as whatever is showing.
+    if (optimizerSuggestion && optimizerSource === 'ai' &&
+        result.savedTokens <= optimizerSuggestion.savedTokens) return;
+
+    optimizerActiveInput = el;
+    optimizerSuggestion = result;
+    optimizerSource = 'ai';
+    showOptimizerChip(result, 'ai');
   }
 
   function setupPromptOptimizer() {
@@ -564,7 +615,9 @@
         : target.closest?.(adapter.inputSelector) || null;
       if (!el) return;
       clearTimeout(optimizerTimer);
+      clearTimeout(aiTimer);
       optimizerTimer = setTimeout(() => analyzeInput(el), OPTIMIZER_DEBOUNCE_MS);
+      aiTimer = setTimeout(() => analyzeInputAI(el), AI_DEBOUNCE_MS);
     }, true);
   }
 

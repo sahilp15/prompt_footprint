@@ -67,9 +67,25 @@ No server or configuration is needed — the extension is fully local.
 1. Navigate to [chatgpt.com](https://chatgpt.com) or [claude.ai](https://claude.ai)
 2. Send a message — prompts and responses are auto-detected
 3. Type a long prompt to get a **shorter-prompt suggestion** with estimated savings
-   before you send
+   before you send (Grammarly-style: an instant local heuristic, plus an optional
+   AI rewrite — see below)
 4. Click the floating **PF** pill (bottom-left) for per-query metrics
 5. Click the extension icon for the popup, or **View Full Stats** for the dashboard
+
+### Optional: AI optimizer (Gemini)
+
+The prompt optimizer has two tiers:
+
+- **Local heuristic** — instant, fully offline, always on. Strips politeness,
+  filler, verbose phrasing, and duplicate words.
+- **AI rewrite (Gemini Flash)** — a stronger rewrite that appears a moment later.
+  It runs through a **Cloudflare Worker proxy** so the Gemini API key stays a
+  server-side secret — it is **never** in this repo or the downloaded extension.
+
+To enable the AI tier, deploy the proxy and paste its URL into
+`extension/lib/proxyConfig.js`. Full steps are in
+[`proxy/README.md`](proxy/README.md). If you skip this, the extension simply
+uses the local heuristic.
 
 ### Stats site (optional, for the public showcase)
 
