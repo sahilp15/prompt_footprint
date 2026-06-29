@@ -50,7 +50,7 @@
     hostMatches: ['chatgpt.com', 'chat.openai.com'],
     rootSelector: 'main',
     messageSelector: '[data-message-author-role]',
-    inputSelector: '#prompt-textarea',
+    inputSelector: '#prompt-textarea, [contenteditable="true"][data-lexical-editor]',
     getRole(el) {
       return el.getAttribute?.('data-message-author-role') || null;
     },
