@@ -13,7 +13,17 @@
 .nav-brand { display: flex; align-items: center; gap: 10px; }
 .nav-logo { color: var(--accent-green); }
 .nav-title { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; color: var(--text-primary); }
-.nav-links { display: flex; gap: 4px; }
+.nav-links { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+
+.demo-banner {
+  background: rgba(193, 127, 36, 0.12);
+  border-bottom: 1px solid rgba(193, 127, 36, 0.25);
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: 9px 16px;
+}
+.demo-banner strong { color: var(--accent-amber); }
 .nav-link {
   display: flex; align-items: center; gap: 6px; padding: 8px 16px;
   border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
