@@ -18,14 +18,20 @@
   let config = { overlayEnabled: true, energyPerTokenMultiplier: 1.0 };
   let processedMessageIds = new Set();
   let pendingUserMessage = null;
-  let responseDebounceTimer = null;
   let sessionStats = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0 };
   let lastQueryImpact = null;
 
-  // How long to wait after the last streamed character before treating the
-  // assistant response as complete. Also subtracted from the measured
-  // response time so timing reflects generation, not this debounce window.
-  const SETTLE_DELAY_MS = 1500;
+  // Response capture is POLLING-based, not mutation-based. ChatGPT and Claude
+  // stream responses by replacing DOM nodes (childList) rather than mutating
+  // text nodes (characterData), so a characterData debounce misses most of the
+  // stream. Instead we poll the latest assistant element's text and only
+  // finalize once it has stopped growing for SETTLE_DELAY_MS.
+  const RESPONSE_POLL_MS = 500;       // how often to sample the assistant text
+  const SETTLE_DELAY_MS = 2500;       // text must be stable this long to finalize
+  const MAX_NO_RESPONSE_MS = 30000;   // give up if no assistant text ever appears
+  const HARD_CAP_MS = 240000;         // force-finalize a never-settling response
+  let responseWatchTimer = null;
+  let responseWatch = null;           // { lastText, lastChange, startedAt }
 
   // Initialize
   async function init() {
@@ -54,7 +60,33 @@
 
     startObserver();
     setupPromptOptimizer();
+    startWatchdog();
     console.log(`[PromptFootprint] Initialized on ${adapter.name}. Session:`, currentSessionId);
+  }
+
+  // ── Robustness watchdog ────────────────────────────────────────────────--
+  // SPA frameworks can re-render and remove our injected UI, or navigate to a
+  // new conversation. Periodically make sure our overlays exist and reset
+  // capture state when the URL changes.
+  let lastUrl = location.href;
+  function startWatchdog() {
+    setInterval(() => {
+      // Re-inject any overlay the page removed.
+      injectFloatingOverlay();
+      injectModalOverlay();
+      injectOptimizerChip();
+      const overlay = document.getElementById('pf-floating-overlay');
+      if (overlay) overlay.style.display = config.overlayEnabled ? 'block' : 'none';
+
+      // Detect SPA navigation (new conversation) and reset capture state.
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        stopResponseWatch();
+        pendingUserMessage = null;
+        hideOptimizerChip();
+        updateFloatingStatus('saved');
+      }
+    }, 2000);
   }
 
   function sendMessage(msg) {
@@ -68,42 +100,39 @@
   }
 
   // ── DOM Observation ────────────────────────────────────────────────────--
+  // We observe document.body (not adapter.rootSelector) so the observer
+  // survives SPA navigations that replace the conversation container.
   function startObserver() {
     const observer = new MutationObserver(handleMutations);
-
     const observeTarget = () => {
-      const target = document.querySelector(adapter.rootSelector) || document.body;
-      if (target) {
-        observer.observe(target, { childList: true, subtree: true, characterData: true });
-        console.log('[PromptFootprint] Observer attached to', adapter.rootSelector);
-        return true;
-      }
-      return false;
+      if (!document.body) return false;
+      observer.observe(document.body, { childList: true, subtree: true });
+      console.log('[PromptFootprint] Observer attached to document.body');
+      return true;
     };
-
     if (!observeTarget()) {
       const retryInterval = setInterval(() => {
         if (observeTarget()) clearInterval(retryInterval);
-      }, 1000);
+      }, 500);
     }
+    // Also scan whatever is already on the page (script may load mid-conversation).
+    scanExistingMessages();
+  }
+
+  function scanExistingMessages() {
+    document.querySelectorAll(adapter.messageSelector).forEach((el) => {
+      const role = adapter.getRole(el);
+      const id = adapter.getMessageId(el);
+      if (id) processedMessageIds.add(id); // mark pre-existing so we don't re-log
+    });
   }
 
   function handleMutations(mutations) {
     for (const mutation of mutations) {
-      if (mutation.type === 'childList') {
-        mutation.addedNodes.forEach(node => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            checkForMessages(node);
-          }
-        });
-      } else if (mutation.type === 'characterData') {
-        // Streaming text is still arriving — reset the debounce timer so we
-        // capture the FULL response, not just what arrived in the first 1.5s.
-        if (responseDebounceTimer !== null && pendingUserMessage) {
-          clearTimeout(responseDebounceTimer);
-          responseDebounceTimer = setTimeout(finalizeAssistantResponse, SETTLE_DELAY_MS);
-        }
-      }
+      if (mutation.type !== 'childList') continue;
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) checkForMessages(node);
+      });
     }
   }
 
@@ -120,46 +149,80 @@
   function checkForMessages(node) {
     const messageElements = collectMessageElements(node);
 
-    messageElements.forEach(el => {
+    messageElements.forEach((el) => {
       const role = adapter.getRole(el);
-      if (role !== 'user' && role !== 'assistant') return;
+      if (role !== 'user') return; // assistant capture is handled by polling
 
       const messageId = adapter.getMessageId(el);
       if (!messageId || processedMessageIds.has(messageId)) return;
 
-      if (role === 'user') {
-        const text = adapter.extractText(el);
-        if (text) {
-          pendingUserMessage = { id: messageId, text, startTime: Date.now() };
-          processedMessageIds.add(messageId);
-          updateFloatingStatus('recording');
-        }
-      } else if (role === 'assistant' && pendingUserMessage) {
-        // Debounce: wait for streaming to complete.
-        clearTimeout(responseDebounceTimer);
-        responseDebounceTimer = setTimeout(finalizeAssistantResponse, SETTLE_DELAY_MS);
-      }
+      const text = adapter.extractText(el);
+      if (!text) return;
+
+      pendingUserMessage = { id: messageId, text, startTime: Date.now() };
+      processedMessageIds.add(messageId);
+      updateFloatingStatus('recording');
+      startResponseWatch();
     });
   }
 
-  // Capture the latest assistant response and record the query.
-  function finalizeAssistantResponse() {
-    responseDebounceTimer = null;
-    if (!pendingUserMessage) return;
+  // ── Response capture (polling) ─────────────────────────────────────────--
+  function startResponseWatch() {
+    stopResponseWatch();
+    const now = Date.now();
+    responseWatch = { lastText: '', lastChange: now, startedAt: now };
+    responseWatchTimer = setInterval(pollResponse, RESPONSE_POLL_MS);
+  }
+
+  function stopResponseWatch() {
+    if (responseWatchTimer) clearInterval(responseWatchTimer);
+    responseWatchTimer = null;
+    responseWatch = null;
+  }
+
+  function pollResponse() {
+    if (!pendingUserMessage || !responseWatch) { stopResponseWatch(); return; }
 
     const latest = adapter.getLatestAssistant();
-    if (!latest) return;
+    const text = latest ? adapter.extractText(latest) : '';
+    const now = Date.now();
 
-    const msgId = adapter.getMessageId(latest);
-    const text = adapter.extractText(latest);
-    if (!text) return;
+    // Still growing → reset the stability clock.
+    if (text && text.length !== responseWatch.lastText.length) {
+      responseWatch.lastText = text;
+      responseWatch.lastChange = now;
+      return;
+    }
 
-    if (msgId) processedMessageIds.add(msgId);
-    // Subtract the trailing streaming-settle wait so the measured time
-    // approximates generation time, not our debounce window.
-    const responseTimeMs = Math.max(0, Date.now() - pendingUserMessage.startTime - SETTLE_DELAY_MS);
-    processQuery(pendingUserMessage.text, text, responseTimeMs);
+    // Stable for long enough → finalize.
+    if (text && now - responseWatch.lastChange >= SETTLE_DELAY_MS) {
+      finalizeResponse(latest, text, responseWatch.lastChange);
+      return;
+    }
+
+    // No assistant text appeared at all → give up.
+    if (!text && now - responseWatch.startedAt >= MAX_NO_RESPONSE_MS) {
+      stopResponseWatch();
+      updateFloatingStatus('saved');
+      return;
+    }
+
+    // Response never settles (very long generation) → force-finalize.
+    if (text && now - responseWatch.startedAt >= HARD_CAP_MS) {
+      finalizeResponse(latest, text, now);
+    }
+  }
+
+  function finalizeResponse(latestEl, text, endTime) {
+    if (!pendingUserMessage) { stopResponseWatch(); return; }
+    const prompt = pendingUserMessage.text;
+    const startTime = pendingUserMessage.startTime;
+    const msgId = latestEl ? adapter.getMessageId(latestEl) : null;
+    stopResponseWatch();
     pendingUserMessage = null;
+    if (msgId) processedMessageIds.add(msgId);
+    const responseTimeMs = Math.max(0, endTime - startTime);
+    processQuery(prompt, text, responseTimeMs);
   }
 
   async function processQuery(promptText, responseText, responseTimeMs) {
@@ -379,9 +442,9 @@
   // ── Prompt optimizer ───────────────────────────────────────────────────--
   // When the user types a long prompt, suggest a shorter version and show the
   // estimated savings BEFORE they send. Fully local (no network).
-  const OPTIMIZER_MIN_CHARS = 150;   // only analyze longer prompts
-  const OPTIMIZER_MIN_TOKENS = 3;    // only suggest if it saves something real
-  const OPTIMIZER_DEBOUNCE_MS = 600;
+  const OPTIMIZER_MIN_CHARS = 120;   // only analyze longer prompts
+  const OPTIMIZER_MIN_TOKENS = 2;    // only suggest if it saves something real
+  const OPTIMIZER_DEBOUNCE_MS = 400;
   let optimizerTimer = null;
   let optimizerActiveInput = null;
   let optimizerSuggestion = null;
