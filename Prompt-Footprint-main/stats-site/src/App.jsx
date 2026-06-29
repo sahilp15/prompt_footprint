@@ -1,3 +1,4 @@
+import { Component } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { Droplets, Zap, BarChart3, Sparkles, BookOpen, GraduationCap, Trophy } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
@@ -8,6 +9,29 @@ import Guide from './components/Guide'
 import Awards from './components/Awards'
 import { isDemoMode } from './lib/api'
 import './App.css'
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '2rem', textAlign: 'center', color: '#6B7D5E' }}>
+          <p>3D animations couldn't load in this context.</p>
+          <button onClick={() => this.setState({ hasError: false })} style={{ marginTop: '1rem', padding: '0.5rem 1rem', cursor: 'pointer' }}>
+            Try again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function App() {
   const demo = isDemoMode()
@@ -54,7 +78,7 @@ function App() {
         <Routes>
           <Route path="/" element={<WeeklyStats />} />
           <Route path="/sessions" element={<SessionList />} />
-          <Route path="/animations" element={<AnimationPage />} />
+          <Route path="/animations" element={<ErrorBoundary><AnimationPage /></ErrorBoundary>} />
           <Route path="/learn" element={<Guide />} />
           <Route path="/how" element={<HowItWorks />} />
           <Route path="/awards" element={<Awards />} />
