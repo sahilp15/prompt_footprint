@@ -605,11 +605,8 @@
 
   function setupPromptOptimizer() {
     injectOptimizerChip();
-    // Single delegated listener — the composer element may be re-created.
-    document.addEventListener('input', (e) => {
-      // The input event often fires on a child of the contenteditable (e.g. a <p>
-      // inside ProseMirror). Walk up to find the actual input element.
-      // Fall back to any contenteditable to handle editor framework changes.
+
+    function handleInputChange(e) {
       const target = e.target;
       const el = target.matches?.(adapter.inputSelector)
         ? target
@@ -619,9 +616,14 @@
       if (!el) return;
       clearTimeout(optimizerTimer);
       clearTimeout(aiTimer);
-      optimizerTimer = setTimeout(() => analyzeInput(el), OPTIMIZER_DEBOUNCE_MS);
-      aiTimer = setTimeout(() => analyzeInputAI(el), AI_DEBOUNCE_MS);
-    }, true);
+      // Paste: read text after the paste has been inserted into the DOM.
+      const delay = e.type === 'paste' ? 100 : 0;
+      optimizerTimer = setTimeout(() => analyzeInput(el), OPTIMIZER_DEBOUNCE_MS + delay);
+      aiTimer = setTimeout(() => analyzeInputAI(el), AI_DEBOUNCE_MS + delay);
+    }
+
+    document.addEventListener('input', handleInputChange, true);
+    document.addEventListener('paste', handleInputChange, true);
   }
 
   // Listen for config changes from popup
