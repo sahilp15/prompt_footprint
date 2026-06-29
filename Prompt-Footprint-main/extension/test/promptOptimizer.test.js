@@ -44,3 +44,25 @@ test('analyze never produces more tokens than the original', () => {
   const r = O.analyze('Refactor this code for readability and add tests.', 'chatgpt');
   assert.ok(r.newTokens <= r.originalTokens);
 });
+
+test('savings() computes the same shape for an arbitrary rewrite (AI path)', () => {
+  const original = 'Please could you kindly help me write a function to sort an array';
+  const rewritten = 'Write a function to sort an array';
+  const r = O.savings(original, rewritten, 'claude');
+  assert.ok(r.changed);
+  assert.ok(r.savedTokens > 0);
+  assert.strictEqual(r.shortened, rewritten);
+  assert.ok(r.savedWaterMl > 0 && r.savedEnergyWh > 0);
+});
+
+test('savings() reports no change when the rewrite is not shorter', () => {
+  const r = O.savings('Sort an array', 'Sort an array please now', 'chatgpt');
+  assert.strictEqual(r.changed, false);
+  assert.strictEqual(r.savedTokens, 0);
+});
+
+test('collapseRepeats removes duplicate words', () => {
+  const out = O.shorten('Write the the function to to sort');
+  assert.ok(!/\bthe the\b/i.test(out));
+  assert.ok(!/\bto to\b/i.test(out));
+});

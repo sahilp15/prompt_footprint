@@ -132,33 +132,40 @@
     return out;
   }
 
-  // Analyze a prompt and return savings. `platform` selects the intensity
-  // profile used for the resource-savings estimate (prompt-side tokens).
-  function analyze(text, platform) {
-    const original = (text || '').toString();
-    const shortened = shorten(original);
+  // Compute the savings of replacing `original` with `shortened`, using the
+  // per-platform intensity profile. Shared by the local heuristic and the AI
+  // rewrite path so both report identical math.
+  function savings(originalText, shortenedText, platform) {
+    const original = (originalText || '').toString();
+    const shortened = (shortenedText || '').toString();
 
     const originalTokens = _T.estimateTokens(original);
     const newTokens = _T.estimateTokens(shortened);
     const savedTokens = Math.max(0, originalTokens - newTokens);
 
-    const savings = _M.calculateImpact(savedTokens, { platform: platform || 'chatgpt' });
+    const impact = _M.calculateImpact(savedTokens, { platform: platform || 'chatgpt' });
 
     return {
       original,
       shortened,
-      changed: shortened !== original.trim() && savedTokens > 0,
+      changed: shortened.trim() !== original.trim() && savedTokens > 0,
       originalTokens,
       newTokens,
       savedTokens,
       savedPct: originalTokens > 0 ? Math.round((savedTokens / originalTokens) * 100) : 0,
-      savedEnergyWh: savings.energyWh,
-      savedWaterMl: savings.waterMl,
-      savedCo2G: savings.co2G,
+      savedEnergyWh: impact.energyWh,
+      savedWaterMl: impact.waterMl,
+      savedCo2G: impact.co2G,
     };
   }
 
-  const PFPromptOptimizer = { shorten, analyze, normalizeWhitespace };
+  // Analyze a prompt with the local heuristic shortener.
+  function analyze(text, platform) {
+    const original = (text || '').toString();
+    return savings(original, shorten(original), platform);
+  }
+
+  const PFPromptOptimizer = { shorten, analyze, savings, normalizeWhitespace };
 
   if (root) root.PFPromptOptimizer = PFPromptOptimizer;
   if (typeof module !== 'undefined' && module.exports) module.exports = PFPromptOptimizer;

@@ -4,7 +4,7 @@
 // opens the dashboard. All persistence goes through lib/storage.js
 // (chrome.storage.local).
 
-importScripts('lib/storage.js');
+importScripts('lib/proxyConfig.js', 'lib/storage.js');
 
 // Supported platform origins (must match manifest host_permissions).
 const ALLOWED_ORIGINS = [
@@ -65,6 +65,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.runtime.openOptionsPage();
     sendResponse({ ok: true });
     return false;
+  }
+
+  // AI prompt optimizer: forward the prompt text to the Gemini proxy Worker.
+  // The fetch runs here (service worker), governed by the extension's own CSP,
+  // so it is not blocked by the host page's CSP. Returns '' on any failure so
+  // the content script can fall back to the local heuristic optimizer.
+  if (message.type === 'OPTIMIZE_PROMPT') {
+    const text = message.payload?.text;
+    if (!PF_PROXY_URL || typeof text !== 'string' || !text.trim()) {
+      sendResponse({ rewritten: '' });
+      return false;
+    }
+    fetch(PF_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => sendResponse({ rewritten: (d && d.rewritten) || '' }))
+      .catch(() => sendResponse({ rewritten: '' }));
+    return true; // async
   }
 
   sendResponse({ error: 'Unknown message type' });
