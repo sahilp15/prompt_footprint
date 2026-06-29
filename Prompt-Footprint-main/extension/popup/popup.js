@@ -1,5 +1,4 @@
-const USER_ID_KEY = 'pf_userId';
-const API_BASE = 'https://promptfootprint-production.up.railway.app/api';
+const SUPPORTED_HOSTS = ['chatgpt.com', 'chat.openai.com', 'claude.ai'];
 
 // ── Real-world impact conversions ─────────────────────────────────────────
 // These are shown in the popup instead of raw numbers.
@@ -46,76 +45,57 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusDot     = document.querySelector('.pf-status-dot');
   const statusText    = document.querySelector('.pf-status-text');
 
-  const stored = await chrome.storage.local.get([USER_ID_KEY]);
-  const userId = stored[USER_ID_KEY];
+  const userId = await PFStorage.getUserId();
 
   // Active-tab status
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const isOnChatGPT = tab?.url?.includes('chatgpt.com') || tab?.url?.includes('chat.openai.com');
-  if (isOnChatGPT) {
+  const isOnSupported = SUPPORTED_HOSTS.some((h) => tab?.url?.includes(h));
+  if (isOnSupported) {
     statusDot.classList.add('active');
     statusText.textContent = 'Tracking';
   }
 
-  if (userId) {
-    // Load config (overlay toggle state)
-    try {
-      const cfg = await fetch(`${API_BASE}/config?userId=${userId}`).then(r => r.json());
-      overlayToggle.checked = cfg.overlayEnabled !== false;
-    } catch (_) {}
+  // Load config (overlay toggle state)
+  const cfg = await PFStorage.getConfig();
+  overlayToggle.checked = cfg.overlayEnabled !== false;
 
-    // Load weekly stats and display as conversions
-    try {
-      const data = await fetch(`${API_BASE}/sessions/weekly?userId=${userId}`).then(r => r.json());
-      const t = data?.totals || {};
-      const tokens = t.totalTokens   || 0;
-      const water  = t.totalWaterMl  || 0;
-      const energy = t.totalEnergyWh || 0;
-      const co2    = t.totalCo2G     || 0;
+  // Load weekly stats and display as conversions
+  const data = await PFStorage.getWeeklyStats(userId);
+  const t = data?.totals || {};
+  const tokens = t.totalTokens   || 0;
+  const water  = t.totalWaterMl  || 0;
+  const energy = t.totalEnergyWh || 0;
+  const co2    = t.totalCo2G     || 0;
 
-      // Tokens: show count (it's meaningful as a count)
-      document.getElementById('pf-tokens').textContent = fmtTokens(tokens);
+  // Tokens: show count (it's meaningful as a count)
+  document.getElementById('pf-tokens').textContent = fmtTokens(tokens);
 
-      // Water: show real-world equivalent
-      const w = waterConversion(water);
-      document.getElementById('pf-water').textContent    = w.main;
-      document.getElementById('pf-water-sub').textContent = w.sub;
+  // Water: show real-world equivalent
+  const w = waterConversion(water);
+  document.getElementById('pf-water').textContent    = w.main;
+  document.getElementById('pf-water-sub').textContent = w.sub;
 
-      // Energy: show real-world equivalent
-      const e = energyConversion(energy);
-      document.getElementById('pf-energy').textContent    = e.main;
-      document.getElementById('pf-energy-sub').textContent = e.sub;
+  // Energy: show real-world equivalent
+  const e = energyConversion(energy);
+  document.getElementById('pf-energy').textContent    = e.main;
+  document.getElementById('pf-energy-sub').textContent = e.sub;
 
-      // CO₂: show real-world equivalent
-      const c = co2Conversion(co2);
-      document.getElementById('pf-co2').textContent    = c.main;
-      document.getElementById('pf-co2-sub').textContent = c.sub;
-    } catch (_) {
-      // API unavailable — leave dashes shown
-    }
-  }
+  // CO₂: show real-world equivalent
+  const c = co2Conversion(co2);
+  document.getElementById('pf-co2').textContent    = c.main;
+  document.getElementById('pf-co2-sub').textContent = c.sub;
 
   // Overlay toggle
-  overlayToggle.addEventListener('change', () => {
+  overlayToggle.addEventListener('change', async () => {
     const overlayEnabled = overlayToggle.checked;
-    if (userId) {
-      fetch(`${API_BASE}/config`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, overlayEnabled }),
-      }).catch(() => {});
-    }
+    await PFStorage.setConfig({ overlayEnabled });
     if (tab?.id) {
       chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: { overlayEnabled } }).catch(() => {});
     }
   });
 
-  // Stats website
+  // Full stats live in the extension's own dashboard (local-first).
   statsBtn.addEventListener('click', () => {
-    chrome.tabs.create({
-      url: userId
-        ? `https://prompt-footprint-2bjl.vercel.app?userId=${userId}`
-        : 'https://prompt-footprint-2bjl.vercel.app',
-    });
+    chrome.runtime.openOptionsPage();
   });
 });

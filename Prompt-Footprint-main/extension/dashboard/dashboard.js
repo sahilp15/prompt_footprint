@@ -1,31 +1,8 @@
-const USER_ID_KEY = 'pf_userId';
-const API_BASE_URL = 'https://promptfootprint-production.up.railway.app/api';
-
 document.addEventListener('DOMContentLoaded', async () => {
-  const result = await chrome.storage.local.get([USER_ID_KEY]);
-  const userId = result[USER_ID_KEY];
-
-  if (!userId) {
-    const listEl = document.getElementById('pf-sessions-list');
-    const errDiv = document.createElement('div');
-    errDiv.className = 'pf-empty';
-    errDiv.textContent = 'No user ID found. Visit ChatGPT to initialize tracking.';
-    listEl.replaceChildren(errDiv);
-    return;
-  }
-
-  try {
-    const resp = await fetch(`${API_BASE_URL}/sessions?userId=${userId}`);
-    const sessions = await resp.json();
-    renderSummary(sessions);
-    renderSessions(sessions);
-  } catch (err) {
-    const listEl = document.getElementById('pf-sessions-list');
-    const errDiv = document.createElement('div');
-    errDiv.className = 'pf-empty';
-    errDiv.textContent = 'Could not connect to the PromptFootprint server. Make sure the backend is running.';
-    listEl.replaceChildren(errDiv);
-  }
+  const userId = await PFStorage.getUserId();
+  const sessions = await PFStorage.getSessions(userId);
+  renderSummary(sessions);
+  renderSessions(sessions);
 });
 
 function renderSummary(sessions) {
@@ -52,7 +29,7 @@ function renderSessions(sessions) {
   if (sessions.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'pf-empty';
-    empty.textContent = 'No sessions recorded yet. Start chatting with ChatGPT to begin tracking.';
+    empty.textContent = 'No sessions recorded yet. Start chatting with ChatGPT or Claude to begin tracking.';
     container.replaceChildren(empty);
     return;
   }
@@ -87,6 +64,12 @@ function renderSessions(sessions) {
     durSpan.style.cssText = 'color: var(--pf-text-muted); font-size: 11px; margin-left: 8px;';
     durSpan.textContent = duration;
     dateDiv.appendChild(durSpan);
+    if (session.platform) {
+      const platSpan = document.createElement('span');
+      platSpan.style.cssText = 'color: var(--pf-accent-green); font-size: 11px; margin-left: 8px; text-transform: capitalize;';
+      platSpan.textContent = session.platform;
+      dateDiv.appendChild(platSpan);
+    }
     header.appendChild(dateDiv);
 
     // Metrics

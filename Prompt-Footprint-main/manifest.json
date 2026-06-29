@@ -6,18 +6,21 @@
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://chat.openai.com/*"
+    "https://chat.openai.com/*",
+    "https://claude.ai/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' https://promptfootprint-production.up.railway.app; style-src 'self'; img-src 'self'; font-src 'self'; frame-src 'none';"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; frame-src 'none';"
   },
   "background": {
     "service_worker": "extension/background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*"],
       "js": [
+        "extension/lib/storage.js",
+        "extension/lib/platforms.js",
         "extension/lib/constants.js",
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",

@@ -1,8 +1,17 @@
 // PromptFootprint Content Script
-// Injected into ChatGPT pages to observe conversations and estimate environmental impact
+// Injected into supported AI chat pages (ChatGPT, Claude, ...) to observe
+// conversations and estimate environmental impact. Platform-specific DOM
+// details live in lib/platforms.js; persistence lives in lib/storage.js.
 
 (function() {
   'use strict';
+
+  const adapter = PFPlatforms.getActiveAdapter();
+  if (!adapter) {
+    // Not a supported platform — content script should not have been injected,
+    // but bail defensively rather than throw.
+    return;
+  }
 
   let currentSessionId = null;
   let userId = null;
@@ -15,75 +24,58 @@
 
   // Initialize
   async function init() {
-    // Inject overlay UI immediately — before any async/network calls
+    // Inject overlay UI immediately — before any async/storage calls
     // so the capsule is visible on first page load without delay.
     injectFloatingOverlay();
     injectModalOverlay();
 
-    // Get user ID from background
-    const result = await sendMessage({ type: 'GET_USER_ID' });
-    userId = result.userId;
+    userId = await PFStorage.getUserId();
 
-    // Get config
-    const configResult = await sendMessage({ type: 'GET_CONFIG' });
-    if (configResult && !configResult.error) {
-      config = { ...config, ...configResult };
-      // Sync overlay visibility with saved config
+    const savedConfig = await PFStorage.getConfig();
+    if (savedConfig) {
+      config = { ...config, ...savedConfig };
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay && !config.overlayEnabled) overlay.style.display = 'none';
     }
 
-    // Create session
-    const session = await sendMessage({
-      type: 'API_REQUEST',
-      payload: {
-        method: 'POST',
-        endpoint: '/sessions',
-        body: { userId, startTime: new Date().toISOString() }
-      }
-    });
-
+    // Create a session for this tab/platform.
+    const session = await PFStorage.createSession(userId, adapter.id);
     if (session && session.id) {
       currentSessionId = session.id;
-      // Store session ID for tab close detection
-      chrome.storage.session.set({ [`session_${getTabInfo()}`]: currentSessionId });
+      // Register the session id with the background worker so it can be
+      // closed when the tab is removed (keyed by tab id).
+      sendMessage({ type: 'REGISTER_SESSION', payload: { sessionId: currentSessionId } });
     }
 
-    // Start observing DOM
     startObserver();
-
-    console.log('[PromptFootprint] Initialized. Session:', currentSessionId);
-  }
-
-  function getTabInfo() {
-    return window.location.href;
+    console.log(`[PromptFootprint] Initialized on ${adapter.name}. Session:`, currentSessionId);
   }
 
   function sendMessage(msg) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(msg, (response) => {
+        // Swallow chrome.runtime.lastError (e.g. worker asleep) — non-fatal.
+        void chrome.runtime.lastError;
         resolve(response || {});
       });
     });
   }
 
-  // DOM Observation
+  // ── DOM Observation ────────────────────────────────────────────────────--
   function startObserver() {
     const observer = new MutationObserver(handleMutations);
 
-    // Observe the main content area - ChatGPT renders conversation in the main element
     const observeTarget = () => {
-      const main = document.querySelector('main');
-      if (main) {
-        observer.observe(main, { childList: true, subtree: true, characterData: true });
-        console.log('[PromptFootprint] Observer attached to main');
+      const target = document.querySelector(adapter.rootSelector) || document.body;
+      if (target) {
+        observer.observe(target, { childList: true, subtree: true, characterData: true });
+        console.log('[PromptFootprint] Observer attached to', adapter.rootSelector);
         return true;
       }
       return false;
     };
 
     if (!observeTarget()) {
-      // Retry until main element appears
       const retryInterval = setInterval(() => {
         if (observeTarget()) clearInterval(retryInterval);
       }, 1000);
@@ -103,109 +95,68 @@
         // capture the FULL response, not just what arrived in the first 1.5s.
         if (responseDebounceTimer !== null && pendingUserMessage) {
           clearTimeout(responseDebounceTimer);
-          responseDebounceTimer = setTimeout(() => {
-            const assistantMsgs = document.querySelectorAll('[data-message-author-role="assistant"]');
-            const latest = assistantMsgs[assistantMsgs.length - 1];
-            if (latest && pendingUserMessage) {
-              const msgId = latest.getAttribute('data-message-id');
-              const text = extractText(latest);
-              if (text) {
-                if (msgId) processedMessageIds.add(msgId);
-                processQuery(pendingUserMessage.text, text);
-                pendingUserMessage = null;
-              }
-            }
-            responseDebounceTimer = null;
-          }, 1500);
+          responseDebounceTimer = setTimeout(finalizeAssistantResponse, 1500);
         }
       }
     }
+  }
+
+  // Collect message elements within (and including) a mutated node.
+  function collectMessageElements(node) {
+    const els = [];
+    if (node.matches?.(adapter.messageSelector)) els.push(node);
+    if (node.querySelectorAll) {
+      node.querySelectorAll(adapter.messageSelector).forEach((el) => els.push(el));
+    }
+    return els;
   }
 
   function checkForMessages(node) {
-    // ChatGPT uses data-message-id and data-message-author-role attributes
-    const messageElements = node.querySelectorAll
-      ? [node, ...node.querySelectorAll('[data-message-id]')]
-      : [node];
+    const messageElements = collectMessageElements(node);
 
     messageElements.forEach(el => {
-      const messageId = el.getAttribute?.('data-message-id');
-      const authorRole = el.getAttribute?.('data-message-author-role');
+      const role = adapter.getRole(el);
+      if (role !== 'user' && role !== 'assistant') return;
 
+      const messageId = adapter.getMessageId(el);
       if (!messageId || processedMessageIds.has(messageId)) return;
 
-      if (authorRole === 'user') {
-        const text = extractText(el);
+      if (role === 'user') {
+        const text = adapter.extractText(el);
         if (text) {
-          pendingUserMessage = { id: messageId, text };
+          pendingUserMessage = { id: messageId, text, startTime: Date.now() };
           processedMessageIds.add(messageId);
           updateFloatingStatus('recording');
         }
-      } else if (authorRole === 'assistant') {
-        // Debounce: wait for streaming to complete
+      } else if (role === 'assistant' && pendingUserMessage) {
+        // Debounce: wait for streaming to complete.
         clearTimeout(responseDebounceTimer);
-        responseDebounceTimer = setTimeout(() => {
-          const text = extractText(el);
-          if (text && pendingUserMessage) {
-            processedMessageIds.add(messageId);
-            processQuery(pendingUserMessage.text, text);
-            pendingUserMessage = null;
-          }
-          responseDebounceTimer = null;
-        }, 1500);
-      }
-    });
-
-    // Also try broader selectors as fallback
-    if (!node.getAttribute?.('data-message-id')) {
-      tryAlternativeSelectors(node);
-    }
-  }
-
-  function tryAlternativeSelectors(node) {
-    // Fallback: look for turn-based conversation structure
-    const turns = node.querySelectorAll?.('[class*="agent-turn"], [class*="user-turn"], [data-testid*="conversation-turn"]') || [];
-    turns.forEach(turn => {
-      const id = turn.getAttribute('data-testid') || turn.className;
-      if (processedMessageIds.has(id)) return;
-
-      const isUser = turn.querySelector('[data-message-author-role="user"]') ||
-                     turn.classList?.contains('user-turn') ||
-                     turn.getAttribute('data-testid')?.includes('user');
-      const isAssistant = turn.querySelector('[data-message-author-role="assistant"]') ||
-                          turn.classList?.contains('agent-turn') ||
-                          turn.getAttribute('data-testid')?.includes('assistant');
-
-      if (isUser) {
-        const text = extractText(turn);
-        if (text) {
-          pendingUserMessage = { id, text };
-          processedMessageIds.add(id);
-        }
-      } else if (isAssistant && pendingUserMessage) {
-        clearTimeout(responseDebounceTimer);
-        responseDebounceTimer = setTimeout(() => {
-          const text = extractText(turn);
-          if (text) {
-            processedMessageIds.add(id);
-            processQuery(pendingUserMessage.text, text);
-            pendingUserMessage = null;
-          }
-          responseDebounceTimer = null;
-        }, 1500);
+        responseDebounceTimer = setTimeout(finalizeAssistantResponse, 1500);
       }
     });
   }
 
-  function extractText(element) {
-    // Get text content, excluding script/style tags
-    const clone = element.cloneNode(true);
-    clone.querySelectorAll('script, style, button, svg').forEach(el => el.remove());
-    return clone.textContent?.trim() || '';
+  // Capture the latest assistant response and record the query.
+  function finalizeAssistantResponse() {
+    responseDebounceTimer = null;
+    if (!pendingUserMessage) return;
+
+    const latest = adapter.getLatestAssistant();
+    if (!latest) return;
+
+    const msgId = adapter.getMessageId(latest);
+    const text = adapter.extractText(latest);
+    if (!text) return;
+
+    if (msgId) processedMessageIds.add(msgId);
+    const responseTimeMs = Date.now() - pendingUserMessage.startTime;
+    processQuery(pendingUserMessage.text, text, responseTimeMs);
+    pendingUserMessage = null;
   }
 
-  async function processQuery(promptText, responseText) {
+  async function processQuery(promptText, responseText, responseTimeMs) {
     const multiplier = config.energyPerTokenMultiplier || 1.0;
+    // NOTE: Phase 3 makes this model platform- and response-time-aware.
     const impact = calculateQueryImpact(promptText, responseText, multiplier);
 
     lastQueryImpact = impact;
@@ -215,32 +166,25 @@
     sessionStats.totalCo2G += impact.co2G;
     sessionStats.queryCount += 1;
 
-    // Send to backend
     if (currentSessionId) {
-      sendMessage({
-        type: 'API_REQUEST',
-        payload: {
-          method: 'POST',
-          endpoint: '/queries',
-          body: {
-            sessionId: currentSessionId,
-            promptTokens: impact.promptTokens,
-            responseTokens: impact.responseTokens,
-            totalTokens: impact.totalTokens,
-            energyWh: impact.energyWh,
-            waterMl: impact.waterMl,
-            co2G: impact.co2G
-          }
-        }
+      await PFStorage.addQuery(currentSessionId, {
+        platform: adapter.id,
+        promptTokens: impact.promptTokens,
+        responseTokens: impact.responseTokens,
+        totalTokens: impact.totalTokens,
+        energyWh: impact.energyWh,
+        waterMl: impact.waterMl,
+        co2G: impact.co2G,
+        responseTimeMs,
       });
     }
 
     updateFloatingStatus('saved');
     updateModalStats();
-    console.log('[PromptFootprint] Query logged:', impact);
+    console.log('[PromptFootprint] Query logged:', { ...impact, responseTimeMs });
   }
 
-  // Floating Overlay
+  // ── Floating Overlay ───────────────────────────────────────────────────--
   function injectFloatingOverlay() {
     if (document.getElementById('pf-floating-overlay')) return;
 
@@ -279,7 +223,7 @@
     }
   }
 
-  // Modal Overlay
+  // ── Modal Overlay ──────────────────────────────────────────────────────--
   function injectModalOverlay() {
     if (document.getElementById('pf-modal-overlay')) return;
 
@@ -352,8 +296,8 @@
 
     document.getElementById('pf-modal-close-btn').addEventListener('click', () => toggleModal(false));
     document.getElementById('pf-open-stats-btn').addEventListener('click', () => {
-      const statsUrl = `https://prompt-footprint-2bjl.vercel.app?userId=${userId}`;
-      window.open(statsUrl, '_blank');
+      // Local-first: stats live in the extension's own dashboard page.
+      chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
     });
   }
 
@@ -443,7 +387,7 @@
     }
   });
 
-  // End session on page unload
+  // End session on page unload (best-effort; background also closes on tab removal)
   window.addEventListener('beforeunload', () => {
     if (currentSessionId) {
       sendMessage({ type: 'END_SESSION', payload: { sessionId: currentSessionId } });
