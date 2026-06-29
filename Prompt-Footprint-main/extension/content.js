@@ -22,6 +22,11 @@
   let sessionStats = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0 };
   let lastQueryImpact = null;
 
+  // How long to wait after the last streamed character before treating the
+  // assistant response as complete. Also subtracted from the measured
+  // response time so timing reflects generation, not this debounce window.
+  const SETTLE_DELAY_MS = 1500;
+
   // Initialize
   async function init() {
     // Inject overlay UI immediately — before any async/storage calls
@@ -95,7 +100,7 @@
         // capture the FULL response, not just what arrived in the first 1.5s.
         if (responseDebounceTimer !== null && pendingUserMessage) {
           clearTimeout(responseDebounceTimer);
-          responseDebounceTimer = setTimeout(finalizeAssistantResponse, 1500);
+          responseDebounceTimer = setTimeout(finalizeAssistantResponse, SETTLE_DELAY_MS);
         }
       }
     }
@@ -131,7 +136,7 @@
       } else if (role === 'assistant' && pendingUserMessage) {
         // Debounce: wait for streaming to complete.
         clearTimeout(responseDebounceTimer);
-        responseDebounceTimer = setTimeout(finalizeAssistantResponse, 1500);
+        responseDebounceTimer = setTimeout(finalizeAssistantResponse, SETTLE_DELAY_MS);
       }
     });
   }
@@ -149,15 +154,20 @@
     if (!text) return;
 
     if (msgId) processedMessageIds.add(msgId);
-    const responseTimeMs = Date.now() - pendingUserMessage.startTime;
+    // Subtract the trailing streaming-settle wait so the measured time
+    // approximates generation time, not our debounce window.
+    const responseTimeMs = Math.max(0, Date.now() - pendingUserMessage.startTime - SETTLE_DELAY_MS);
     processQuery(pendingUserMessage.text, text, responseTimeMs);
     pendingUserMessage = null;
   }
 
   async function processQuery(promptText, responseText, responseTimeMs) {
     const multiplier = config.energyPerTokenMultiplier || 1.0;
-    // NOTE: Phase 3 makes this model platform- and response-time-aware.
-    const impact = calculateQueryImpact(promptText, responseText, multiplier);
+    const impact = calculateQueryImpact(promptText, responseText, {
+      platform: adapter.id,
+      responseTimeMs,
+      multiplier,
+    });
 
     lastQueryImpact = impact;
     sessionStats.totalTokens += impact.totalTokens;
