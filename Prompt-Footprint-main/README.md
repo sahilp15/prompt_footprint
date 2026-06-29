@@ -1,6 +1,12 @@
 # PromptFootprint
 
-A Chrome extension that passively tracks ChatGPT interactions and estimates their environmental impact — energy (Wh), water (mL), and CO₂ (g) — using a peer-reviewed token-level framework.
+A Chrome extension that passively tracks your AI chat usage (**ChatGPT** and
+**Claude**, extensible to more) and estimates its environmental impact — energy
+(Wh), water (mL), and CO₂ (g) — using a token-level, response-time-aware model.
+
+**Local-first:** all data stays on your device in `chrome.storage.local`. There
+is no backend to run and nothing leaves your browser. 🏆 *3rd Place — Climate
+ChangeMakers Challenge 2026* · [Devpost](https://devpost.com/software/prompt-footprint)
 
 ## Architecture
 
@@ -8,94 +14,99 @@ A Chrome extension that passively tracks ChatGPT interactions and estimates thei
 Prompt-Footprint/
 ├── manifest.json          Chrome extension manifest (MV3)
 ├── extension/             Chrome extension source (vanilla JS)
-│   ├── background.js      Service worker
-│   ├── content.js         ChatGPT DOM observer
+│   ├── background.js      Service worker (user id, session lifecycle)
+│   ├── content.js         Platform-agnostic DOM observer + overlays + optimizer UI
 │   ├── popup/             Extension popup UI
-│   ├── overlay/           Floating + modal overlays on ChatGPT
-│   ├── dashboard/         Options page (session history)
-│   ├── lib/               Shared logic (env model, API client, token estimator)
+│   ├── overlay/           Floating + modal overlays, prompt-optimizer chip
+│   ├── dashboard/         Options page (session history, local data)
+│   ├── lib/
+│   │   ├── platforms.js          Platform adapters (ChatGPT, Claude, …)
+│   │   ├── storage.js            Local-first persistence (chrome.storage.local)
+│   │   ├── constants.js          Per-platform intensities + response-time model
+│   │   ├── tokenEstimator.js     Token estimation
+│   │   ├── environmentalModel.js Impact calculation (tokens × time)
+│   │   └── promptOptimizer.js    Local prompt shortener
+│   ├── test/              Unit tests (node:test)
 │   └── styles/            Shared design system CSS
-├── server/                Node.js + Express + PostgreSQL backend
-└── stats-site/            React + Vite stats website
+├── stats-site/            React + Vite showcase/dashboard (demo data on the web)
+└── server/                Legacy Express/Postgres backend (no longer required)
 ```
 
-## Environmental Model
+## Environmental model
 
-Based on: *"A Token-Level Framework for Quantifying ChatGPT's Environmental Impacts"* by Sahil Parasharami, using OpenAI's 2025 Sustainability Disclosure.
+See [`METHODOLOGY.md`](METHODOLOGY.md) for full formulas, constants, sources,
+and limitations. In short:
 
-**Token estimation:** `tokens = ceil(word_count × 1.3)` (GPT-4o BPE heuristic)
+```
+impact = totalTokens × perTokenIntensity(platform) × userMultiplier × timeFactor
+```
 
-**Per 1,000 tokens (GPT-4o):**
-- Energy: ~1.065 Wh
-- Water: ~3.54 mL
-- CO₂: ~0.375 g
-
-**GPT-5 scaling multipliers:** 1.9× (minimal reasoning) → 14× (high reasoning)
+- **ChatGPT (GPT-4o)** intensities are derived from OpenAI's 2025 sustainability
+  disclosure (the Vanderbilt YSJ token-level framework). Per 1k tokens: ~1.065 Wh,
+  ~3.54 mL, ~0.375 g CO₂.
+- **Claude** is scaled from the GPT-4o anchor using independent benchmarks
+  (Jegham et al. 2025, arXiv:2505.09598); see methodology for the factor and its
+  uncertainty.
+- **`timeFactor`** raises the estimate for responses that stream slower than the
+  platform baseline (a capped proxy for heavier per-token compute). It is `1` when
+  no response time is available, so prior ChatGPT figures are unchanged.
 
 ## Setup
 
-### 1. Backend Server
-
-```bash
-cd server
-cp .env.example .env
-# Edit .env with your PostgreSQL DATABASE_URL
-npm install
-npm start
-```
-
-Server runs on `http://localhost:3001`
-
-### 2. Stats Website
-
-```bash
-cd stats-site
-npm install
-npm run dev
-```
-
-Runs on `http://localhost:5173`
-
-### 3. Chrome Extension
+### Chrome extension
 
 1. Open Chrome → `chrome://extensions`
 2. Enable **Developer mode**
 3. Click **Load unpacked**
 4. Select the **repo root** directory (where `manifest.json` lives)
 
-## Usage
+No server or configuration is needed — the extension is fully local.
 
-1. Start the backend server
-2. Load the extension in Chrome
-3. Navigate to [chatgpt.com](https://chatgpt.com)
-4. Send a message — the extension auto-detects prompts and responses
-5. Click the floating **PF** pill (bottom-left) to open the modal with per-query metrics
-6. Click the extension icon for popup controls
-7. Click **View Full Stats** to open the stats website
+### Usage
 
-## API Endpoints
+1. Navigate to [chatgpt.com](https://chatgpt.com) or [claude.ai](https://claude.ai)
+2. Send a message — prompts and responses are auto-detected
+3. Type a long prompt to get a **shorter-prompt suggestion** with estimated savings
+   before you send
+4. Click the floating **PF** pill (bottom-left) for per-query metrics
+5. Click the extension icon for the popup, or **View Full Stats** for the dashboard
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/sessions` | Create a new session |
-| GET | `/api/sessions?userId=X` | Get all sessions for a user |
-| GET | `/api/sessions/weekly?userId=X` | Weekly aggregated stats |
-| PATCH | `/api/sessions/:id` | Update session (end time, totals) |
-| POST | `/api/queries` | Log a query |
-| GET | `/api/queries?sessionId=X` | Get queries for a session |
-| GET | `/api/config?userId=X` | Get user config |
-| PUT | `/api/config` | Update user config |
+### Stats site (optional, for the public showcase)
 
-## Data Privacy
+```bash
+cd stats-site
+npm install
+npm run dev      # http://localhost:5173 (shows demo data)
+npm run build    # static bundle in dist/
+```
 
-- **No prompt or response text is ever stored** — only token counts and computed metrics
-- Each user gets an anonymous UUID generated on first install
-- All persistent data lives in the remote backend database
+### Tests
 
-## Deployment
+```bash
+cd extension
+npm test         # node:test unit suite
+```
 
-The backend can be deployed to Railway, Render, Fly.io, or any Node.js host. Set `DATABASE_URL` to your production PostgreSQL URL.
+## Hosting / deployment
 
-The stats site builds to a static bundle (`npm run build`) deployable to Vercel, Netlify, or any static host.
+The public site is a **static bundle** deployed free on **GitHub Pages** via
+`.github/workflows/pages.yml` (builds `stats-site` and publishes on pushes to
+`main`). To enable: repo **Settings → Pages → Build and deployment → Source:
+GitHub Actions**. It uses `HashRouter` + a relative Vite base, so it works on a
+project subpath with no server rewrites. Because the app is local-first, the
+site needs no backend — it serves demo data on the web and reads the user's real
+data only when opened as the extension's dashboard.
 
-Update `API_BASE_URL` in `extension/lib/apiClient.js` and `stats-site/src/lib/api.js` to point to your production backend before publishing the extension.
+## Data privacy
+
+- **No prompt or response text is ever stored** — only token counts, timing, and
+  computed metrics.
+- Each user gets an anonymous UUID generated on first install.
+- All data lives **on your device**; nothing is transmitted to any server.
+
+## Adding a platform
+
+Append an adapter to `ADAPTERS` in `extension/lib/platforms.js` (selectors +
+role/text extraction), add a profile to `PLATFORM_PROFILES` in
+`extension/lib/constants.js`, and add the host to `manifest.json`
+(`host_permissions` + content-script `matches`). No other code changes needed.
