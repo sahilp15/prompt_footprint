@@ -68,26 +68,28 @@
   // claude.ai marks user turns with data-testid="user-message" and renders
   // assistant turns inside elements carrying the .font-claude-message class.
   // Claude does not expose a per-message id, so we assign our own.
+  const CLAUDE_USER = '[data-testid="user-message"]';
+  const CLAUDE_ASSISTANT = '.font-claude-message, [data-testid="assistant-message"]';
   const claude = {
     id: 'claude',
     name: 'Claude',
     hostMatches: ['claude.ai'],
     rootSelector: 'main',
-    messageSelector: '[data-testid="user-message"], .font-claude-message',
+    messageSelector: `${CLAUDE_USER}, ${CLAUDE_ASSISTANT}`,
     inputSelector: 'div[contenteditable="true"].ProseMirror, div[contenteditable="true"]',
     getRole(el) {
-      if (el.matches?.('[data-testid="user-message"]')) return 'user';
-      if (el.matches?.('.font-claude-message')) return 'assistant';
+      if (el.matches?.(CLAUDE_USER)) return 'user';
+      if (el.matches?.(CLAUDE_ASSISTANT)) return 'assistant';
       // Fallbacks: closest container hints
-      if (el.closest?.('[data-testid="user-message"]')) return 'user';
-      if (el.closest?.('.font-claude-message')) return 'assistant';
+      if (el.closest?.(CLAUDE_USER)) return 'user';
+      if (el.closest?.(CLAUDE_ASSISTANT)) return 'assistant';
       return null;
     },
     getMessageId(el) {
       return assignPfId(el);
     },
     getLatestAssistant() {
-      const msgs = document.querySelectorAll('.font-claude-message');
+      const msgs = document.querySelectorAll(CLAUDE_ASSISTANT);
       return msgs[msgs.length - 1] || null;
     },
     extractText,

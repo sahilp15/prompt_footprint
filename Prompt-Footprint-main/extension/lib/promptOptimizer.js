@@ -42,6 +42,28 @@
     [/\bplease note that\b/gi, ''],
     [/\bas a matter of fact\b/gi, ''],
     [/\bneedless to say\b/gi, ''],
+    [/\bhas the ability to\b/gi, 'can'],
+    [/\bis able to\b/gi, 'can'],
+    [/\bare able to\b/gi, 'can'],
+    [/\bin a timely manner\b/gi, 'promptly'],
+    [/\bon a regular basis\b/gi, 'regularly'],
+    [/\bin the near future\b/gi, 'soon'],
+    [/\bprior to\b/gi, 'before'],
+    [/\bsubsequent to\b/gi, 'after'],
+    [/\bin terms of\b/gi, 'for'],
+    [/\bwhether or not\b/gi, 'whether'],
+    [/\beach and every\b/gi, 'every'],
+    [/\bend result\b/gi, 'result'],
+    [/\bfirst and foremost\b/gi, 'first'],
+    [/\bfew in number\b/gi, 'few'],
+    [/\bcompletely eliminate\b/gi, 'eliminate'],
+    [/\babsolutely essential\b/gi, 'essential'],
+    [/\bin my opinion\b/gi, ''],
+    [/\bi think that\b/gi, ''],
+    [/\bi believe that\b/gi, ''],
+    [/\bi want you to\b/gi, ''],
+    [/\bi need you to\b/gi, ''],
+    [/\bi was hoping you could\b/gi, ''],
   ];
 
   // Politeness / filler phrases that can be removed wholesale.
@@ -66,7 +88,7 @@
   ];
 
   // Leading greetings are pure filler in a prompt (removed only at the start).
-  const LEADING_GREETING = /^(?:hi|hey|hello|greetings|good (?:morning|afternoon|evening))\b[\s,!.]*/i;
+  const LEADING_GREETING = /^(?:hi|hey|hello|greetings|good (?:morning|afternoon|evening))(?:\s+(?:there|team|claude|chatgpt|gpt|all|everyone))?\b[\s,!.]*/i;
 
   // Low-value intensifiers/hedges (removed only as standalone words).
   const FILLER_WORDS = [
@@ -91,6 +113,11 @@
       .trim();
   }
 
+  // Collapse immediate duplicate words ("the the" -> "the").
+  function collapseRepeats(text) {
+    return text.replace(/\b(\w+)(\s+\1\b)+/gi, '$1');
+  }
+
   // Produce a shortened version of the prompt.
   function shorten(text) {
     if (!text || typeof text !== 'string') return '';
@@ -98,6 +125,7 @@
     for (const rx of FILLER_PHRASES) out = out.replace(rx, ' ');
     for (const [rx, rep] of PHRASE_REPLACEMENTS) out = out.replace(rx, rep);
     for (const rx of FILLER_WORDS) out = out.replace(rx, ' ');
+    out = collapseRepeats(out);
     out = normalizeWhitespace(out);
     // Re-capitalize a leading lowercased word if we stripped a polite lead-in.
     out = out.replace(/^([a-z])/, (m) => m.toUpperCase());
