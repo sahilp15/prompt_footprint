@@ -469,7 +469,7 @@
   //   2. AI (Gemini via the proxy Worker) — a stronger rewrite that arrives a
   //      moment later and replaces the local suggestion when it's better.
   // If the proxy isn't configured or fails, only the local tier shows.
-  const OPTIMIZER_MIN_CHARS = 120;   // only analyze longer prompts
+  const OPTIMIZER_MIN_CHARS = 60;    // only analyze longer prompts
   const OPTIMIZER_MIN_TOKENS = 2;    // only suggest if it saves something real
   const OPTIMIZER_DEBOUNCE_MS = 350; // local heuristic (instant feel)
   const AI_DEBOUNCE_MS = 1100;       // AI (waits for a typing pause)
@@ -609,10 +609,13 @@
     document.addEventListener('input', (e) => {
       // The input event often fires on a child of the contenteditable (e.g. a <p>
       // inside ProseMirror). Walk up to find the actual input element.
+      // Fall back to any contenteditable to handle editor framework changes.
       const target = e.target;
       const el = target.matches?.(adapter.inputSelector)
         ? target
-        : target.closest?.(adapter.inputSelector) || null;
+        : target.closest?.(adapter.inputSelector)
+        || target.closest?.('[contenteditable="true"]')
+        || (target.tagName === 'TEXTAREA' ? target : null);
       if (!el) return;
       clearTimeout(optimizerTimer);
       clearTimeout(aiTimer);
