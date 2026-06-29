@@ -70,7 +70,9 @@
   // capture state when the URL changes.
   let lastUrl = location.href;
   function startWatchdog() {
-    setInterval(() => {
+    const wd = setInterval(() => {
+      // If the extension was reloaded/updated, stop quietly.
+      if (!extAlive()) { clearInterval(wd); stopResponseWatch(); return; }
       // Re-inject any overlay the page removed.
       injectFloatingOverlay();
       injectModalOverlay();
@@ -89,13 +91,30 @@
     }, 2000);
   }
 
+  // True while this content script's extension context is still valid. After an
+  // extension reload/update, old content scripts in open tabs lose their context
+  // and any chrome.* call throws "Extension context invalidated". We detect this
+  // and shut our timers down quietly instead of spamming the console.
+  function extAlive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
   function sendMessage(msg) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(msg, (response) => {
-        // Swallow chrome.runtime.lastError (e.g. worker asleep) — non-fatal.
-        void chrome.runtime.lastError;
-        resolve(response || {});
-      });
+      if (!extAlive()) { resolve({}); return; }
+      try {
+        chrome.runtime.sendMessage(msg, (response) => {
+          // Swallow chrome.runtime.lastError (e.g. worker asleep) — non-fatal.
+          void chrome.runtime.lastError;
+          resolve(response || {});
+        });
+      } catch (_) {
+        resolve({});
+      }
     });
   }
 
@@ -240,17 +259,21 @@
     sessionStats.totalCo2G += impact.co2G;
     sessionStats.queryCount += 1;
 
-    if (currentSessionId) {
-      await PFStorage.addQuery(currentSessionId, {
-        platform: adapter.id,
-        promptTokens: impact.promptTokens,
-        responseTokens: impact.responseTokens,
-        totalTokens: impact.totalTokens,
-        energyWh: impact.energyWh,
-        waterMl: impact.waterMl,
-        co2G: impact.co2G,
-        responseTimeMs,
-      });
+    if (currentSessionId && extAlive()) {
+      try {
+        await PFStorage.addQuery(currentSessionId, {
+          platform: adapter.id,
+          promptTokens: impact.promptTokens,
+          responseTokens: impact.responseTokens,
+          totalTokens: impact.totalTokens,
+          energyWh: impact.energyWh,
+          waterMl: impact.waterMl,
+          co2G: impact.co2G,
+          responseTimeMs,
+        });
+      } catch (_) {
+        // Extension context invalidated mid-write — non-fatal.
+      }
     }
 
     updateFloatingStatus('saved');
