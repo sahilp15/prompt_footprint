@@ -61,6 +61,8 @@
     [/\bin my opinion\b/gi, ''],
     [/\bi think that\b/gi, ''],
     [/\bi believe that\b/gi, ''],
+    [/\bi think\b/gi, ''],
+    [/\bi believe\b/gi, ''],
     [/\bi want you to\b/gi, ''],
     [/\bi need you to\b/gi, ''],
     [/\bi was hoping you could\b/gi, ''],
@@ -190,6 +192,43 @@
     return out;
   }
 
+  // Detect individual filler words / unnecessary phrases as discrete, advisory
+  // suggestions — built from the SAME word/phrase lists `shorten()` uses, so
+  // detection and the bulk rewrite always agree. Unlike `shorten()`, this
+  // never mutates text: it only reports what *could* be removed/replaced, one
+  // match per distinct phrase, so the writing assistant can show them as
+  // suggestions the user explicitly accepts (never a forced correction).
+  function detectFiller(text) {
+    const str = (text || '').toString();
+    const out = [];
+    const seen = new Set();
+
+    function record(original, suggestion, reason) {
+      const key = `${original.toLowerCase()}|${suggestion.toLowerCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ type: 'filler', original, suggestion, reason, safe: false });
+    }
+
+    function scan(list, suggestionFor, reasonFor) {
+      for (const item of list) {
+        const rx = Array.isArray(item) ? item[0] : item;
+        const re = new RegExp(rx.source, rx.flags); // fresh lastIndex per call
+        let m;
+        while ((m = re.exec(str)) !== null) {
+          record(m[0], suggestionFor(item), reasonFor(item));
+          if (!rx.global) break; // safety net; all our lists use /g
+        }
+      }
+    }
+
+    scan(FILLER_WORDS, () => '', () => 'Filler word — often safe to remove');
+    scan(FILLER_FILLER_PHRASES, () => '', () => 'Filler phrase — often safe to remove');
+    scan(PHRASE_REPLACEMENTS, (item) => item[1],
+      (item) => item[1] ? `More concise: "${item[1]}"` : 'Wordy phrasing — often safe to remove');
+    return out;
+  }
+
   // Compute the savings of replacing `original` with `shortened`, using the
   // per-platform intensity profile. Shared by the local heuristic and the AI
   // rewrite path so both report identical math.
@@ -225,7 +264,7 @@
     return savings(original, shorten(original), platform);
   }
 
-  const PFPromptOptimizer = { shorten, analyze, savings, normalizeWhitespace, fixTypos };
+  const PFPromptOptimizer = { shorten, analyze, savings, normalizeWhitespace, fixTypos, detectFiller };
 
   if (root) root.PFPromptOptimizer = PFPromptOptimizer;
   if (typeof module !== 'undefined' && module.exports) module.exports = PFPromptOptimizer;

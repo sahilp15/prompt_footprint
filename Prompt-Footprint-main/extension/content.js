@@ -653,7 +653,8 @@
   //      moment later and replaces the local suggestion when it's better.
   // If the proxy isn't configured or fails, only the local tier shows.
   const WRITING_MIN_CHARS = 12;      // analyze once there's a sentence to check
-  const OPTIMIZER_MIN_TOKENS = 2;    // only count savings if it saves something real
+  const OPTIMIZER_MIN_TOKENS = 1;    // only count savings if it saves something real
+                                      // (single filler-word accepts often save just 1 token)
   const OPTIMIZER_DEBOUNCE_MS = 350; // local heuristic (instant feel)
   const AI_DEBOUNCE_MS = 1100;       // AI (waits for a typing pause)
   let optimizerTimer = null;
@@ -877,6 +878,19 @@
     badgeEl.classList.toggle('pf-opt-badge-ai', source === 'ai');
   }
 
+  // Estimated token savings badge for a single filler/concision suggestion
+  // (e.g. "Saved ~1 token"), shown so the user can see the impact of each
+  // suggestion before accepting it. Spelling/capitalization/punctuation/
+  // grammar suggestions don't change token count meaningfully, so this is
+  // filler-only.
+  function fillerSavingsBadge(s) {
+    if (s.type !== 'filler') return '';
+    let saved = 0;
+    try { saved = PFPromptOptimizer.savings(s.original, s.suggestion, adapter.id).savedTokens; } catch (_) {}
+    if (saved <= 0) return '';
+    return ` · <span class="pf-opt-item-savings">Saved ~${saved} token${saved === 1 ? '' : 's'}</span>`;
+  }
+
   // Local tier: a short, scannable list of suggestions with the changed text
   // bolded and a one-line reason, plus "Accept all safe".
   function renderWritingSuggestions(res) {
@@ -901,7 +915,7 @@
       const idx = res.suggestions.indexOf(s);
       return `<div class="pf-opt-item">
           <div class="pf-opt-item-text">${PFWritingFormat.renderSuggestion(s)}</div>
-          <div class="pf-opt-item-reason">${PFWritingFormat.escapeHtml(s.reason)}</div>
+          <div class="pf-opt-item-reason">${PFWritingFormat.escapeHtml(s.reason)}${fillerSavingsBadge(s)}</div>
           <button class="pf-opt-accept" type="button" data-pf-accept="${idx}">Accept</button>
         </div>`;
     }).join('');
