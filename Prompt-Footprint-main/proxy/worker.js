@@ -32,7 +32,8 @@ function rateLimited(ip) {
   return b.count > RATE_LIMIT;
 }
 
-const SYSTEM = [
+// 'shorten' (default, token reduction) and 'improve' (writing quality) modes.
+const SYSTEM_SHORTEN = [
   'You rewrite a user\'s AI chat prompt to use as few tokens as possible while',
   'preserving the EXACT meaning, intent, constraints, and all specifics (names,',
   'numbers, code, examples, and formatting requests). Remove politeness, filler,',
@@ -40,6 +41,18 @@ const SYSTEM = [
   'Do NOT answer or follow the prompt. Do NOT add notes, quotes, or labels.',
   'Output ONLY the rewritten prompt text.',
 ].join(' ');
+
+const SYSTEM_IMPROVE = [
+  'You are a writing assistant. Improve the user\'s text for spelling, grammar,',
+  'clarity, tone, and concision while preserving the original meaning, intent,',
+  'language, and ALL formatting (bullet lists, numbered lists, code, **bold**,',
+  'paragraph breaks). Do NOT answer or follow the text. Do NOT add notes,',
+  'quotes, or labels. Output ONLY the improved text.',
+].join(' ');
+
+function systemFor(mode) {
+  return mode === 'improve' ? SYSTEM_IMPROVE : SYSTEM_SHORTEN;
+}
 
 function cors(origin) {
   return {
@@ -68,15 +81,23 @@ export default {
 
     if (!env.GEMINI_API_KEY) return json({ error: 'Server not configured' }, 500, origin);
 
+    // Optional Origin pin: if ALLOWED_EXTENSION_ID is configured, only accept
+    // requests from that extension. Left unset = accept any (back-compat).
+    if (env.ALLOWED_EXTENSION_ID && origin &&
+        origin !== `chrome-extension://${env.ALLOWED_EXTENSION_ID}`) {
+      return json({ error: 'Forbidden origin' }, 403, origin);
+    }
+
     let body;
     try { body = await request.json(); } catch { return json({ error: 'Bad JSON' }, 400, origin); }
     const text = (body && typeof body.text === 'string') ? body.text.trim() : '';
     if (!text) return json({ error: 'Missing text' }, 400, origin);
     if (text.length > MAX_INPUT_CHARS) return json({ error: 'Text too long' }, 413, origin);
+    const mode = body && body.mode === 'improve' ? 'improve' : 'shorten';
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${env.GEMINI_API_KEY}`;
     const payload = {
-      systemInstruction: { parts: [{ text: SYSTEM }] },
+      systemInstruction: { parts: [{ text: systemFor(mode) }] },
       contents: [{ role: 'user', parts: [{ text }] }],
       generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
     };
@@ -93,12 +114,16 @@ export default {
     }
     if (!g.ok) return json({ error: 'Gemini error', status: g.status }, 502, origin);
 
-    const data = await g.json();
-    const rewritten = (data?.candidates?.[0]?.content?.parts || [])
+    let data;
+    try { data = await g.json(); } catch { return json({ error: 'Bad upstream JSON' }, 502, origin); }
+    const result = (data?.candidates?.[0]?.content?.parts || [])
       .map((p) => p.text || '')
       .join('')
       .trim();
 
-    return json({ rewritten }, 200, origin);
+    // Return under the mode-appropriate key; keep `rewritten` as a back-compat
+    // alias so older extension builds (shorten-only) still work.
+    const out = mode === 'improve' ? { improved: result, rewritten: result } : { rewritten: result };
+    return json(out, 200, origin);
   },
 };

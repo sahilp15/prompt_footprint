@@ -1,11 +1,12 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, Zap, BarChart3, Leaf, BookOpen, GraduationCap, Trophy } from 'lucide-react'
+import { Droplets, Zap, BarChart3, Leaf, BookOpen, GraduationCap, Trophy, Settings as SettingsIcon } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
 import SessionList from './components/SessionList'
 import Savings from './components/Savings'
 import HowItWorks from './components/HowItWorks'
 import Guide from './components/Guide'
 import Awards from './components/Awards'
+import Settings from './components/Settings'
 import { isDemoMode } from './lib/api'
 import './App.css'
 
@@ -39,6 +40,9 @@ function App() {
             <NavLink to="/awards" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Trophy size={16} /><span>Awards</span>
             </NavLink>
+            <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              <SettingsIcon size={16} /><span>Settings</span>
+            </NavLink>
           </div>
         </div>
       </nav>
@@ -58,6 +62,7 @@ function App() {
           <Route path="/learn" element={<Guide />} />
           <Route path="/how" element={<HowItWorks />} />
           <Route path="/awards" element={<Awards />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>

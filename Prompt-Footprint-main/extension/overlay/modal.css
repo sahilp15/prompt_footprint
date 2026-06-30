@@ -143,3 +143,24 @@
   background: #4A6830;
   transform: translateY(-1px);
 }
+
+/* Keyboard-shortcut / drag hint at the bottom of the panel. */
+.pf-modal-hint {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #E8E0D0;
+  font-size: 11px;
+  color: #8B7355;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.pf-modal-hint kbd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #5C4A3A;
+  background: #F0EADD;
+  border: 1px solid #D4C5A9;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
