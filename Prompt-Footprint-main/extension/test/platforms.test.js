@@ -42,11 +42,14 @@ test('claude adapter derives role from selectors', () => {
 });
 
 // Minimal document stub so the DOM-based adapter methods can be unit-tested.
+// A matcher may return a single element (→ querySelectorAll yields [el]) or an
+// array of elements (→ querySelectorAll yields the array, for count-based logic).
 function withFakeDom(matchers, fn) {
   const prev = global.document;
+  const get = (sel) => (matchers[sel] ? matchers[sel]() : null);
   global.document = {
-    querySelector(sel) { return matchers[sel] ? matchers[sel]() : null; },
-    querySelectorAll(sel) { const el = matchers[sel] && matchers[sel](); return el ? [el] : []; },
+    querySelector(sel) { const r = get(sel); return Array.isArray(r) ? (r[0] || null) : (r || null); },
+    querySelectorAll(sel) { const r = get(sel); return Array.isArray(r) ? r : (r ? [r] : []); },
   };
   try { return fn(); } finally { global.document = prev; }
 }
@@ -98,22 +101,91 @@ test('chatgpt.isComplete: only when text + toolbar present and not generating', 
   });
 });
 
-test('claude.generatingSignal: data-is-streaming, then stop button, else null', () => {
+// ── Claude "records but never saves" bug ────────────────────────────────────
+// Verified DOM: a finished Claude turn renders an assistant-only Retry button
+// (button[data-testid="action-bar-retry"]); the streaming turn has none. Once
+// Retry count >= assistant-message count, the latest turn is complete.
+const CLAUDE_ASSIST = '.font-claude-message, [data-testid="assistant-message"]';
+const CLAUDE_RETRY = 'button[data-testid="action-bar-retry"]';
+function claudeAssistantEl(text = 'final answer') {
+  return { cloneNode: () => ({ querySelectorAll: () => [], textContent: text }) };
+}
+
+test('claude does NOT save while streaming (stop button up, no action bar yet)', () => {
   const cl = adapter('claude');
-  // Streaming attribute present → highest-priority signal.
-  withFakeDom({ '[data-is-streaming="true"]': () => ({}) }, () => {
-    assert.strictEqual(cl.generatingSignal(), 'is-streaming');
-    assert.strictEqual(cl.isGenerating(), true);
-  });
-  // No streaming attribute but Stop button present → fallback signal.
-  withFakeDom({ [cl.stopSelector]: () => ({}) }, () => {
+  withFakeDom({
+    [cl.stopSelector]: () => ({}),
+    [CLAUDE_ASSIST]: () => [claudeAssistantEl('partial')],
+    // no Retry button yet
+  }, () => {
     assert.strictEqual(cl.generatingSignal(), 'stop-button');
     assert.strictEqual(cl.isGenerating(), true);
+    assert.strictEqual(cl.isComplete(), false);
+    assert.strictEqual(
+      P.isResponseComplete({ generating: true, hasText: true, stableMs: 9999, settleMs: 2000, completeSignal: false }),
+      false,
+    );
   });
-  // Neither → not generating.
-  withFakeDom({}, () => {
+});
+
+test('claude does NOT save while streaming (data-is-streaming, action bar not rendered)', () => {
+  const cl = adapter('claude');
+  withFakeDom({
+    '[data-is-streaming="true"]': () => ({}),
+    [CLAUDE_ASSIST]: () => [claudeAssistantEl('')],
+  }, () => {
+    assert.strictEqual(cl.latestTurnComplete(), false); // 0 retry < 1 assistant
+    assert.strictEqual(cl.generatingSignal(), 'is-streaming');
+    assert.strictEqual(cl.isGenerating(), true);
+    assert.strictEqual(cl.isComplete(), false);
+  });
+});
+
+test('claude finalizes once completed (action bar present, no stop button)', () => {
+  const cl = adapter('claude');
+  withFakeDom({
+    [CLAUDE_ASSIST]: () => [claudeAssistantEl()],
+    [CLAUDE_RETRY]: () => [{}],
+  }, () => {
+    assert.strictEqual(cl.latestTurnComplete(), true);
     assert.strictEqual(cl.generatingSignal(), null);
     assert.strictEqual(cl.isGenerating(), false);
+    assert.strictEqual(cl.isComplete(), true);
+    assert.strictEqual(
+      P.isResponseComplete({ generating: false, hasText: true, stableMs: 0, settleMs: 2000, completeSignal: true }),
+      true,
+    );
+  });
+});
+
+test('claude regression: a lingering data-is-streaming="true" no longer blocks save', () => {
+  const cl = adapter('claude');
+  // The exact bug: stream attribute stuck true, but the turn finished (Retry
+  // present) and the stop button is gone.
+  withFakeDom({
+    '[data-is-streaming="true"]': () => ({}),
+    [CLAUDE_ASSIST]: () => [claudeAssistantEl()],
+    [CLAUDE_RETRY]: () => [{}],
+  }, () => {
+    assert.strictEqual(cl.generatingSignal(), null); // is-streaming suppressed by completion
+    assert.strictEqual(cl.isGenerating(), false);
+    assert.strictEqual(cl.isComplete(), true);
+  });
+});
+
+test('claude does not finalize the PREVIOUS turn right after a new submit', () => {
+  const cl = adapter('claude');
+  // Previous turn complete (1 assistant + 1 Retry); a new prompt was just sent so
+  // the Stop button is up but the new assistant element has not rendered yet. The
+  // Stop button must keep us "generating" so we do not save the previous answer.
+  withFakeDom({
+    [cl.stopSelector]: () => ({}),
+    [CLAUDE_ASSIST]: () => [claudeAssistantEl()],
+    [CLAUDE_RETRY]: () => [{}],
+  }, () => {
+    assert.strictEqual(cl.latestTurnComplete(), true); // count says complete...
+    assert.strictEqual(cl.generatingSignal(), 'stop-button'); // ...but Stop is authoritative
+    assert.strictEqual(cl.isGenerating(), true);
   });
 });
 

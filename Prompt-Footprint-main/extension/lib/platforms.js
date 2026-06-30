@@ -133,17 +133,37 @@
       const msgs = document.querySelectorAll('.font-claude-message, [data-testid="assistant-message"]');
       return msgs[msgs.length - 1] || null;
     },
-    // Mirror ChatGPT's grouped-signal approach so the live DOM reveals which
-    // signal fired (logged in content.js) rather than relying on one selector.
-    // Claude marks the streaming turn with data-is-streaming="true"; the Stop
-    // button is the cross-version fallback.
+    // A finished Claude assistant turn renders an action bar with an
+    // assistant-only Retry button (button[data-testid="action-bar-retry"]); the
+    // in-progress streaming turn has none. So once there are at least as many
+    // Retry buttons as assistant messages, the latest turn is complete. Retry is
+    // assistant-only, so user turns never inflate the count. (DOM verified.)
+    latestTurnComplete() {
+      const assistants = document.querySelectorAll('.font-claude-message, [data-testid="assistant-message"]').length;
+      if (!assistants) return false;
+      return document.querySelectorAll('button[data-testid="action-bar-retry"]').length >= assistants;
+    },
+    // Grouped "still generating" signal (logged in content.js).
+    //  1. An active Stop button is authoritative — it covers the window right
+    //     after submit, before the new assistant turn renders, so we never
+    //     finalize the previous turn early.
+    //  2. data-is-streaming="true" can LINGER on a finished message (root cause
+    //     of "stuck on Recording, never saves"): trust it only until the turn's
+    //     action bar (Retry) has appeared.
     generatingSignal() {
-      if (document.querySelector('[data-is-streaming="true"]')) return 'is-streaming';
       if (document.querySelector(this.stopSelector)) return 'stop-button';
+      if (document.querySelector('[data-is-streaming="true"]') && !this.latestTurnComplete()) return 'is-streaming';
       return null;
     },
     isGenerating() {
       return !!this.generatingSignal();
+    },
+    // Positive completion signal (mirrors ChatGPT.isComplete): the latest
+    // assistant turn has real text and its action bar has rendered.
+    isComplete() {
+      const latest = this.getLatestAssistant();
+      if (!latest || !extractText(latest)) return false;
+      return this.latestTurnComplete();
     },
     getSendButton() {
       return document.querySelector(this.sendSelector) || null;
