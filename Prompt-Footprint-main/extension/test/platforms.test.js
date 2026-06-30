@@ -102,20 +102,35 @@ test('chatgpt.isComplete: only when text + toolbar present and not generating', 
 });
 
 // ── Claude "records but never saves" bug ────────────────────────────────────
-// Verified DOM: a finished Claude turn renders an assistant-only Retry button
-// (button[data-testid="action-bar-retry"]); the streaming turn has none. Once
-// Retry count >= assistant-message count, the latest turn is complete.
-const CLAUDE_ASSIST = '.font-claude-message, [data-testid="assistant-message"]';
+// Root cause: getLatestAssistant()/latestTurnComplete() relied on the stale
+// `.font-claude-message` container, which Claude's live DOM no longer renders.
+// Verified hooks: answer text is <p class="font-claude-response-body">, and a
+// finished turn renders an action bar with the assistant-only Retry button
+// (button[data-testid="action-bar-retry"]). Each user turn yields one answer,
+// so the latest turn is complete once Retry count >= user-turn count.
+const CLAUDE_USER = '[data-testid="user-message"]';
+const CLAUDE_RESP = 'p.font-claude-response-body';
 const CLAUDE_RETRY = 'button[data-testid="action-bar-retry"]';
 function claudeAssistantEl(text = 'final answer') {
   return { cloneNode: () => ({ querySelectorAll: () => [], textContent: text }) };
 }
 
+test('claude reads answer text from p.font-claude-response-body (not .font-claude-message)', () => {
+  const cl = adapter('claude');
+  // Live DOM exposes no legacy container — only response-body paragraphs.
+  withFakeDom({ [CLAUDE_RESP]: () => [claudeAssistantEl('hello world')] }, () => {
+    const latest = cl.getLatestAssistant();
+    assert.ok(latest, 'getLatestAssistant must find the response-body paragraph');
+    assert.strictEqual(cl.extractText(latest), 'hello world');
+  });
+});
+
 test('claude does NOT save while streaming (stop button up, no action bar yet)', () => {
   const cl = adapter('claude');
   withFakeDom({
     [cl.stopSelector]: () => ({}),
-    [CLAUDE_ASSIST]: () => [claudeAssistantEl('partial')],
+    [CLAUDE_USER]: () => [{}],
+    [CLAUDE_RESP]: () => [claudeAssistantEl('partial')],
     // no Retry button yet
   }, () => {
     assert.strictEqual(cl.generatingSignal(), 'stop-button');
@@ -128,23 +143,25 @@ test('claude does NOT save while streaming (stop button up, no action bar yet)',
   });
 });
 
-test('claude does NOT save while streaming (data-is-streaming, action bar not rendered)', () => {
+test('claude does NOT save while thinking/streaming (data-is-streaming, action bar not rendered)', () => {
   const cl = adapter('claude');
   withFakeDom({
     '[data-is-streaming="true"]': () => ({}),
-    [CLAUDE_ASSIST]: () => [claudeAssistantEl('')],
+    [CLAUDE_USER]: () => [{}],
+    [CLAUDE_RESP]: () => [claudeAssistantEl('partial')],
   }, () => {
-    assert.strictEqual(cl.latestTurnComplete(), false); // 0 retry < 1 assistant
+    assert.strictEqual(cl.latestTurnComplete(), false); // 0 retry < 1 user turn
     assert.strictEqual(cl.generatingSignal(), 'is-streaming');
     assert.strictEqual(cl.isGenerating(), true);
     assert.strictEqual(cl.isComplete(), false);
   });
 });
 
-test('claude finalizes once completed (action bar present, no stop button)', () => {
+test('claude saves after the completed action bar appears (no stop button)', () => {
   const cl = adapter('claude');
   withFakeDom({
-    [CLAUDE_ASSIST]: () => [claudeAssistantEl()],
+    [CLAUDE_USER]: () => [{}],
+    [CLAUDE_RESP]: () => [claudeAssistantEl()],
     [CLAUDE_RETRY]: () => [{}],
   }, () => {
     assert.strictEqual(cl.latestTurnComplete(), true);
@@ -164,7 +181,8 @@ test('claude regression: a lingering data-is-streaming="true" no longer blocks s
   // present) and the stop button is gone.
   withFakeDom({
     '[data-is-streaming="true"]': () => ({}),
-    [CLAUDE_ASSIST]: () => [claudeAssistantEl()],
+    [CLAUDE_USER]: () => [{}],
+    [CLAUDE_RESP]: () => [claudeAssistantEl()],
     [CLAUDE_RETRY]: () => [{}],
   }, () => {
     assert.strictEqual(cl.generatingSignal(), null); // is-streaming suppressed by completion
@@ -175,17 +193,50 @@ test('claude regression: a lingering data-is-streaming="true" no longer blocks s
 
 test('claude does not finalize the PREVIOUS turn right after a new submit', () => {
   const cl = adapter('claude');
-  // Previous turn complete (1 assistant + 1 Retry); a new prompt was just sent so
-  // the Stop button is up but the new assistant element has not rendered yet. The
-  // Stop button must keep us "generating" so we do not save the previous answer.
+  // Previous turn complete (1 Retry); a new prompt was just sent so there are 2
+  // user turns but only 1 Retry, and the Stop button is up. Both the count
+  // (1 < 2) and the authoritative Stop button keep us "generating".
   withFakeDom({
     [cl.stopSelector]: () => ({}),
-    [CLAUDE_ASSIST]: () => [claudeAssistantEl()],
+    [CLAUDE_USER]: () => [{}, {}],
+    [CLAUDE_RESP]: () => [claudeAssistantEl(), claudeAssistantEl()],
     [CLAUDE_RETRY]: () => [{}],
   }, () => {
-    assert.strictEqual(cl.latestTurnComplete(), true); // count says complete...
-    assert.strictEqual(cl.generatingSignal(), 'stop-button'); // ...but Stop is authoritative
+    assert.strictEqual(cl.latestTurnComplete(), false); // 1 retry < 2 user turns
+    assert.strictEqual(cl.generatingSignal(), 'stop-button'); // Stop is authoritative too
     assert.strictEqual(cl.isGenerating(), true);
+  });
+});
+
+test('claude saves exactly once across repeated completed polls', () => {
+  // Mirrors content.js pollResponse/finalizeResponse: once a poll finalizes it
+  // clears the pending capture (stopResponseWatch) and the lastFinalizedText
+  // guard rejects a duplicate, so further completed polls cannot save again.
+  const cl = adapter('claude');
+  let finalizeCount = 0;
+  let lastFinalizedText = '';
+  let pending = true;
+  const poll = () => {
+    if (!pending) return;
+    const generating = cl.isGenerating();
+    const latest = cl.getLatestAssistant();
+    const text = latest ? cl.extractText(latest) : '';
+    const done = P.isResponseComplete({
+      generating, hasText: !!text, stableMs: 0, settleMs: 2000, completeSignal: cl.isComplete(),
+    });
+    if (!done) return;
+    pending = false; // content.js: stopResponseWatch() + pendingUserMessage = null
+    if (text === lastFinalizedText) return; // duplicate guard
+    lastFinalizedText = text;
+    finalizeCount += 1;
+  };
+  withFakeDom({
+    [CLAUDE_USER]: () => [{}],
+    [CLAUDE_RESP]: () => [claudeAssistantEl('answer')],
+    [CLAUDE_RETRY]: () => [{}],
+  }, () => {
+    poll(); poll(); poll(); // three completed ticks
+    assert.strictEqual(finalizeCount, 1);
   });
 });
 

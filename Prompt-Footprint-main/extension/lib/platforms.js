@@ -106,9 +106,20 @@
   // assistant turns inside elements carrying the .font-claude-message class.
   // Claude does not expose a per-message id, so we assign our own.
   const CLAUDE_USER = '[data-testid="user-message"]';
-  // Keep the historical class + testid selectors, plus a streaming-content
-  // fallback, so a class rename doesn't silently break assistant capture.
-  const CLAUDE_ASSISTANT = '.font-claude-message, [data-testid="assistant-message"], [data-is-streaming] .font-claude-message, div[data-is-streaming]';
+  // Claude's current DOM renders assistant answer text as
+  // <p class="font-claude-response-body"> paragraphs (verified). Keep the
+  // historical container selectors as fallbacks so an older/newer build that
+  // still uses them is handled, but the response-body paragraph is what the
+  // live DOM actually exposes.
+  const CLAUDE_RESPONSE = 'p.font-claude-response-body';
+  const CLAUDE_ASSISTANT = `.font-claude-message, [data-testid="assistant-message"], ${CLAUDE_RESPONSE}`;
+  // A finished assistant turn renders an action bar holding assistant-only
+  // Copy + Retry buttons; the streaming/thinking turn has none. We count the
+  // Retry button (assistant-only, one per completed turn) — verified hooks:
+  //   div[data-message-action-bar]
+  //   div[role="toolbar"][aria-label="Message actions"]
+  //   button[data-testid="action-bar-retry"][aria-label="Retry"]
+  const CLAUDE_RETRY = 'button[data-testid="action-bar-retry"]';
   const claude = {
     id: 'claude',
     name: 'Claude',
@@ -130,18 +141,33 @@
       return assignPfId(el);
     },
     getLatestAssistant() {
-      const msgs = document.querySelectorAll('.font-claude-message, [data-testid="assistant-message"]');
-      return msgs[msgs.length - 1] || null;
+      // Prefer a stable message container if Claude still renders one.
+      const legacy = document.querySelectorAll('.font-claude-message, [data-testid="assistant-message"]');
+      if (legacy.length) return legacy[legacy.length - 1];
+      // Otherwise fall back to the response-body paragraphs the live DOM uses.
+      // Return the shared parent when it holds several paragraphs so the whole
+      // multi-paragraph answer is captured, not just the final paragraph.
+      const paras = document.querySelectorAll(CLAUDE_RESPONSE);
+      const last = paras[paras.length - 1];
+      if (!last) return null;
+      const parent = last.parentElement;
+      if (parent && parent.querySelectorAll &&
+          parent.querySelectorAll(CLAUDE_RESPONSE).length > 1) {
+        return parent;
+      }
+      return last;
     },
     // A finished Claude assistant turn renders an action bar with an
     // assistant-only Retry button (button[data-testid="action-bar-retry"]); the
-    // in-progress streaming turn has none. So once there are at least as many
-    // Retry buttons as assistant messages, the latest turn is complete. Retry is
-    // assistant-only, so user turns never inflate the count. (DOM verified.)
+    // in-progress streaming/thinking turn has none. Each user turn produces one
+    // assistant answer, so once the Retry-button count reaches the user-turn
+    // count, the latest assistant turn has finished. Retry is assistant-only and
+    // user turns are counted from a stable per-message hook, so neither side is
+    // inflated by multi-paragraph answers. (DOM verified.)
     latestTurnComplete() {
-      const assistants = document.querySelectorAll('.font-claude-message, [data-testid="assistant-message"]').length;
-      if (!assistants) return false;
-      return document.querySelectorAll('button[data-testid="action-bar-retry"]').length >= assistants;
+      const userTurns = document.querySelectorAll(CLAUDE_USER).length;
+      if (!userTurns) return false;
+      return document.querySelectorAll(CLAUDE_RETRY).length >= userTurns;
     },
     // Grouped "still generating" signal (logged in content.js).
     //  1. An active Stop button is authoritative — it covers the window right
