@@ -167,6 +167,12 @@
   font-size: 11px;
 }
 
+.pf-opt-item-savings {
+  color: #5B7C3A;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
 .pf-opt-accept {
   grid-column: 2;
   grid-row: 1 / span 2;

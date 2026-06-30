@@ -255,7 +255,16 @@
         .replace(/([,;:!?])\1+/g, '$1');
     }
     const esc = sug.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return text.replace(new RegExp(`\\b${esc}\\b`), () => matchCase(sug.original, sug.suggestion));
+    const replaced = text.replace(new RegExp(`\\b${esc}\\b`), () => matchCase(sug.original, sug.suggestion));
+    if (sug.suggestion === '') {
+      // Removing a filler word/phrase (suggestion === '') can leave a doubled
+      // space, a dangling space before punctuation, or an uncapitalized start
+      // (if the removed text opened the sentence) — tidy those up.
+      return capitalizeSentences(
+        replaced.replace(/ {2,}/g, ' ').replace(/ ([,.;:!?])/g, '$1').trim()
+      );
+    }
+    return replaced;
   }
 
   // ── top-level analysis ──────────────────────────────────────────────────--
@@ -267,6 +276,10 @@
       ...checkCapitalization(raw),
       ...checkGrammar(raw),
       ...checkPunctuation(raw),
+      // Filler/concision suggestions (type: 'filler') are advisory only
+      // (safe: false) — kept out of safeFixedText/safeCount so they never
+      // get bulk-applied by "Accept all safe"; spelling stays untouched.
+      ..._O.detectFiller(raw),
     ];
     // De-duplicate identical suggestions.
     const seen = new Set();

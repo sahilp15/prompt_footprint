@@ -68,8 +68,13 @@
   // Render one discrete suggestion as "original → **suggestion**" (the changed
   // text bolded), injection-safe. Capitalization/punctuation tidy-ups that have
   // no meaningful token form fall back to just the bolded suggestion label.
+  // A suggestion whose replacement is '' (a filler word/phrase to delete, not
+  // replace) renders as "original → remove" instead of an empty bold tag.
   function renderSuggestion(sug) {
     if (!sug) return '';
+    if (sug.suggestion === '') {
+      return `${escapeHtml(sug.original)} &rarr; <strong>remove</strong>`;
+    }
     const to = `<strong>${escapeHtml(sug.suggestion)}</strong>`;
     if (sug.original && sug.original !== sug.suggestion) {
       return `${escapeHtml(sug.original)} &rarr; ${to}`;
