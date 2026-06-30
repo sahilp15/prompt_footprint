@@ -13,6 +13,17 @@ const ALLOWED_ORIGINS = [
   'https://claude.ai',
 ];
 
+// Verbose logging is opt-in (pf_config.debug), matching the content script, so
+// production stays quiet. Cached at worker startup; staleness is harmless for
+// the rare diagnostics it gates.
+let DEBUG = false;
+PFStorage.getConfig()
+  .then((c) => { DEBUG = !!(c && c.debug); })
+  .catch(() => {});
+function dbg(...args) {
+  if (DEBUG) console.warn('[PromptFootprint]', ...args);
+}
+
 // Initialize user ID on install
 chrome.runtime.onInstalled.addListener(async () => {
   await PFStorage.getUserId(); // creates one if missing
@@ -32,7 +43,7 @@ function isValidSender(sender) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isValidSender(sender)) {
-    console.warn('[PromptFootprint] Rejected message from unauthorized sender:', sender.id);
+    dbg('Rejected message from unauthorized sender:', sender.id);
     sendResponse({ error: 'Unauthorized sender' });
     return false;
   }

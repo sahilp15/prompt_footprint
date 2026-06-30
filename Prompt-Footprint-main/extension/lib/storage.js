@@ -37,10 +37,22 @@
   }
 
   function getLocal(keys) {
-    return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.get(keys, (result) => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) reject(new Error(err.message));
+        else resolve(result);
+      });
+    });
   }
   function setLocal(obj) {
-    return new Promise((resolve) => chrome.storage.local.set(obj, resolve));
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.set(obj, () => {
+        const err = chrome.runtime && chrome.runtime.lastError;
+        if (err) reject(new Error(err.message));
+        else resolve();
+      });
+    });
   }
 
   function uuid() {

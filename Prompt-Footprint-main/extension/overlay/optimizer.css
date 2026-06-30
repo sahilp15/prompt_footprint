@@ -15,7 +15,7 @@
   border-radius: 14px;
   box-shadow: 0 8px 40px rgba(44, 24, 16, 0.18);
   padding: 14px 16px;
-  font-family: 'Source Serif 4', serif;
+  font-family: var(--pf-font-sans);
   font-size: 13px;
   line-height: 1.45;
   opacity: 0;
@@ -98,7 +98,7 @@
 }
 
 .pf-opt-actions button {
-  font-family: 'Source Serif 4', serif;
+  font-family: var(--pf-font-sans);
   font-size: 13px;
   font-weight: 600;
   border-radius: 8px;

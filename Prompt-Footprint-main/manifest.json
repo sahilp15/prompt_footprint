@@ -26,6 +26,7 @@
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",
         "extension/lib/promptOptimizer.js",
+        "extension/lib/formatters.js",
         "extension/content.js"
       ],
       "css": [
