@@ -98,6 +98,25 @@ test('chatgpt.isComplete: only when text + toolbar present and not generating', 
   });
 });
 
+test('claude.generatingSignal: data-is-streaming, then stop button, else null', () => {
+  const cl = adapter('claude');
+  // Streaming attribute present → highest-priority signal.
+  withFakeDom({ '[data-is-streaming="true"]': () => ({}) }, () => {
+    assert.strictEqual(cl.generatingSignal(), 'is-streaming');
+    assert.strictEqual(cl.isGenerating(), true);
+  });
+  // No streaming attribute but Stop button present → fallback signal.
+  withFakeDom({ [cl.stopSelector]: () => ({}) }, () => {
+    assert.strictEqual(cl.generatingSignal(), 'stop-button');
+    assert.strictEqual(cl.isGenerating(), true);
+  });
+  // Neither → not generating.
+  withFakeDom({}, () => {
+    assert.strictEqual(cl.generatingSignal(), null);
+    assert.strictEqual(cl.isGenerating(), false);
+  });
+});
+
 test('isResponseComplete decision table', () => {
   const f = P.isResponseComplete;
   // generating → never complete

@@ -1,35 +1,20 @@
 const SUPPORTED_HOSTS = ['chatgpt.com', 'chat.openai.com', 'claude.ai'];
 
 // ── Real-world impact conversions ─────────────────────────────────────────
-// These are shown in the popup instead of raw numbers.
-// Raw numbers live on the stats website.
+// These are shown in the popup instead of raw numbers (raw numbers live on the
+// stats website). The conversion logic is shared with the in-page modal via
+// lib/formatters.js; here we use the two-part { main, sub } form.
 
 function waterConversion(ml) {
-  if (ml <= 0)   return { main: '0 drops', sub: 'of water' };
-  if (ml < 0.05) return { main: '< 1 drop',  sub: 'of water' };
-  if (ml < 1.5)  return { main: `≈ ${Math.round(ml * 20)} drops`, sub: 'of water' };
-  if (ml < 5)    return { main: `≈ ${(ml / 5).toFixed(1)} tsp`,   sub: 'of water' };
-  if (ml < 250)  return { main: `≈ ${Math.round(ml / 250 * 100)}%`, sub: 'of a glass of water' };
-  return           { main: `≈ ${(ml / 250).toFixed(1)} glasses`, sub: 'of water' };
+  return PFFormat.water(ml);
 }
 
 function energyConversion(wh) {
-  if (wh <= 0)   return { main: '< 1 sec', sub: 'of phone use' };
-  // Phone uses ~3 W → 1 Wh = 1200 s of phone screen-on time
-  const seconds = wh * 1200;
-  if (seconds < 2)   return { main: '< 2 sec',  sub: 'of phone screen-on' };
-  if (seconds < 60)  return { main: `≈ ${Math.round(seconds)}s`, sub: 'of phone screen-on' };
-  if (seconds < 3600) return { main: `≈ ${Math.round(seconds / 60)} min`, sub: 'of phone screen-on' };
-  return              { main: `≈ ${(seconds / 3600).toFixed(1)} hrs`, sub: 'of phone screen-on' };
+  return PFFormat.energy(wh);
 }
 
 function co2Conversion(g) {
-  if (g <= 0)    return { main: '< 1 cm', sub: 'driven by car' };
-  // Car emits ~200 g/km → 1 g = 5 m driven
-  const meters = g * 5;
-  if (meters < 1)    return { main: `≈ ${Math.round(meters * 100)} cm`, sub: 'driven by car' };
-  if (meters < 1000) return { main: `≈ ${meters.toFixed(1)} m`, sub: 'driven by car' };
-  return               { main: `≈ ${(meters / 1000).toFixed(2)} km`, sub: 'driven by car' };
+  return PFFormat.co2(g);
 }
 
 function fmtTokens(n) {

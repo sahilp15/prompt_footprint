@@ -133,11 +133,17 @@
       const msgs = document.querySelectorAll('.font-claude-message, [data-testid="assistant-message"]');
       return msgs[msgs.length - 1] || null;
     },
+    // Mirror ChatGPT's grouped-signal approach so the live DOM reveals which
+    // signal fired (logged in content.js) rather than relying on one selector.
+    // Claude marks the streaming turn with data-is-streaming="true"; the Stop
+    // button is the cross-version fallback.
+    generatingSignal() {
+      if (document.querySelector('[data-is-streaming="true"]')) return 'is-streaming';
+      if (document.querySelector(this.stopSelector)) return 'stop-button';
+      return null;
+    },
     isGenerating() {
-      // Claude marks the streaming turn with data-is-streaming="true"; the Stop
-      // button is the cross-version fallback.
-      return !!document.querySelector('[data-is-streaming="true"]') ||
-             !!document.querySelector(this.stopSelector);
+      return !!this.generatingSignal();
     },
     getSendButton() {
       return document.querySelector(this.sendSelector) || null;

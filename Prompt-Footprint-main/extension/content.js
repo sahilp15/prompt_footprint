@@ -394,7 +394,7 @@
     const container = document.createElement('div');
     container.id = 'pf-floating-overlay';
     container.innerHTML = `
-      <div class="pf-floating-pill">
+      <div class="pf-floating-pill" role="button" tabindex="0" aria-label="Open PromptFootprint session details">
         <div class="pf-floating-dot"></div>
         <span class="pf-floating-label">PF</span>
         <span class="pf-floating-status">Tracking</span>
@@ -402,6 +402,16 @@
     `;
 
     container.addEventListener('click', () => toggleModal());
+    // Keyboard parity: the pill is a button, so open the modal on Enter/Space.
+    const pill = container.querySelector('.pf-floating-pill');
+    if (pill) {
+      pill.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleModal();
+        }
+      });
+    }
     document.body.appendChild(container);
 
     if (!config.overlayEnabled) {
@@ -515,31 +525,8 @@
     }
   }
 
-  // Real-world conversion helpers — same logic as popup.js
-  function _fmtWater(ml) {
-    if (ml <= 0)   return '0 drops';
-    if (ml < 0.05) return '< 1 drop';
-    if (ml < 1.5)  return `≈ ${Math.round(ml * 20)} drops`;
-    if (ml < 5)    return `≈ ${(ml / 5).toFixed(1)} tsp`;
-    if (ml < 250)  return `≈ ${Math.round(ml / 250 * 100)}% of a glass`;
-    return           `≈ ${(ml / 250).toFixed(1)} glasses`;
-  }
-  function _fmtEnergy(wh) {
-    if (wh <= 0)   return '< 1 sec phone';
-    const s = wh * 1200;
-    if (s < 2)     return '< 2 sec phone';
-    if (s < 60)    return `≈ ${Math.round(s)}s phone`;
-    if (s < 3600)  return `≈ ${Math.round(s / 60)} min phone`;
-    return           `≈ ${(s / 3600).toFixed(1)} hr phone`;
-  }
-  function _fmtCo2(g) {
-    if (g <= 0)    return '< 1 cm by car';
-    const m = g * 5;
-    if (m < 1)     return `≈ ${Math.round(m * 100)} cm by car`;
-    if (m < 1000)  return `≈ ${m.toFixed(1)} m by car`;
-    return           `≈ ${(m / 1000).toFixed(2)} km by car`;
-  }
-
+  // Real-world conversion helpers — shared with popup.js via lib/formatters.js.
+  // The modal uses the single-line `compact` form.
   function updateModalStats() {
     const fmtRaw = (v, unit) => `${v.toFixed(3)} ${unit}`;
 
@@ -547,9 +534,9 @@
     const energyEl = document.getElementById('pf-session-energy');
     const waterEl  = document.getElementById('pf-session-water');
     const co2El    = document.getElementById('pf-session-co2');
-    if (energyEl) energyEl.textContent = _fmtEnergy(sessionStats.totalEnergyWh);
-    if (waterEl)  waterEl.textContent  = _fmtWater(sessionStats.totalWaterMl);
-    if (co2El)    co2El.textContent    = _fmtCo2(sessionStats.totalCo2G);
+    if (energyEl) energyEl.textContent = PFFormat.energy(sessionStats.totalEnergyWh).compact;
+    if (waterEl)  waterEl.textContent  = PFFormat.water(sessionStats.totalWaterMl).compact;
+    if (co2El)    co2El.textContent    = PFFormat.co2(sessionStats.totalCo2G).compact;
 
     // Last query — raw values (individual queries are tiny, context matters)
     if (lastQueryImpact) {
@@ -740,7 +727,7 @@
       : '';
     savingsEl.innerHTML =
       `Save <strong>~${result.savedTokens} tokens</strong> (${result.savedPct}%) · ` +
-      `${_fmtWater(result.savedWaterMl)} · ${_fmtEnergy(result.savedEnergyWh)}${typoNote}`;
+      `${PFFormat.water(result.savedWaterMl).compact} · ${PFFormat.energy(result.savedEnergyWh).compact}${typoNote}`;
     previewEl.textContent = result.shortened;
     if (badgeEl) {
       badgeEl.textContent = source === 'ai' ? 'AI' : 'Local';
@@ -798,8 +785,12 @@
     showOptimizerChip(result, 'ai');
   }
 
+  let optimizerListenersAttached = false;
   function setupPromptOptimizer() {
     injectOptimizerChip();
+    // Guard against attaching duplicate document listeners if setup ever runs
+    // more than once (each would re-run analysis on every keystroke).
+    if (optimizerListenersAttached) return;
 
     function handleInputChange(e) {
       const target = e.target;
@@ -819,6 +810,7 @@
 
     document.addEventListener('input', handleInputChange, true);
     document.addEventListener('paste', handleInputChange, true);
+    optimizerListenersAttached = true;
   }
 
   // Listen for config changes from popup
@@ -838,7 +830,7 @@
       }
       if (typeof message.config.debug === 'boolean') {
         config.debug = message.config.debug;
-        console.log('[PromptFootprint] debug logging', config.debug ? 'ENABLED' : 'disabled');
+        log('debug logging', config.debug ? 'ENABLED' : 'disabled');
       }
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay) {
@@ -854,10 +846,12 @@
     }
   });
 
-  // Start
+  // Start. The overlay is injected before any storage call, so a storage
+  // failure degrades to "UI visible, tracking off" rather than throwing.
+  const startTracking = () => init().catch((e) => log('init failed:', e && e.message));
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', startTracking);
   } else {
-    init();
+    startTracking();
   }
 })();
