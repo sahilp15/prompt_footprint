@@ -15,20 +15,26 @@ Prompt-Footprint/
 ├── manifest.json          Chrome extension manifest (MV3)
 ├── extension/             Chrome extension source (vanilla JS)
 │   ├── background.js      Service worker (user id, session lifecycle)
-│   ├── content.js         Platform-agnostic DOM observer + overlays + optimizer UI
+│   ├── content.js         Platform-agnostic DOM observer + overlays + writing UI
 │   ├── popup/             Extension popup UI
-│   ├── overlay/           Floating + modal overlays, prompt-optimizer chip
-│   ├── dashboard/         Options page (session history, local data)
+│   ├── overlay/           Floating + modal overlays, writing-suggestion chip
+│   ├── dashboard/         Options page = built stats-site (Settings + Privacy live here)
 │   ├── lib/
 │   │   ├── platforms.js          Platform adapters (ChatGPT, Claude, …)
 │   │   ├── storage.js            Local-first persistence (chrome.storage.local)
 │   │   ├── constants.js          Per-platform intensities + response-time model
 │   │   ├── tokenEstimator.js     Token estimation
 │   │   ├── environmentalModel.js Impact calculation (tokens × time)
-│   │   └── promptOptimizer.js    Local prompt shortener
+│   │   ├── promptOptimizer.js    Local prompt shortener + curated typo map
+│   │   ├── spellChecker.js       Offline spell/grammar/punct/cap checker
+│   │   ├── writingFormat.js      Diff renderer (bolds changed words, HTML-safe)
+│   │   ├── proxyConfig.js        Proxy-first Gemini resolution helpers
+│   │   ├── uiHelpers.js          Keybind + viewport-clamp helpers
+│   │   ├── vendor/typo.js        Vendored Typo.js (BSD-3-Clause)
+│   │   └── dict/                 Compact English Hunspell dictionary (see dict/README.md)
 │   ├── test/              Unit tests (node:test)
 │   └── styles/            Shared design system CSS
-├── stats-site/            React + Vite showcase/dashboard (demo data on the web)
+├── stats-site/            React + Vite dashboard; build output is copied to extension/dashboard
 └── server/                Legacy Express/Postgres backend (no longer required)
 ```
 
@@ -66,35 +72,60 @@ No server or configuration is needed — the extension is fully local.
 
 1. Navigate to [chatgpt.com](https://chatgpt.com) or [claude.ai](https://claude.ai)
 2. Send a message — prompts and responses are auto-detected
-3. Type a long prompt to get a **shorter-prompt suggestion** with estimated savings
-   before you send (Grammarly-style: an instant local heuristic, plus an optional
-   AI rewrite — see below)
-4. Click the floating **PF** pill (bottom-left) for per-query metrics
-5. Click the extension icon for the popup, or **View Full Stats** for the dashboard
+3. As you type, the **writing assistant** flags spelling, grammar, capitalization
+   and punctuation issues, with the changed words **bolded**. Use **Accept**,
+   **Ignore**, or **Accept all safe fixes** (see below)
+4. Press <kbd>Alt</kbd>+<kbd>P</kbd> to open/close the main panel; **drag** the
+   floating **PF** capsule anywhere (its position is remembered across reloads)
+5. Click the extension icon for the popup, or **View Full Stats** for the
+   dashboard (which now includes a **Settings & Privacy** page)
 
-### Optional: AI optimizer (Gemini)
+### Writing assistant
 
-The prompt optimizer has two tiers:
+Two tiers, both optional and safe:
 
-- **Local heuristic** — instant, fully offline, always on. Strips politeness,
-  filler, verbose phrasing, and duplicate words.
-- **AI rewrite (Gemini Flash)** — a stronger rewrite that appears a moment later.
-  It runs through a **Cloudflare Worker proxy** so the Gemini API key stays a
-  server-side secret — it is **never** in this repo or the downloaded extension.
+- **Local (offline, always available)** — a real spell checker
+  ([Typo.js](extension/lib/vendor/typo.js) + a compact English dictionary, see
+  [`extension/lib/dict/README.md`](extension/lib/dict/README.md)) plus a curated
+  typo map and lightweight rules for capitalization, punctuation, repeated words,
+  and a/an. Nothing leaves your device.
+- **AI writing help (optional, Gemini)** — clarity, tone and sentence cleanup.
+  **Proxy-first:** your draft is sent to a **Cloudflare Worker** you control,
+  which holds the Gemini key. The key is **never** shipped in the extension. If
+  no proxy is configured — or it fails or is rate-limited — the editor silently
+  uses the offline tier.
 
-To enable the AI tier, deploy the proxy and paste its URL into
-`extension/lib/proxyConfig.js`. Full steps are in
-[`proxy/README.md`](proxy/README.md). If you skip this, the extension simply
-uses the local heuristic.
+### Configuring Gemini (optional)
 
-### Stats site (optional, for the public showcase)
+1. Deploy the Worker in [`proxy/`](proxy/README.md) and set the Gemini key as a
+   Cloudflare **secret** (`npx wrangler secret put GEMINI_API_KEY`).
+2. Open the extension dashboard → **Settings** and paste your Worker URL.
+   (You can also set a default in `extension/lib/proxyConfig.js`.) Advanced users
+   may instead enter their own Gemini key, stored only in `chrome.storage.local`
+   on their device — the Worker proxy is recommended.
+
+Turn the whole feature off anytime from the popup ("Writing & spell-check
+suggestions") or the dashboard Settings page.
+
+### Stats site / dashboard (build → reload)
+
+The dashboard (extension options page) is the built `stats-site`. After changing
+`stats-site/`, rebuild it **into** `extension/dashboard`:
 
 ```bash
 cd stats-site
 npm install
-npm run dev      # http://localhost:5173 (shows demo data)
-npm run build    # static bundle in dist/
+npm run dev                                   # http://localhost:5173 (demo data)
+npm run build -- --outDir ../extension/dashboard --emptyOutDir
 ```
+
+Then reload the extension (below). The vanilla `extension/lib/*` and `content.js`
+are loaded raw — **no build step** — so only dashboard changes need a rebuild.
+
+### Reloading after changes
+
+`chrome://extensions` → **reload** the unpacked extension (or **Load unpacked** →
+the **repo root** directory containing `manifest.json`).
 
 ### Tests
 
@@ -119,10 +150,13 @@ data only when opened as the extension's dashboard.
   computed metrics.
 - Each user gets an anonymous UUID generated on first install.
 - All tracking data lives **on your device** (`chrome.storage.local`).
-- **Exception:** the optional AI rewrite tier of the Energy Saver sends your
-  in-progress draft prompt to an external optimization proxy to generate a
-  shorter-prompt suggestion. See [`docs/PRIVACY.md`](docs/PRIVACY.md) for the full
-  policy and Chrome Web Store readiness checklist, and
+- **Spell/grammar checking runs entirely in the browser** (Typo.js + a bundled
+  dictionary) — nothing is uploaded.
+- **Exception:** the optional **AI writing help** tier sends your in-progress
+  draft to the Cloudflare Worker you configured (→ Gemini) to generate a
+  suggestion. It is disabled until you set a Worker URL. See
+  [`docs/PRIVACY.md`](docs/PRIVACY.md) for the full policy and Chrome Web Store
+  readiness checklist, and
   [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md) for the (proposed, not yet built) optional
   login/sync design. Manual test steps: [`docs/TESTING.md`](docs/TESTING.md).
 

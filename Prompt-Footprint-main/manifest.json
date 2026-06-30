@@ -21,11 +21,16 @@
       "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*"],
       "js": [
         "extension/lib/storage.js",
+        "extension/lib/proxyConfig.js",
         "extension/lib/platforms.js",
         "extension/lib/constants.js",
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",
         "extension/lib/promptOptimizer.js",
+        "extension/lib/vendor/typo.js",
+        "extension/lib/spellChecker.js",
+        "extension/lib/writingFormat.js",
+        "extension/lib/uiHelpers.js",
         "extension/lib/formatters.js",
         "extension/content.js"
       ],
@@ -45,6 +50,12 @@
       "128": "Images/PF_Icon.png"
     }
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["extension/lib/dict/en_US.aff", "extension/lib/dict/en_US.dic"],
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*"]
+    }
+  ],
   "options_page": "extension/dashboard/index.html",
   "icons": {
     "48": "Images/PF_Icon.png",

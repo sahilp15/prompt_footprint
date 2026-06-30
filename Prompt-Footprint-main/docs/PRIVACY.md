@@ -12,30 +12,42 @@ offers an optional "Energy Saver" that suggests shorter prompts.
 |------|--------------|---------------------|
 | Token counts, timing, computed energy/water/CO₂ metrics | `chrome.storage.local` (on-device) | **No** |
 | Anonymous install ID (random UUID) | `chrome.storage.local` | **No** |
-| Settings (overlay on/off, energy multiplier, optimizer position) | `chrome.storage.local` | **No** |
-| Realized savings from clicking "Apply" | `chrome.storage.local` (`pf_savings`) | **No** |
+| Settings (overlay/writing toggles, energy multiplier, capsule/optimizer position, Worker URL, optional Gemini key) | `chrome.storage.local` | **No** |
+| Realized savings from clicking "Apply"/"Accept" | `chrome.storage.local` (`pf_savings`) | **No** |
 
 **We do not store the text of your prompts or the model's responses.** Only
 counts and derived metrics are persisted. There is no remote backend; the
 dashboard reads the same on-device storage.
 
-## The one exception: AI rewrite suggestions
+## Spell & grammar checking is fully offline
 
-The Energy Saver has two tiers:
+The writing assistant's baseline tier — misspellings, capitalization,
+punctuation, repeated words, a/an — runs **entirely in your browser** using a
+bundled dictionary ([Typo.js](../extension/lib/vendor/typo.js) +
+`extension/lib/dict/`). No text is uploaded for local checks.
 
-1. **Local heuristic** — runs entirely in the browser. Nothing leaves your device.
-2. **AI rewrite** — sends the **draft prompt text you are currently typing** to an
-   external optimization proxy (a Cloudflare Worker) to produce a stronger
-   shorter-prompt suggestion. **This tier is enabled by default.**
+## The one exception: AI writing help (optional, off by default)
 
-What is sent: only the in-progress prompt text, when you pause typing. It is used
-solely to generate the suggestion and is not stored by PromptFootprint. This is
-the single case where data leaves the device, and it MUST be disclosed in the
-Chrome Web Store listing's privacy section.
+The writing assistant has two tiers:
 
-> If you prefer that no prompt text ever leaves your device, this tier can be
-> disabled (the local heuristic remains fully functional). See the popup
-> disclosure note.
+1. **Local checker** — runs entirely in the browser. Nothing leaves your device.
+2. **AI writing help (Gemini)** — sends the **draft text you are currently
+   typing** to an external proxy to produce higher-quality suggestions (clarity,
+   tone, sentence cleanup). **Proxy-first and disabled by default:** it does
+   nothing until you set a Cloudflare Worker URL (which holds the Gemini key) in
+   the dashboard Settings page. The Gemini key is **never** shipped in the
+   extension. (Advanced users may instead store their own Gemini key locally in
+   `chrome.storage.local`; the proxy is recommended.)
+
+What is sent, only when this tier is enabled: the in-progress draft text, when
+you pause typing. It is used solely to generate the suggestion and is not stored
+by PromptFootprint. If the proxy is unset, fails, or is rate-limited, the editor
+silently falls back to the offline checker. This is the single case where data
+leaves the device, and it MUST be disclosed in the Chrome Web Store listing.
+
+> To keep everything on-device, leave the Worker URL blank (and set no Gemini
+> key). The offline checker remains fully functional. You can also turn off all
+> suggestions via the popup or dashboard Settings.
 
 ## Permissions justification (permission minimization)
 

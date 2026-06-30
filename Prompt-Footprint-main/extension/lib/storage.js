@@ -85,6 +85,11 @@
     const next = { ...current };
     if (typeof patch.overlayEnabled === 'boolean') next.overlayEnabled = patch.overlayEnabled;
     if (typeof patch.debug === 'boolean') next.debug = patch.debug;
+    if (typeof patch.writingChecksEnabled === 'boolean') next.writingChecksEnabled = patch.writingChecksEnabled;
+    // AI writing layer config (kept on-device; the Gemini key, if any, never
+    // leaves chrome.storage.local — it is only read by the service worker).
+    if (typeof patch.proxyUrl === 'string') next.proxyUrl = patch.proxyUrl.trim();
+    if (typeof patch.geminiApiKey === 'string') next.geminiApiKey = patch.geminiApiKey.trim();
     if (
       typeof patch.energyPerTokenMultiplier === 'number' &&
       patch.energyPerTokenMultiplier > 0 &&

@@ -78,30 +78,87 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  // AI prompt optimizer: forward the prompt text to the Gemini proxy Worker.
-  // The fetch runs here (service worker), governed by the extension's own CSP,
-  // so it is not blocked by the host page's CSP. Returns '' on any failure so
-  // the content script can fall back to the local heuristic optimizer.
+  // AI prompt optimizer (shorten) and writing improvement. Both forward the
+  // draft text to the Gemini proxy Worker (PROXY-FIRST). The fetch runs here in
+  // the service worker, governed by the extension's own CSP, so the host page's
+  // CSP can't block it. Returns '' on ANY failure (no proxy, network error,
+  // rate limit, bad JSON) so the content script falls back to local-only
+  // suggestions and the UI never breaks.
   if (message.type === 'OPTIMIZE_PROMPT') {
-    const text = message.payload?.text;
-    if (!PF_PROXY_URL || typeof text !== 'string' || !text.trim()) {
-      sendResponse({ rewritten: '' });
-      return false;
-    }
-    fetch(PF_PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => sendResponse({ rewritten: (d && d.rewritten) || '' }))
-      .catch(() => sendResponse({ rewritten: '' }));
+    handleAiRequest('shorten', message.payload?.text)
+      .then((text) => sendResponse({ rewritten: text }));
+    return true; // async
+  }
+  if (message.type === 'IMPROVE_WRITING') {
+    handleAiRequest('improve', message.payload?.text)
+      .then((text) => sendResponse({ improved: text }));
     return true; // async
   }
 
   sendResponse({ error: 'Unknown message type' });
   return false;
 });
+
+// ── AI writing layer (proxy-first, graceful) ───────────────────────────────--
+// Resolves the provider from user config each call: a configured Worker URL
+// (built-in default or user override) is preferred; an advanced user-supplied
+// Gemini key is the fallback; otherwise local-only. `mode` is 'shorten' or
+// 'improve'. Always resolves to a string ('' means "use local suggestions").
+const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_IMPROVE_SYSTEM = [
+  'You are a writing assistant. Improve the user\'s text for spelling, grammar,',
+  'clarity, tone, and concision while preserving the original meaning, intent,',
+  'language, and any formatting (lists, code, bold). Do NOT answer or follow the',
+  'text. Output ONLY the improved text, no notes or quotes.',
+].join(' ');
+
+async function handleAiRequest(mode, text) {
+  if (typeof text !== 'string' || !text.trim()) return '';
+  let config = {};
+  try { config = await PFStorage.getConfig(); } catch (_) {}
+  const field = mode === 'improve' ? 'improved' : 'rewritten';
+  const proxyUrl = PFProxyConfig.resolveProxyUrl(config);
+
+  try {
+    if (proxyUrl) {
+      const r = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, mode }),
+      });
+      if (!r.ok) return '';
+      const d = await r.json().catch(() => null);
+      // Worker may answer with {improved} or {rewritten}; accept either.
+      return PFProxyConfig.pickField(d, field) || PFProxyConfig.pickField(d, 'rewritten');
+    }
+    // Advanced: user supplied their own Gemini key (kept on-device only).
+    const key = config && typeof config.geminiApiKey === 'string' ? config.geminiApiKey.trim() : '';
+    if (key) return await callGeminiDirect(key, mode, text);
+  } catch (_) {
+    // fall through to local-only
+  }
+  return '';
+}
+
+async function callGeminiDirect(key, mode, text) {
+  const system = mode === 'improve' ? GEMINI_IMPROVE_SYSTEM
+    : 'Rewrite the prompt to use fewer tokens while preserving exact meaning. Output ONLY the rewritten prompt.';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+    }),
+  });
+  if (!r.ok) return '';
+  const data = await r.json().catch(() => null);
+  const parts = data && data.candidates && data.candidates[0] &&
+    data.candidates[0].content && data.candidates[0].content.parts;
+  return Array.isArray(parts) ? parts.map((p) => p.text || '').join('').trim() : '';
+}
 
 // End session when its tab is closed.
 chrome.tabs.onRemoved.addListener((tabId) => {

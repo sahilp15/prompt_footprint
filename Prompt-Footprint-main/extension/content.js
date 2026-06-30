@@ -15,7 +15,7 @@
 
   let currentSessionId = null;
   let userId = null;
-  let config = { overlayEnabled: true, energyPerTokenMultiplier: 1.0, debug: false };
+  let config = { overlayEnabled: true, energyPerTokenMultiplier: 1.0, debug: false, writingChecksEnabled: true };
   let processedMessageIds = new Set();
   let pendingUserMessage = null;
   let lastSubmitAt = 0;               // timestamp of the last submit-hook capture
@@ -70,6 +70,7 @@
     startObserver();
     setupSubmitHook();
     setupPromptOptimizer();
+    setupPanelShortcut();
     startWatchdog();
     log(`content script loaded — platform=${adapter.id} (${adapter.name}) session=${currentSessionId}`);
     log('composer detected:', document.querySelectorAll(adapter.inputSelector).length,
@@ -413,10 +414,98 @@
       });
     }
     document.body.appendChild(container);
+    restoreCapsulePosition(container);
+    makeCapsuleDraggable(container);
 
     if (!config.overlayEnabled) {
       container.style.display = 'none';
     }
+  }
+
+  // ── Draggable capsule ──────────────────────────────────────────────────--
+  // The capsule can be dragged anywhere and its position persists across
+  // reloads (pf_capsule_pos). A move past a small threshold is treated as a
+  // drag (and suppresses the click that would otherwise open the panel); a tap
+  // still opens the panel, and keyboard Enter/Space still works (a11y intact).
+  function applyCapsulePosition(c, left, top) {
+    c.style.left = `${left}px`;
+    c.style.top = `${top}px`;
+    c.style.right = 'auto';
+    c.style.bottom = 'auto';
+  }
+
+  function saveCapsulePosition(left, top) {
+    if (!extAlive()) return;
+    try { chrome.storage.local.set({ pf_capsule_pos: { left, top } }); } catch (_) {}
+  }
+
+  function restoreCapsulePosition(c) {
+    if (!extAlive()) return;
+    try {
+      chrome.storage.local.get(['pf_capsule_pos'], (res) => {
+        void chrome.runtime.lastError;
+        const p = res && res.pf_capsule_pos;
+        if (!p || typeof p.left !== 'number' || typeof p.top !== 'number') return;
+        const size = { width: c.offsetWidth || 120, height: c.offsetHeight || 40 };
+        const pos = PFUiHelpers.clampToViewport(p, size, { width: window.innerWidth, height: window.innerHeight });
+        applyCapsulePosition(c, pos.left, pos.top);
+      });
+    } catch (_) {}
+  }
+
+  function makeCapsuleDraggable(container) {
+    const pill = container.querySelector('.pf-floating-pill');
+    if (!pill) return;
+    let startX = 0, startY = 0, originLeft = 0, originTop = 0, dragging = false, moved = false;
+
+    pill.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      const rect = container.getBoundingClientRect();
+      originLeft = rect.left;
+      originTop = rect.top;
+      startX = e.clientX;
+      startY = e.clientY;
+      pill.setPointerCapture?.(e.pointerId);
+    });
+    pill.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      moved = true;
+      container.classList.add('pf-floating-dragging');
+      const size = { width: container.offsetWidth, height: container.offsetHeight };
+      const pos = PFUiHelpers.clampToViewport(
+        { left: originLeft + dx, top: originTop + dy }, size,
+        { width: window.innerWidth, height: window.innerHeight });
+      applyCapsulePosition(container, pos.left, pos.top);
+    });
+    const end = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      pill.releasePointerCapture?.(e.pointerId);
+      container.classList.remove('pf-floating-dragging');
+      if (moved) {
+        // Swallow the click that fires right after a drag so it doesn't open
+        // the panel; the position is what the user wanted.
+        const supp = (ev) => { ev.stopPropagation(); ev.preventDefault(); pill.removeEventListener('click', supp, true); };
+        pill.addEventListener('click', supp, true);
+        const rect = container.getBoundingClientRect();
+        saveCapsulePosition(rect.left, rect.top);
+      }
+    };
+    pill.addEventListener('pointerup', end);
+    pill.addEventListener('pointercancel', end);
+  }
+
+  // Toggle the main panel from a keyboard shortcut (Alt+P). Bound once.
+  function setupPanelShortcut() {
+    document.addEventListener('keydown', (e) => {
+      if (!PFUiHelpers.isPanelToggleShortcut(e)) return;
+      e.preventDefault();
+      toggleModal();
+    }, true);
   }
 
   function updateFloatingStatus(status) {
@@ -502,6 +591,7 @@
           <div class="pf-modal-query-count" id="pf-query-count">0 queries this session</div>
           <button class="pf-modal-btn" id="pf-open-stats-btn">View Full Stats</button>
         </div>
+        <div class="pf-modal-hint">Tip: press <kbd>Alt</kbd>+<kbd>P</kbd> to open or close this panel · drag the capsule to move it</div>
       </div>
     `;
 
@@ -562,17 +652,42 @@
   //   2. AI (Gemini via the proxy Worker) — a stronger rewrite that arrives a
   //      moment later and replaces the local suggestion when it's better.
   // If the proxy isn't configured or fails, only the local tier shows.
-  const OPTIMIZER_MIN_CHARS = 60;    // only analyze longer prompts
-  const OPTIMIZER_MIN_TOKENS = 2;    // only suggest if it saves something real
+  const WRITING_MIN_CHARS = 12;      // analyze once there's a sentence to check
+  const OPTIMIZER_MIN_TOKENS = 2;    // only count savings if it saves something real
   const OPTIMIZER_DEBOUNCE_MS = 350; // local heuristic (instant feel)
   const AI_DEBOUNCE_MS = 1100;       // AI (waits for a typing pause)
   let optimizerTimer = null;
   let aiTimer = null;
-  let optimizerActiveInput = null;
-  let optimizerSuggestion = null;
-  let optimizerSource = 'local';     // 'local' | 'ai' — what the chip shows now
+  // Current chip state: { input, text, source:'local'|'ai', suggestions?,
+  // safeFixedText?, safeCount?, improved? }. Null when the chip is hidden.
+  let writingState = null;
   let lastAiText = '';               // last prompt sent to the AI
-  const aiCache = new Map();         // prompt text -> AI rewrite
+  const aiCache = new Map();         // prompt text -> AI improved text
+
+  // ── Offline dictionary (lazy) ───────────────────────────────────────────--
+  // Loaded once, on first analysis, so it never delays page load. The checker
+  // also works (curated typos + rules) before/without the dictionary, so a load
+  // failure degrades gracefully rather than disabling the feature.
+  let _typoChecker = null;
+  let _typoPromise = null;
+  function getWritingChecker() {
+    if (_typoChecker) return Promise.resolve(_typoChecker);
+    if (_typoPromise) return _typoPromise;
+    _typoPromise = (async () => {
+      try {
+        if (!extAlive() || typeof PFSpellChecker === 'undefined') return null;
+        const aff = await fetch(chrome.runtime.getURL('extension/lib/dict/en_US.aff')).then((r) => r.text());
+        const dic = await fetch(chrome.runtime.getURL('extension/lib/dict/en_US.dic')).then((r) => r.text());
+        _typoChecker = PFSpellChecker.createChecker(aff, dic);
+        log('spell dictionary loaded:', !!_typoChecker);
+      } catch (e) {
+        _typoChecker = null;
+        log('spell dictionary load failed:', e && e.message);
+      }
+      return _typoChecker;
+    })();
+    return _typoPromise;
+  }
 
   function getInputText(el) {
     if (!el) return '';
@@ -601,29 +716,69 @@
     if (document.getElementById('pf-optimizer-chip')) return;
     const chip = document.createElement('div');
     chip.id = 'pf-optimizer-chip';
+    chip.setAttribute('role', 'dialog');
+    chip.setAttribute('aria-label', 'PromptFootprint writing suggestions');
     chip.innerHTML = `
       <div class="pf-opt-head" id="pf-opt-drag">
-        <span class="pf-opt-title">✦ Shorter prompt suggested</span>
+        <span class="pf-opt-title">✦ Writing suggestions</span>
         <span class="pf-opt-badge" id="pf-opt-badge">Local</span>
       </div>
-      <div class="pf-opt-savings" id="pf-opt-savings"></div>
-      <div class="pf-opt-preview" id="pf-opt-preview"></div>
+      <div class="pf-opt-savings" id="pf-opt-savings" hidden></div>
+      <div class="pf-opt-list" id="pf-opt-list"></div>
+      <div class="pf-opt-preview" id="pf-opt-preview" hidden></div>
       <div class="pf-opt-actions">
-        <button id="pf-opt-dismiss" type="button">Dismiss</button>
-        <button id="pf-opt-apply" type="button">Apply</button>
+        <button id="pf-opt-dismiss" type="button">Ignore</button>
+        <button id="pf-opt-acceptall" type="button" hidden>Accept all safe</button>
+        <button id="pf-opt-apply" type="button" hidden>Apply</button>
       </div>
     `;
     document.body.appendChild(chip);
     restoreOptimizerPosition(chip);
     makeOptimizerDraggable(chip);
+
     document.getElementById('pf-opt-dismiss').addEventListener('click', hideOptimizerChip);
-    document.getElementById('pf-opt-apply').addEventListener('click', () => {
-      if (optimizerActiveInput && optimizerSuggestion) {
-        setInputText(optimizerActiveInput, optimizerSuggestion.shortened);
-        recordSavings(optimizerSuggestion);
+
+    // Accept all SAFE local fixes at once (spelling/caps/spacing) — never the
+    // advisory ones (a/an, missing period).
+    document.getElementById('pf-opt-acceptall').addEventListener('click', () => {
+      if (writingState && writingState.input && typeof writingState.safeFixedText === 'string') {
+        applyWritingText(writingState.input, writingState.text, writingState.safeFixedText);
       }
       hideOptimizerChip();
     });
+
+    // Apply the AI "improved" rewrite.
+    document.getElementById('pf-opt-apply').addEventListener('click', () => {
+      if (writingState && writingState.input && writingState.improved) {
+        applyWritingText(writingState.input, writingState.text, writingState.improved);
+      }
+      hideOptimizerChip();
+    });
+
+    // Per-suggestion Accept (event-delegated; each row carries its index).
+    document.getElementById('pf-opt-list').addEventListener('click', (e) => {
+      const btn = e.target.closest?.('button[data-pf-accept]');
+      if (!btn || !writingState || !writingState.suggestions) return;
+      const sug = writingState.suggestions[Number(btn.dataset.pfAccept)];
+      const el = writingState.input;
+      if (!sug || !el) return;
+      const before = getInputText(el);
+      const after = PFSpellChecker.applyOne(before, sug);
+      applyWritingText(el, before, after);
+      // Re-analyze what remains so the list stays in sync.
+      analyzeWritingLocal(el);
+    });
+  }
+
+  // Set the composer text and record realized token savings (for the dashboard
+  // Savings tab) when the change is a net reduction.
+  function applyWritingText(el, before, after) {
+    if (!el || typeof after !== 'string' || after === before) return;
+    setInputText(el, after);
+    try {
+      const s = PFPromptOptimizer.savings(before, after, adapter.id);
+      if (s.changed && s.savedTokens >= OPTIMIZER_MIN_TOKENS) recordSavings(s);
+    } catch (_) { /* non-fatal */ }
   }
 
   // Persist savings the user actually realized by clicking Apply (never ignored
@@ -712,77 +867,129 @@
   function hideOptimizerChip() {
     const chip = document.getElementById('pf-optimizer-chip');
     if (chip) chip.classList.remove('pf-opt-visible');
-    optimizerSuggestion = null;
-    optimizerSource = 'local';
+    writingState = null;
   }
 
-  function showOptimizerChip(result, source) {
+  function setBadge(source) {
+    const badgeEl = document.getElementById('pf-opt-badge');
+    if (!badgeEl) return;
+    badgeEl.textContent = source === 'ai' ? 'AI' : 'Local';
+    badgeEl.classList.toggle('pf-opt-badge-ai', source === 'ai');
+  }
+
+  // Local tier: a short, scannable list of suggestions with the changed text
+  // bolded and a one-line reason, plus "Accept all safe".
+  function renderWritingSuggestions(res) {
     const chip = document.getElementById('pf-optimizer-chip');
     if (!chip) return;
+    const listEl = document.getElementById('pf-opt-list');
     const savingsEl = document.getElementById('pf-opt-savings');
     const previewEl = document.getElementById('pf-opt-preview');
-    const badgeEl = document.getElementById('pf-opt-badge');
-    const typoNote = result.typosFixed > 0
-      ? ` · <strong>${result.typosFixed} ${result.typosFixed === 1 ? 'typo' : 'typos'}</strong> fixed`
-      : '';
-    savingsEl.innerHTML =
-      `Save <strong>~${result.savedTokens} tokens</strong> (${result.savedPct}%) · ` +
-      `${PFFormat.water(result.savedWaterMl).compact} · ${PFFormat.energy(result.savedEnergyWh).compact}${typoNote}`;
-    previewEl.textContent = result.shortened;
-    if (badgeEl) {
-      badgeEl.textContent = source === 'ai' ? 'AI' : 'Local';
-      badgeEl.classList.toggle('pf-opt-badge-ai', source === 'ai');
+    const applyBtn = document.getElementById('pf-opt-apply');
+    const acceptAllBtn = document.getElementById('pf-opt-acceptall');
+
+    const titleEl = chip.querySelector('.pf-opt-title');
+    if (titleEl) titleEl.textContent = '✦ Writing suggestions';
+    setBadge('local');
+    savingsEl.hidden = true;
+    previewEl.hidden = true;
+    applyBtn.hidden = true;
+
+    // Cap the visible rows so the chip stays calm; the rest are covered by
+    // "Accept all safe".
+    const rows = res.suggestions.slice(0, 6).map((s, i) => {
+      const idx = res.suggestions.indexOf(s);
+      return `<div class="pf-opt-item">
+          <div class="pf-opt-item-text">${PFWritingFormat.renderSuggestion(s)}</div>
+          <div class="pf-opt-item-reason">${PFWritingFormat.escapeHtml(s.reason)}</div>
+          <button class="pf-opt-accept" type="button" data-pf-accept="${idx}">Accept</button>
+        </div>`;
+    }).join('');
+    listEl.innerHTML = rows;
+    listEl.hidden = false;
+
+    if (res.safeCount > 0) {
+      acceptAllBtn.hidden = false;
+      acceptAllBtn.textContent = `Accept all safe (${res.safeCount})`;
+    } else {
+      acceptAllBtn.hidden = true;
     }
     chip.classList.add('pf-opt-visible');
   }
 
-  // Tier 1 — instant local heuristic.
-  function analyzeInput(el) {
-    const text = getInputText(el);
-    if (text.length < OPTIMIZER_MIN_CHARS) {
-      hideOptimizerChip();
-      return;
+  // AI tier: the improved rewrite with changed words bolded, plus token savings
+  // when the rewrite is also shorter.
+  function renderImproved(originalText, improvedText) {
+    const chip = document.getElementById('pf-optimizer-chip');
+    if (!chip) return;
+    const listEl = document.getElementById('pf-opt-list');
+    const savingsEl = document.getElementById('pf-opt-savings');
+    const previewEl = document.getElementById('pf-opt-preview');
+    const applyBtn = document.getElementById('pf-opt-apply');
+    const acceptAllBtn = document.getElementById('pf-opt-acceptall');
+
+    const titleEl = chip.querySelector('.pf-opt-title');
+    if (titleEl) titleEl.textContent = '✦ Improved version';
+    setBadge('ai');
+    listEl.hidden = true;
+    acceptAllBtn.hidden = true;
+
+    previewEl.innerHTML = PFWritingFormat.diffBold(originalText, improvedText);
+    previewEl.hidden = false;
+    applyBtn.hidden = false;
+
+    let saved = null;
+    try { saved = PFPromptOptimizer.savings(originalText, improvedText, adapter.id); } catch (_) {}
+    if (saved && saved.savedTokens >= OPTIMIZER_MIN_TOKENS) {
+      savingsEl.innerHTML =
+        `Save <strong>~${saved.savedTokens} tokens</strong> (${saved.savedPct}%) · ` +
+        `${PFFormat.water(saved.savedWaterMl).compact} · ${PFFormat.energy(saved.savedEnergyWh).compact}`;
+      savingsEl.hidden = false;
+    } else {
+      savingsEl.hidden = true;
     }
-    const result = PFPromptOptimizer.analyze(text, adapter.id);
-    if (result.changed && (result.savedTokens >= OPTIMIZER_MIN_TOKENS || result.typosFixed > 0)) {
-      optimizerActiveInput = el;
-      optimizerSuggestion = result;
-      optimizerSource = 'local';
-      showOptimizerChip(result, 'local');
-    } else if (optimizerSource !== 'ai') {
-      // Don't clobber an AI suggestion that's already showing for this text.
-      hideOptimizerChip();
-    }
+    chip.classList.add('pf-opt-visible');
   }
 
-  // Tier 2 — AI rewrite via the Gemini proxy (replaces the local suggestion
-  // when it saves more). No-op if the proxy isn't configured.
-  async function analyzeInputAI(el) {
+  // Tier 1 — instant, offline writing checks (spelling/grammar/caps/punctuation).
+  async function analyzeWritingLocal(el) {
+    if (config.writingChecksEnabled === false) { hideOptimizerChip(); return; }
     const text = getInputText(el);
-    if (text.length < OPTIMIZER_MIN_CHARS) return;
+    if (text.length < WRITING_MIN_CHARS) { hideOptimizerChip(); return; }
+    const checker = await getWritingChecker(); // may be null (curated rules still run)
+    if (getInputText(el) !== text) return;     // user kept typing
+    const res = PFSpellChecker.analyzeWriting(text, { typo: checker });
+    if (!res.suggestions.length) {
+      // Don't clobber an AI "improved" card already showing for this text.
+      if (!writingState || writingState.source !== 'ai') hideOptimizerChip();
+      return;
+    }
+    writingState = { input: el, text, source: 'local',
+      suggestions: res.suggestions, safeFixedText: res.safeFixedText, safeCount: res.safeCount };
+    renderWritingSuggestions(res);
+  }
+
+  // Tier 2 — AI writing improvement via the Gemini proxy (background →
+  // IMPROVE_WRITING). No-op (local card stays) if the proxy isn't configured,
+  // fails, rate-limits, or returns nothing — the UI never breaks.
+  async function analyzeWritingAI(el) {
+    if (config.writingChecksEnabled === false) return;
+    const text = getInputText(el);
+    if (text.length < WRITING_MIN_CHARS) return;
     if (text === lastAiText) return;
     lastAiText = text;
 
-    let rewritten = aiCache.get(text);
-    if (rewritten === undefined) {
-      const resp = await sendMessage({ type: 'OPTIMIZE_PROMPT', payload: { text } });
-      rewritten = (resp && resp.rewritten) || '';
-      aiCache.set(text, rewritten);
+    let improved = aiCache.get(text);
+    if (improved === undefined) {
+      const resp = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text } });
+      improved = (resp && resp.improved) || '';
+      aiCache.set(text, improved);
     }
-    if (!rewritten) return;
-    // The user may have kept typing — only apply if the input is unchanged.
-    if (getInputText(el) !== text) return;
+    if (!improved || improved.trim() === text.trim()) return;
+    if (getInputText(el) !== text) return; // user kept typing
 
-    const result = PFPromptOptimizer.savings(text, rewritten, adapter.id);
-    if (!result.changed || result.savedTokens < OPTIMIZER_MIN_TOKENS) return;
-    // Prefer AI only if it saves at least as much as whatever is showing.
-    if (optimizerSuggestion && optimizerSource === 'ai' &&
-        result.savedTokens <= optimizerSuggestion.savedTokens) return;
-
-    optimizerActiveInput = el;
-    optimizerSuggestion = result;
-    optimizerSource = 'ai';
-    showOptimizerChip(result, 'ai');
+    writingState = { input: el, text, source: 'ai', improved };
+    renderImproved(text, improved);
   }
 
   let optimizerListenersAttached = false;
@@ -804,8 +1011,8 @@
       clearTimeout(aiTimer);
       // Paste: read text after the paste has been inserted into the DOM.
       const delay = e.type === 'paste' ? 100 : 0;
-      optimizerTimer = setTimeout(() => analyzeInput(el), OPTIMIZER_DEBOUNCE_MS + delay);
-      aiTimer = setTimeout(() => analyzeInputAI(el), AI_DEBOUNCE_MS + delay);
+      optimizerTimer = setTimeout(() => analyzeWritingLocal(el), OPTIMIZER_DEBOUNCE_MS + delay);
+      aiTimer = setTimeout(() => analyzeWritingAI(el), AI_DEBOUNCE_MS + delay);
     }
 
     document.addEventListener('input', handleInputChange, true);
@@ -831,6 +1038,10 @@
       if (typeof message.config.debug === 'boolean') {
         config.debug = message.config.debug;
         log('debug logging', config.debug ? 'ENABLED' : 'disabled');
+      }
+      if (typeof message.config.writingChecksEnabled === 'boolean') {
+        config.writingChecksEnabled = message.config.writingChecksEnabled;
+        if (!config.writingChecksEnabled) hideOptimizerChip();
       }
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay) {

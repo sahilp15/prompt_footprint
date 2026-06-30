@@ -26,8 +26,11 @@ function fmtTokens(n) {
 // ── Main ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   const overlayToggle = document.getElementById('pf-overlay-toggle');
+  const writingToggle = document.getElementById('pf-writing-toggle');
   const debugToggle   = document.getElementById('pf-debug-toggle');
+  const aiStatusEl    = document.getElementById('pf-ai-status');
   const statsBtn      = document.getElementById('pf-open-stats');
+  const settingsLink  = document.getElementById('pf-open-settings');
   const statusDot     = document.querySelector('.pf-status-dot');
   const statusText    = document.querySelector('.pf-status-text');
 
@@ -41,10 +44,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusText.textContent = 'Tracking';
   }
 
-  // Load config (overlay + debug toggle state)
+  // Load config (overlay + writing + debug toggle state)
   const cfg = await PFStorage.getConfig();
   overlayToggle.checked = cfg.overlayEnabled !== false;
+  if (writingToggle) writingToggle.checked = cfg.writingChecksEnabled !== false;
   if (debugToggle) debugToggle.checked = cfg.debug === true;
+
+  // AI writing status is derived from config (proxy URL or advanced key).
+  if (aiStatusEl) {
+    const provider = (typeof PFProxyConfig !== 'undefined')
+      ? PFProxyConfig.resolveWritingProvider(cfg) : 'local';
+    aiStatusEl.textContent = provider === 'gemini' ? 'On (Gemini proxy)' : 'Local only';
+  }
 
   // Load weekly stats and display as conversions
   const data = await PFStorage.getWeeklyStats(userId);
@@ -93,8 +104,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Full stats live in the extension's own dashboard (local-first).
+  // Writing & spell-check suggestions toggle
+  if (writingToggle) {
+    writingToggle.addEventListener('change', async () => {
+      const writingChecksEnabled = writingToggle.checked;
+      await PFStorage.setConfig({ writingChecksEnabled });
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: { writingChecksEnabled } }).catch(() => {});
+      }
+    });
+  }
+
+  // Full stats + settings/privacy live in the extension's own dashboard.
   statsBtn.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
+  if (settingsLink) {
+    settingsLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.runtime.openOptionsPage();
+    });
+  }
 });

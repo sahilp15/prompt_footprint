@@ -13,6 +13,15 @@ import { demoSessions, demoQueries, demoWeekly, demoSavings } from './demoData';
 
 const SESSION_PREFIX = 'pf_session_';
 const SAVINGS_KEY = 'pf_savings';
+const CONFIG_KEY = 'pf_config';
+
+const DEFAULT_CONFIG = {
+  overlayEnabled: true,
+  writingChecksEnabled: true,
+  debug: false,
+  proxyUrl: '',
+  geminiApiKey: '',
+};
 
 export function isExtensionContext() {
   return typeof chrome !== 'undefined' && !!chrome.storage && !!chrome.storage.local;
@@ -104,4 +113,31 @@ export async function fetchSavings() {
     return { ...EMPTY_SAVINGS, ...(all[SAVINGS_KEY] || {}) };
   }
   return demoSavings();
+}
+
+// ── Settings (pf_config) ────────────────────────────────────────────────────
+// Same key layout as extension/lib/storage.js. In demo mode (public web build)
+// there's no chrome.storage, so reads return defaults and writes are no-ops.
+export async function fetchConfig() {
+  if (!isExtensionContext()) return { ...DEFAULT_CONFIG };
+  const all = await getAllLocal();
+  return { ...DEFAULT_CONFIG, ...(all[CONFIG_KEY] || {}) };
+}
+
+export async function saveConfig(patch) {
+  if (!isExtensionContext()) return { ...DEFAULT_CONFIG, ...patch };
+  const all = await getAllLocal();
+  const next = { ...DEFAULT_CONFIG, ...(all[CONFIG_KEY] || {}), ...patch };
+  await new Promise((resolve) => chrome.storage.local.set({ [CONFIG_KEY]: next }, resolve));
+  return next;
+}
+
+// Mirror of extension/lib/proxyConfig.js resolveWritingProvider (kept tiny so
+// the dashboard has no cross-package import).
+export function resolveWritingProvider(config) {
+  const url = config && config.proxyUrl;
+  const httpsUrl = typeof url === 'string' && /^https:\/\/\S+$/i.test(url.trim());
+  if (httpsUrl) return 'gemini';
+  if (config && typeof config.geminiApiKey === 'string' && config.geminiApiKey.trim()) return 'gemini';
+  return 'local';
 }
