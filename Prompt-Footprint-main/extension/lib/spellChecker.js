@@ -49,6 +49,21 @@
     while ((m = WORD_RE.exec(text)) !== null) fn(m[0], m.index);
   }
 
+  // Tech/brand terms the bundled dictionary doesn't recognize. Left unchecked
+  // they fall through to Typo.js's nearest-edit-distance suggestion, which can
+  // be a real but unrelated word (e.g. "chatgpt" -> "catgut", "readme" ->
+  // "rename") — confidently wrong and exactly the kind of corruption "safe"
+  // auto-fixes must never produce. Known terms either get their canonical
+  // casing (lowercase key -> proper form) or are treated as already correct.
+  const KNOWN_WORD_CASING = {
+    chatgpt: 'ChatGPT', github: 'GitHub', readme: 'README', gpt: 'GPT',
+    claude: 'Claude', anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini',
+  };
+  const KNOWN_WORDS = new Set([
+    ...Object.keys(KNOWN_WORD_CASING),
+    'repo', 'repos', 'api', 'apis', 'ui', 'ux', 'json', 'html', 'css', 'url', 'urls',
+  ]);
+
   // Preserve the original token's leading capitalization on a replacement.
   function matchCase(original, replacement) {
     if (original && original[0] === original[0].toUpperCase() &&
@@ -76,6 +91,20 @@
           reason: 'Common misspelling', safe: true });
         return;
       }
+
+      // 1.5) Known tech/brand terms — canonical casing, or already correct.
+      // Skipped before the dictionary so it can never offer an unrelated
+      // nearest-edit-distance word for a term it simply doesn't recognize.
+      if (Object.prototype.hasOwnProperty.call(KNOWN_WORD_CASING, key)) {
+        const canonical = KNOWN_WORD_CASING[key];
+        if (word !== canonical) {
+          seen.add(key);
+          out.push({ type: 'spelling', original: word, suggestion: canonical,
+            reason: 'Known capitalization', safe: true });
+        }
+        return;
+      }
+      if (KNOWN_WORDS.has(key)) return;
 
       // 2) Dictionary check. Skip Capitalized words (likely proper nouns) for
       //    the *safe* flag so we never auto-rename names.
@@ -175,6 +204,9 @@
     return line.replace(WORD_RE, (word) => {
       const fixed = _O.fixTypos(word).text;
       if (fixed.toLowerCase() !== word.toLowerCase()) return fixed;
+      const key = word.toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(KNOWN_WORD_CASING, key)) return KNOWN_WORD_CASING[key];
+      if (KNOWN_WORDS.has(key)) return word;
       if (!typo || word.length < 2) return word;
       if (word !== word.toLowerCase()) return word; // leave Capitalized words alone
       if (typo.check(word)) return word;

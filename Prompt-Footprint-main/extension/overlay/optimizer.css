@@ -83,7 +83,7 @@
   border: 1px solid #E8E0D0;
   border-radius: 8px;
   padding: 8px 10px;
-  max-height: 96px;
+  max-height: 220px;
   overflow-y: auto;
   color: #5C4A3A;
   font-size: 12.5px;
@@ -160,11 +160,6 @@
   word-break: break-word;
 }
 
-.pf-opt-item-text strong {
-  color: #5B7C3A;
-  font-weight: 700;
-}
-
 .pf-opt-item-reason {
   grid-column: 1;
   grid-row: 2;
@@ -189,6 +184,17 @@
 }
 .pf-opt-accept:hover { background: #5B7C3A; color: #fff; }
 
-/* The AI preview holds diff HTML (changed words in <strong>). */
+/* The AI preview holds diff HTML (changed words in <strong>). A highlighted
+   background (not just font-weight) so changed text is unmistakable even if
+   the host page's CSS interferes with bold rendering. */
 .pf-opt-preview[hidden] { display: none; }
-.pf-opt-preview strong { color: #5B7C3A; font-weight: 700; }
+.pf-opt-preview strong,
+.pf-opt-item-text strong {
+  color: #3F5828;
+  font-weight: 700;
+  background: rgba(91, 124, 58, 0.16);
+  border-radius: 3px;
+  padding: 0 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
