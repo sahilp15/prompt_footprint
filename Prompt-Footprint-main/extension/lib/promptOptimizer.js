@@ -137,6 +137,8 @@
     [/\bsucessful\b/gi, 'successful'], [/\btomatos\b/gi, 'tomatoes'],
     [/\btruely\b/gi, 'truly'], [/\bwierd\b/gi, 'weird'],
     [/\bwriteable\b/gi, 'writable'], [/\byoure\b/gi, "you're"], [/\bthats\b/gi, "that's"],
+    [/\bpromtp\b/gi, 'prompt'], [/\banywere\b/gi, 'anywhere'], [/\bpolciy\b/gi, 'policy'],
+    [/\bprofesional\b/gi, 'professional'], [/\brealy\b/gi, 'really'],
   ];
 
   // Count and apply typo fixes; returns { text, count }.

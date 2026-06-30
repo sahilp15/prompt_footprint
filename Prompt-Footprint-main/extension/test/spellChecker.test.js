@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
 const S = require('../lib/spellChecker.js');
 const Typo = require('../lib/vendor/typo.js');
 
@@ -8,6 +10,14 @@ const Typo = require('../lib/vendor/typo.js');
 const FIX_AFF = 'SET UTF-8\nTRY esianrtolcdugmphbyfvkw\n';
 const FIX_DIC = ['9', 'hello', 'world', 'separate', 'receive', 'environment', 'the', 'cat', 'sat', 'function'].join('\n');
 const typo = new Typo('en_US', FIX_AFF, FIX_DIC);
+
+// The full shipped dictionary — used only where a test needs realistic
+// dictionary-suggest behavior over arbitrary English text (the small fixture
+// above only knows 9 words and would "correct" everything else into one of
+// them, which isn't representative of real text).
+const realAff = fs.readFileSync(path.join(__dirname, '../lib/dict/en_US.aff'), 'utf8');
+const realDic = fs.readFileSync(path.join(__dirname, '../lib/dict/en_US.dic'), 'utf8');
+const realTypo = S.createChecker(realAff, realDic);
 
 test('createChecker returns a working Typo from aff/dic strings', () => {
   const t = S.createChecker(FIX_AFF, FIX_DIC);
@@ -114,4 +124,68 @@ test('applySafeFixes keeps paragraph breaks (blank lines) intact', () => {
 test('applyOne replaces a single suggestion, preserving the rest', () => {
   const out = S.applyOne('I recieve files', { type: 'spelling', original: 'recieve', suggestion: 'receive' });
   assert.strictEqual(out, 'I receive files');
+});
+
+// ── regression: real-Chrome failed-test input ───────────────────────────────
+// The exact text that produced a no-op in a real Chrome run of the writing
+// assistant. The local typo.js tier must fix the simple, safe issues (typos,
+// "I", sentence-start capitalization) without attempting the advanced
+// rewrite (joined words, smashed bullets) that is Gemini's job, and it must
+// never "correct" tech/brand words into unrelated dictionary words.
+const BAD_INPUT = "I receive the files but i don't know what to do next. can you make this promtp good and make sure it has bullet points- first fix the spell checker because it is not working- make the capsule moveable anywere on the screen- don't break chatgpt or claude tracking- add a privacy polciy section- make the github repo look profesional- make the readme betteralso make this **realy important part** more clear and don't mess up the bold text.";
+
+test('regression: local fallback fixes all five target typos, with the dictionary', () => {
+  const r = S.analyzeWriting(BAD_INPUT, { typo: realTypo });
+  const text = r.safeFixedText;
+  assert.match(text, /\bprompt\b/);
+  assert.match(text, /\banywhere\b/);
+  assert.match(text, /\bpolicy\b/);
+  assert.match(text, /\bprofessional\b/);
+  assert.match(text, /\breally\b/);
+});
+
+test('regression: local fallback fixes all five target typos WITHOUT the dictionary (curated-only)', () => {
+  // typo: null simulates a real-Chrome dictionary-load failure — the curated
+  // map alone must still catch these, since "fix the spell checker" was the
+  // user's #1 complaint and it must not silently depend on the dictionary.
+  const r = S.analyzeWriting(BAD_INPUT, { typo: null });
+  const text = r.safeFixedText;
+  assert.match(text, /\bprompt\b/);
+  assert.match(text, /\banywhere\b/);
+  assert.match(text, /\bpolicy\b/);
+  assert.match(text, /\bprofessional\b/);
+  assert.match(text, /\breally\b/);
+});
+
+test('regression: capitalization fixed ("i" -> "I", sentence-start "can" -> "Can")', () => {
+  const r = S.analyzeWriting(BAD_INPUT, { typo: realTypo });
+  assert.match(r.safeFixedText, /\bI don't know\b/);
+  assert.match(r.safeFixedText, /\. Can you make\b/);
+});
+
+test('regression: markdown bold survives the local fix exactly', () => {
+  const r = S.analyzeWriting(BAD_INPUT, { typo: realTypo });
+  assert.ok(r.safeFixedText.includes('**really important part**'),
+    `expected "**really important part**" intact, got: ${r.safeFixedText}`);
+});
+
+test('regression: tech/brand words are never corrupted into unrelated words', () => {
+  const r = S.analyzeWriting(BAD_INPUT, { typo: realTypo });
+  const text = r.safeFixedText;
+  assert.doesNotMatch(text, /catgut/i, 'chatgpt must not become "catgut"');
+  assert.doesNotMatch(text, /\brename\b/i, 'readme must not become "rename"');
+  assert.doesNotMatch(text, /\brep\b/i, 'repo must not become "rep"');
+  assert.match(text, /\bChatGPT\b/);
+  assert.match(text, /\bClaude\b/);
+  assert.match(text, /\bGitHub\b/);
+  assert.match(text, /\bREADME\b/);
+  assert.match(text, /\brepo\b/);
+});
+
+test('regression: local-only fallback does NOT attempt the advanced Gemini-only rewrite', () => {
+  const r = S.analyzeWriting(BAD_INPUT, { typo: realTypo });
+  // Smashed bullet list and the joined word are untouched locally — that is
+  // Gemini's job per the typo.js-is-simple-spelling design rule.
+  assert.ok(r.safeFixedText.includes('points- first fix'), 'local tier must not restructure bullets');
+  assert.ok(r.safeFixedText.includes('betteralso'), 'local tier must not split joined words');
 });

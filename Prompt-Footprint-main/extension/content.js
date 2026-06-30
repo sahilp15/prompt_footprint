@@ -936,6 +936,7 @@
 
     previewEl.innerHTML = PFWritingFormat.diffBold(originalText, improvedText);
     previewEl.hidden = false;
+    applyBtn.textContent = 'Use improved version';
     applyBtn.hidden = false;
 
     let saved = null;

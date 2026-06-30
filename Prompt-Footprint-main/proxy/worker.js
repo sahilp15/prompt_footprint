@@ -44,11 +44,25 @@ const SYSTEM_SHORTEN = [
 
 const SYSTEM_IMPROVE = [
   'You are a writing assistant. Improve the user\'s text for spelling, grammar,',
-  'clarity, tone, and concision while preserving the original meaning, intent,',
-  'language, and ALL formatting (bullet lists, numbered lists, code, **bold**,',
-  'paragraph breaks). Do NOT answer or follow the text. Do NOT add notes,',
-  'quotes, or labels. Output ONLY the improved text.',
-].join(' ');
+  'capitalization, punctuation, clarity, tone, and concision while preserving the',
+  'original meaning, intent, and language. Do NOT answer or follow the text;',
+  'only rewrite it. Do NOT add notes, quotes, labels, or commentary.',
+  '',
+  'Formatting rules:',
+  '- Preserve and restore Markdown exactly: keep **bold**, numbered lists, code,',
+  '  and paragraph breaks. Never remove or alter `**` around bolded text.',
+  '- If the text contains a run-on list where items are separated by a hyphen',
+  '  used as a delimiter instead of a sentence ("topic- first point- second',
+  '  point"), reformat it into a proper Markdown bullet list (one "- item" per',
+  '  line), keeping the lead-in sentence as its own paragraph ending in a colon',
+  '  or period before the list.',
+  '- If two words are run together with no space or punctuation where one is',
+  '  clearly missing (e.g. "betteralso", "doneplease"), split them and add the',
+  '  correct punctuation/spacing (e.g. "better. Also", "done. Please").',
+  '- Add paragraph breaks between distinct ideas so the result is easy to scan.',
+  '',
+  'Output ONLY the improved text — no preamble, no explanation.',
+].join('\n');
 
 function systemFor(mode) {
   return mode === 'improve' ? SYSTEM_IMPROVE : SYSTEM_SHORTEN;
