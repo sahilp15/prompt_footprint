@@ -78,28 +78,30 @@ export default function WeeklyStats() {
 
   return (
     <div className="weekly-page">
-      {/* About Our Mission */}
+      {/* Why this matters */}
       <section className="mission-section">
         <div className="mission-inner">
           <div className="mission-text">
             <div className="mission-badge">
               <Leaf size={13} />
-              <span>About Our Mission</span>
+              <span>Why this matters</span>
             </div>
-            <h2 className="mission-heading">Every Prompt Has a Price</h2>
+            <h2 className="mission-heading">Every prompt runs in a data center</h2>
             <p className="mission-body">
-              AI models run in massive data centers that consume enormous amounts of electricity and water for cooling.
-              Each token you generate contributes to real-world energy use, water evaporation, and carbon emissions.
-              PromptFootprint makes that invisible cost visible — so you can make informed choices about your AI usage.
+              AI replies are generated on servers that draw electricity from the grid and evaporate
+              water to stay cool. One prompt is tiny, but a week of them adds up. PromptFootprint
+              estimates the energy, water, and CO₂ behind your ChatGPT and Claude use so you can watch
+              the trend and trim it. The numbers are estimates, not meter readings — see “How it works”
+              for the method.
             </p>
             <div className="mission-pills">
-              <span className="mission-pill">🌊 Water-cooled data centers</span>
-              <span className="mission-pill">⚡ Grid-powered inference</span>
-              <span className="mission-pill">🌍 8 key data centers tracked</span>
+              <span className="mission-pill">⚡ Grid electricity</span>
+              <span className="mission-pill">🌊 Water cooling</span>
+              <span className="mission-pill">🌍 8 data-center regions shown</span>
             </div>
             <p className="mission-note">
-              The globe shows 8 major AI data center regions. Larger dots indicate higher
-              carbon intensity and water stress — regions where your prompts have the biggest footprint.
+              The globe marks 8 major AI data-center regions; bigger dots mean higher carbon intensity
+              and water stress. It’s for context only — your prompts aren’t traced to a location.
             </p>
           </div>
           <div className="mission-globe">
@@ -109,8 +111,8 @@ export default function WeeklyStats() {
       </section>
 
       <div className="page-header">
-        <h1 className="page-title">Weekly Impact</h1>
-        <p className="page-subtitle">Your AI environmental footprint for the past 7 days</p>
+        <h1 className="page-title">This week</h1>
+        <p className="page-subtitle">Estimated energy, water, and CO₂ from your AI chats over the last 7 days.</p>
       </div>
 
       <div className="metrics-grid">

@@ -1,9 +1,8 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, Zap, BarChart3, Leaf, BookOpen, GraduationCap, Trophy, Settings as SettingsIcon } from 'lucide-react'
+import { Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Settings as SettingsIcon } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
 import SessionList from './components/SessionList'
 import Savings from './components/Savings'
-import HowItWorks from './components/HowItWorks'
 import Guide from './components/Guide'
 import Awards from './components/Awards'
 import Settings from './components/Settings'
@@ -32,10 +31,7 @@ function App() {
               <Leaf size={16} /><span>Savings</span>
             </NavLink>
             <NavLink to="/learn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <GraduationCap size={16} /><span>Learn</span>
-            </NavLink>
-            <NavLink to="/how" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <BookOpen size={16} /><span>How It Works</span>
+              <GraduationCap size={16} /><span>How it works</span>
             </NavLink>
             <NavLink to="/awards" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Trophy size={16} /><span>Awards</span>
@@ -60,7 +56,6 @@ function App() {
           <Route path="/sessions" element={<SessionList />} />
           <Route path="/savings" element={<Savings />} />
           <Route path="/learn" element={<Guide />} />
-          <Route path="/how" element={<HowItWorks />} />
           <Route path="/awards" element={<Awards />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

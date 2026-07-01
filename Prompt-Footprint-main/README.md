@@ -154,11 +154,31 @@ data only when opened as the extension's dashboard.
   dictionary) — nothing is uploaded.
 - **Exception:** the optional **AI writing help** tier sends your in-progress
   draft to the Cloudflare Worker you configured (→ Gemini) to generate a
-  suggestion. It is disabled until you set a Worker URL. See
-  [`docs/PRIVACY.md`](docs/PRIVACY.md) for the full policy and Chrome Web Store
-  readiness checklist, and
-  [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md) for the (proposed, not yet built) optional
-  login/sync design. Manual test steps: [`docs/TESTING.md`](docs/TESTING.md).
+  suggestion. It is disabled until you set a Worker URL.
+
+### Legal & publishing docs
+
+- [`docs/PRIVACY.md`](docs/PRIVACY.md) — full privacy policy.
+- [`docs/TERMS.md`](docs/TERMS.md) — terms of service (first draft).
+- [`docs/DATA_DELETION.md`](docs/DATA_DELETION.md) — how to delete local and account data.
+- [`docs/SECURITY.md`](docs/SECURITY.md) — security model and how to report issues.
+- [`docs/CHROME_STORE_LISTING.md`](docs/CHROME_STORE_LISTING.md) — store listing copy,
+  permission justifications, and data-use disclosure answers.
+- [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md) — optional login/sync design.
+- [`docs/TESTING.md`](docs/TESTING.md) — manual test steps.
+
+## Publishing to the Chrome Web Store
+
+1. Rebuild the dashboard (`stats-site` → `extension/dashboard`, see above) so the
+   packaged options page is current.
+2. Confirm the manifest permissions and `connect-src` list only what's needed (see
+   [`docs/SECURITY.md`](docs/SECURITY.md)); if you enable optional accounts, set the
+   real Supabase project origin (no wildcard).
+3. Host [`docs/PRIVACY.md`](docs/PRIVACY.md) at a public URL (GitHub Pages works) and
+   put that URL in the listing.
+4. Fill in the store listing and data-use disclosures from
+   [`docs/CHROME_STORE_LISTING.md`](docs/CHROME_STORE_LISTING.md).
+5. Zip the repo root (the folder containing `manifest.json`) and upload it.
 
 ## Adding a platform
 
