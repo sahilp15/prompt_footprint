@@ -36,6 +36,40 @@ In **Authentication → Providers → Email**: enable **Email** with
 **Confirm email** on (matches the extension's verify-then-login flow). No OAuth
 redirect setup is needed for email + password.
 
+**Set up a real email sender before launch.** Supabase's built-in/shared email
+service is meant for early testing only — it's capped at a handful of emails
+per hour project-wide, and signups will start failing with "email rate limit
+exceeded" almost immediately once more than a couple of people try to sign up.
+Before publishing:
+
+1. Sign up for an SMTP provider with a free tier — [Resend](https://resend.com)
+   is a common, simple pairing with Supabase.
+2. Verify a sending domain (or use the provider's test sender while developing).
+3. Get an API key/SMTP credentials from the provider.
+4. In Supabase: **Authentication → Emails → SMTP Settings** → enable custom
+   SMTP and fill in the host/port/username/password from your provider (for
+   Resend: host `smtp.resend.com`, port `465`, username `resend`, password =
+   your Resend API key) and a verified sender address.
+
+**Stuck on the shared limit while testing locally?** You don't have to wait for
+it to reset — a matching `auth.users` row is usually created even when the
+confirmation email fails to send, so you can confirm it manually from the SQL
+editor and keep testing:
+
+```sql
+update auth.users set email_confirmed_at = now() where email = 'you@example.com';
+```
+
+Then log in with that email/password directly; this is only for local testing
+against your own project and has no effect on other users.
+
+**Also set the Site URL** (Authentication → URL Configuration) to a real page —
+it defaults to `http://localhost:3000`, which will show a "site can't be
+reached" error after a user confirms their email. Point it at your GitHub
+Pages stats site (`https://<username>.github.io/<repo>/`) or another page you
+control; the confirmation itself already succeeds before this redirect fires,
+so this only affects what the user sees afterward.
+
 ## 4. Wire the keys into the extension
 
 Both values are public (safe by RLS). Set them in **two** places:
