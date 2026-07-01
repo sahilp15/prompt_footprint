@@ -119,6 +119,29 @@
   font-weight: 500;
 }
 
+.pf-setting-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pf-accent-green);
+}
+
+.pf-hint {
+  padding: 11px 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pf-text-muted);
+  border-bottom: 1px solid var(--pf-border-subtle);
+}
+.pf-hint a { color: var(--pf-accent-green); text-decoration: underline; cursor: pointer; }
+.pf-hint kbd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--pf-text-secondary);
+  background: var(--pf-border-subtle);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
 /* Toggle */
 .pf-toggle { position: relative; display: inline-block; cursor: pointer; }
 .pf-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
@@ -171,3 +194,16 @@
 
 .pf-btn:hover { opacity: 0.88; transform: translateY(-1px); }
 .pf-btn:active { transform: translateY(0); }
+
+/* ── Disclosure ───────────────── */
+.pf-disclosure {
+  padding: 10px 16px 14px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--pf-text-muted);
+  border-top: 1px solid var(--pf-border-subtle);
+}
+.pf-disclosure a {
+  color: var(--pf-accent-green);
+  text-decoration: underline;
+}

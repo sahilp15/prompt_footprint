@@ -1,212 +1,360 @@
 // PromptFootprint Content Script
-// Injected into ChatGPT pages to observe conversations and estimate environmental impact
+// Injected into supported AI chat pages (ChatGPT, Claude, ...) to observe
+// conversations and estimate environmental impact. Platform-specific DOM
+// details live in lib/platforms.js; persistence lives in lib/storage.js.
 
 (function() {
   'use strict';
 
+  const adapter = PFPlatforms.getActiveAdapter();
+  if (!adapter) {
+    // Not a supported platform — content script should not have been injected,
+    // but bail defensively rather than throw.
+    return;
+  }
+
   let currentSessionId = null;
   let userId = null;
-  let config = { overlayEnabled: true, energyPerTokenMultiplier: 1.0 };
+  let config = { overlayEnabled: true, energyPerTokenMultiplier: 1.0, debug: false, writingChecksEnabled: true };
   let processedMessageIds = new Set();
   let pendingUserMessage = null;
-  let responseDebounceTimer = null;
+  let lastSubmitAt = 0;               // timestamp of the last submit-hook capture
+  let lastFinalizedText = '';         // guard against finalizing the same response twice
   let sessionStats = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0 };
   let lastQueryImpact = null;
 
+  // Verbose logging is opt-in (pf_config.debug) so production stays quiet.
+  function log(...args) {
+    if (config.debug) console.log('[PromptFootprint]', ...args);
+  }
+
+  // Response capture is POLLING-based, not mutation-based. ChatGPT and Claude
+  // stream responses by replacing DOM nodes (childList) rather than mutating
+  // text nodes (characterData), so a characterData debounce misses most of the
+  // stream. Instead we poll the latest assistant element's text and only
+  // finalize once it has stopped growing for SETTLE_DELAY_MS *and* the platform
+  // is no longer generating (Stop button gone).
+  const RESPONSE_POLL_MS = 500;       // how often to sample the assistant text
+  const SETTLE_DELAY_MS = 2000;       // text must be stable this long to finalize
+  const SUBMIT_DEDUP_MS = 3000;       // ignore observer user-bubble within this of a submit
+  const MAX_NO_RESPONSE_MS = 30000;   // give up if no assistant text ever appears
+  const HARD_CAP_MS = 240000;         // force-finalize a never-settling response
+  let responseWatchTimer = null;
+  let responseWatch = null;           // { lastText, lastChange, startedAt }
+
   // Initialize
   async function init() {
-    // Inject overlay UI immediately — before any async/network calls
+    // Inject overlay UI immediately — before any async/storage calls
     // so the capsule is visible on first page load without delay.
     injectFloatingOverlay();
     injectModalOverlay();
 
-    // Get user ID from background
-    const result = await sendMessage({ type: 'GET_USER_ID' });
-    userId = result.userId;
+    userId = await PFStorage.getUserId();
 
-    // Get config
-    const configResult = await sendMessage({ type: 'GET_CONFIG' });
-    if (configResult && !configResult.error) {
-      config = { ...config, ...configResult };
-      // Sync overlay visibility with saved config
+    const savedConfig = await PFStorage.getConfig();
+    if (savedConfig) {
+      config = { ...config, ...savedConfig };
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay && !config.overlayEnabled) overlay.style.display = 'none';
     }
 
-    // Create session
-    const session = await sendMessage({
-      type: 'API_REQUEST',
-      payload: {
-        method: 'POST',
-        endpoint: '/sessions',
-        body: { userId, startTime: new Date().toISOString() }
-      }
-    });
-
+    // Create a session for this tab/platform.
+    const session = await PFStorage.createSession(userId, adapter.id);
     if (session && session.id) {
       currentSessionId = session.id;
-      // Store session ID for tab close detection
-      chrome.storage.session.set({ [`session_${getTabInfo()}`]: currentSessionId });
+      // Register the session id with the background worker so it can be
+      // closed when the tab is removed (keyed by tab id).
+      sendMessage({ type: 'REGISTER_SESSION', payload: { sessionId: currentSessionId } });
     }
 
-    // Start observing DOM
     startObserver();
-
-    console.log('[PromptFootprint] Initialized. Session:', currentSessionId);
+    setupSubmitHook();
+    setupPromptOptimizer();
+    setupPanelShortcut();
+    startWatchdog();
+    log(`content script loaded — platform=${adapter.id} (${adapter.name}) session=${currentSessionId}`);
+    log('composer detected:', document.querySelectorAll(adapter.inputSelector).length,
+        '| send button:', !!(adapter.getSendButton && adapter.getSendButton()));
   }
 
-  function getTabInfo() {
-    return window.location.href;
+  // ── Submit hook (primary user-prompt trigger) ───────────────────────────--
+  // Capturing the prompt at submit time is resilient to chat-bubble selector
+  // drift: we read the composer text the instant the user sends, before the
+  // host UI clears it. The MutationObserver remains a fallback for programmatic
+  // submits; a short dedup window stops the two paths from double-counting.
+  function setupSubmitHook() {
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      const el = e.target;
+      if (!el || !el.matches?.(adapter.inputSelector) &&
+          !el.closest?.(adapter.inputSelector)) return;
+      captureSubmittedPrompt('enter');
+    }, true);
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target?.closest?.(adapter.sendSelector || 'button');
+      if (!btn) return;
+      if (adapter.sendSelector && !btn.matches?.(adapter.sendSelector) &&
+          !btn.closest?.(adapter.sendSelector)) return;
+      captureSubmittedPrompt('send-button');
+    }, true);
+  }
+
+  function captureSubmittedPrompt(trigger) {
+    const input = document.querySelector(adapter.inputSelector);
+    const text = input ? getInputText(input).trim() : '';
+    if (!text) { log('submit ignored — empty composer (trigger=', trigger, ')'); return; }
+    // Ignore a second trigger for the same in-flight turn (Enter + click, or
+    // rapid re-fire) so we don't restart the watch on the same prompt.
+    if (pendingUserMessage && Date.now() - lastSubmitAt < SUBMIT_DEDUP_MS) {
+      log('submit ignored — capture already active (trigger=', trigger, ')');
+      return;
+    }
+    lastSubmitAt = Date.now();
+    pendingUserMessage = { id: `submit-${lastSubmitAt}`, text, startTime: lastSubmitAt };
+    updateFloatingStatus('recording');
+    startResponseWatch();
+    log('prompt captured at submit — trigger=', trigger, 'len=', text.length, '→ generation started');
+  }
+
+  // ── Robustness watchdog ────────────────────────────────────────────────--
+  // SPA frameworks can re-render and remove our injected UI, or navigate to a
+  // new conversation. Periodically make sure our overlays exist and react to
+  // URL changes — WITHOUT discarding an in-progress capture.
+  let lastUrl = location.href;
+  function startWatchdog() {
+    const wd = setInterval(() => {
+      // If the extension was reloaded/updated, stop quietly.
+      if (!extAlive()) { clearInterval(wd); stopResponseWatch(); return; }
+      // Re-inject any overlay the page removed.
+      injectFloatingOverlay();
+      injectModalOverlay();
+      injectOptimizerChip();
+      const overlay = document.getElementById('pf-floating-overlay');
+      if (overlay) overlay.style.display = config.overlayEnabled ? 'block' : 'none';
+
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        hideOptimizerChip();
+        // CRITICAL: sending the first message in a NEW chat changes the URL
+        // (/ -> /c/<id>). Cancelling here used to discard the very interaction
+        // we just started tracking. Only reset when nothing is being captured;
+        // an active capture keeps running (it has its own settle/timeout).
+        if (!pendingUserMessage && !responseWatch) {
+          updateFloatingStatus('saved');
+        } else {
+          log('URL changed during active capture — keeping capture alive:', location.href);
+        }
+      }
+    }, 2000);
+  }
+
+  // True while this content script's extension context is still valid. After an
+  // extension reload/update, old content scripts in open tabs lose their context
+  // and any chrome.* call throws "Extension context invalidated". We detect this
+  // and shut our timers down quietly instead of spamming the console.
+  function extAlive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch (_) {
+      return false;
+    }
   }
 
   function sendMessage(msg) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(msg, (response) => {
-        resolve(response || {});
-      });
+      if (!extAlive()) { resolve({}); return; }
+      try {
+        chrome.runtime.sendMessage(msg, (response) => {
+          // Swallow chrome.runtime.lastError (e.g. worker asleep) — non-fatal.
+          void chrome.runtime.lastError;
+          resolve(response || {});
+        });
+      } catch (_) {
+        resolve({});
+      }
     });
   }
 
-  // DOM Observation
+  // ── DOM Observation ────────────────────────────────────────────────────--
+  // We observe document.body (not adapter.rootSelector) so the observer
+  // survives SPA navigations that replace the conversation container.
   function startObserver() {
     const observer = new MutationObserver(handleMutations);
-
-    // Observe the main content area - ChatGPT renders conversation in the main element
     const observeTarget = () => {
-      const main = document.querySelector('main');
-      if (main) {
-        observer.observe(main, { childList: true, subtree: true, characterData: true });
-        console.log('[PromptFootprint] Observer attached to main');
-        return true;
-      }
-      return false;
+      if (!document.body) return false;
+      observer.observe(document.body, { childList: true, subtree: true });
+      log('Observer attached to document.body');
+      return true;
     };
-
     if (!observeTarget()) {
-      // Retry until main element appears
       const retryInterval = setInterval(() => {
         if (observeTarget()) clearInterval(retryInterval);
-      }, 1000);
+      }, 500);
     }
+    // Also scan whatever is already on the page (script may load mid-conversation).
+    scanExistingMessages();
+  }
+
+  function scanExistingMessages() {
+    document.querySelectorAll(adapter.messageSelector).forEach((el) => {
+      const role = adapter.getRole(el);
+      const id = adapter.getMessageId(el);
+      if (id) processedMessageIds.add(id); // mark pre-existing so we don't re-log
+    });
   }
 
   function handleMutations(mutations) {
     for (const mutation of mutations) {
-      if (mutation.type === 'childList') {
-        mutation.addedNodes.forEach(node => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            checkForMessages(node);
-          }
-        });
-      } else if (mutation.type === 'characterData') {
-        // Streaming text is still arriving — reset the debounce timer so we
-        // capture the FULL response, not just what arrived in the first 1.5s.
-        if (responseDebounceTimer !== null && pendingUserMessage) {
-          clearTimeout(responseDebounceTimer);
-          responseDebounceTimer = setTimeout(() => {
-            const assistantMsgs = document.querySelectorAll('[data-message-author-role="assistant"]');
-            const latest = assistantMsgs[assistantMsgs.length - 1];
-            if (latest && pendingUserMessage) {
-              const msgId = latest.getAttribute('data-message-id');
-              const text = extractText(latest);
-              if (text) {
-                if (msgId) processedMessageIds.add(msgId);
-                processQuery(pendingUserMessage.text, text);
-                pendingUserMessage = null;
-              }
-            }
-            responseDebounceTimer = null;
-          }, 1500);
-        }
-      }
+      if (mutation.type !== 'childList') continue;
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) checkForMessages(node);
+      });
     }
+  }
+
+  // Collect message elements within (and including) a mutated node.
+  function collectMessageElements(node) {
+    const els = [];
+    if (node.matches?.(adapter.messageSelector)) els.push(node);
+    if (node.querySelectorAll) {
+      node.querySelectorAll(adapter.messageSelector).forEach((el) => els.push(el));
+    }
+    return els;
   }
 
   function checkForMessages(node) {
-    // ChatGPT uses data-message-id and data-message-author-role attributes
-    const messageElements = node.querySelectorAll
-      ? [node, ...node.querySelectorAll('[data-message-id]')]
-      : [node];
+    const messageElements = collectMessageElements(node);
 
-    messageElements.forEach(el => {
-      const messageId = el.getAttribute?.('data-message-id');
-      const authorRole = el.getAttribute?.('data-message-author-role');
+    messageElements.forEach((el) => {
+      const role = adapter.getRole(el);
+      if (role !== 'user') return; // assistant capture is handled by polling
 
+      const messageId = adapter.getMessageId(el);
       if (!messageId || processedMessageIds.has(messageId)) return;
 
-      if (authorRole === 'user') {
-        const text = extractText(el);
-        if (text) {
-          pendingUserMessage = { id: messageId, text };
-          processedMessageIds.add(messageId);
-          updateFloatingStatus('recording');
-        }
-      } else if (authorRole === 'assistant') {
-        // Debounce: wait for streaming to complete
-        clearTimeout(responseDebounceTimer);
-        responseDebounceTimer = setTimeout(() => {
-          const text = extractText(el);
-          if (text && pendingUserMessage) {
-            processedMessageIds.add(messageId);
-            processQuery(pendingUserMessage.text, text);
-            pendingUserMessage = null;
-          }
-          responseDebounceTimer = null;
-        }, 1500);
-      }
-    });
+      const text = adapter.extractText(el);
+      if (!text) return;
 
-    // Also try broader selectors as fallback
-    if (!node.getAttribute?.('data-message-id')) {
-      tryAlternativeSelectors(node);
+      processedMessageIds.add(messageId);
+
+      // The submit hook is the primary trigger; if it fired moments ago this is
+      // the same turn surfacing in the DOM, so don't start a second capture.
+      if (Date.now() - lastSubmitAt < SUBMIT_DEDUP_MS || pendingUserMessage) return;
+
+      pendingUserMessage = { id: messageId, text, startTime: Date.now() };
+      updateFloatingStatus('recording');
+      startResponseWatch();
+    });
+  }
+
+  // ── Response capture (polling) ─────────────────────────────────────────--
+  function startResponseWatch() {
+    stopResponseWatch();
+    const now = Date.now();
+    responseWatch = { lastText: '', lastChange: now, startedAt: now };
+    responseWatchTimer = setInterval(pollResponse, RESPONSE_POLL_MS);
+  }
+
+  function stopResponseWatch() {
+    if (responseWatchTimer) clearInterval(responseWatchTimer);
+    responseWatchTimer = null;
+    responseWatch = null;
+  }
+
+  function pollResponse() {
+    if (!pendingUserMessage || !responseWatch) { stopResponseWatch(); return; }
+
+    const latest = adapter.getLatestAssistant();
+    const text = latest ? adapter.extractText(latest) : '';
+    const now = Date.now();
+
+    // Still growing → reset the stability clock.
+    if (text && text.length !== responseWatch.lastText.length) {
+      responseWatch.lastText = text;
+      responseWatch.lastChange = now;
+      log('poll: assistant text growing, len=', text.length);
+      return;
+    }
+
+    // Model is still working (thinking/streaming/searching) even if the visible
+    // text is momentarily stable → keep the stability clock from advancing so we
+    // never finalize mid-generation.
+    const signal = typeof adapter.generatingSignal === 'function'
+      ? adapter.generatingSignal()
+      : (typeof adapter.isGenerating === 'function' && adapter.isGenerating() ? 'generating' : null);
+    const generating = !!signal;
+    if (generating) {
+      responseWatch.lastChange = now;
+      log('poll: still generating (signal=', signal, ') textLen=', text.length);
+      return;
+    }
+
+    const stableMs = now - responseWatch.lastChange;
+    const completeSignal = typeof adapter.isComplete === 'function' && adapter.isComplete();
+    const done = PFPlatforms.isResponseComplete({
+      generating, hasText: !!text, stableMs, settleMs: SETTLE_DELAY_MS, completeSignal,
+    });
+    if (done) {
+      log('poll: complete (stableMs=', stableMs, 'completeSignal=', completeSignal, 'len=', text.length, ')');
+      finalizeResponse(latest, text, responseWatch.lastChange);
+      return;
+    }
+
+    // No assistant text appeared at all → give up.
+    if (!text && now - responseWatch.startedAt >= MAX_NO_RESPONSE_MS) {
+      stopResponseWatch();
+      updateFloatingStatus('saved');
+      log('poll: gave up — no assistant text after', MAX_NO_RESPONSE_MS, 'ms');
+      return;
+    }
+
+    // Response never settles (very long generation) → force-finalize.
+    if (text && now - responseWatch.startedAt >= HARD_CAP_MS) {
+      log('poll: hard cap reached — force finalizing');
+      finalizeResponse(latest, text, now);
     }
   }
 
-  function tryAlternativeSelectors(node) {
-    // Fallback: look for turn-based conversation structure
-    const turns = node.querySelectorAll?.('[class*="agent-turn"], [class*="user-turn"], [data-testid*="conversation-turn"]') || [];
-    turns.forEach(turn => {
-      const id = turn.getAttribute('data-testid') || turn.className;
-      if (processedMessageIds.has(id)) return;
+  function finalizeResponse(latestEl, text, endTime) {
+    if (!pendingUserMessage) { stopResponseWatch(); return; }
+    const prompt = pendingUserMessage.text;
+    const startTime = pendingUserMessage.startTime;
+    const msgId = latestEl ? adapter.getMessageId(latestEl) : null;
+    stopResponseWatch();
+    pendingUserMessage = null;
 
-      const isUser = turn.querySelector('[data-message-author-role="user"]') ||
-                     turn.classList?.contains('user-turn') ||
-                     turn.getAttribute('data-testid')?.includes('user');
-      const isAssistant = turn.querySelector('[data-message-author-role="assistant"]') ||
-                          turn.classList?.contains('agent-turn') ||
-                          turn.getAttribute('data-testid')?.includes('assistant');
+    // Guard against logging the same assistant response twice (e.g. observer +
+    // poll racing, or a re-render re-triggering capture).
+    if (text && text === lastFinalizedText) {
+      log('skip: duplicate response (already finalized)');
+      updateFloatingStatus('saved');
+      return;
+    }
+    lastFinalizedText = text;
+    if (msgId) processedMessageIds.add(msgId);
 
-      if (isUser) {
-        const text = extractText(turn);
-        if (text) {
-          pendingUserMessage = { id, text };
-          processedMessageIds.add(id);
-        }
-      } else if (isAssistant && pendingUserMessage) {
-        clearTimeout(responseDebounceTimer);
-        responseDebounceTimer = setTimeout(() => {
-          const text = extractText(turn);
-          if (text) {
-            processedMessageIds.add(id);
-            processQuery(pendingUserMessage.text, text);
-            pendingUserMessage = null;
-          }
-          responseDebounceTimer = null;
-        }, 1500);
-      }
-    });
+    const responseTimeMs = Math.max(0, endTime - startTime);
+    log('generation ended — assistant text len=', text.length, 'responseTimeMs=', responseTimeMs);
+    processQuery(prompt, text, responseTimeMs);
   }
 
-  function extractText(element) {
-    // Get text content, excluding script/style tags
-    const clone = element.cloneNode(true);
-    clone.querySelectorAll('script, style, button, svg').forEach(el => el.remove());
-    return clone.textContent?.trim() || '';
-  }
-
-  async function processQuery(promptText, responseText) {
+  async function processQuery(promptText, responseText, responseTimeMs) {
     const multiplier = config.energyPerTokenMultiplier || 1.0;
-    const impact = calculateQueryImpact(promptText, responseText, multiplier);
+    const impact = calculateQueryImpact(promptText, responseText, {
+      platform: adapter.id,
+      responseTimeMs,
+      multiplier,
+    });
+
+    // Defensive: never persist an empty interaction (both prompt and response
+    // must contribute tokens). The submit hook already requires a non-empty
+    // prompt, so this should not trigger in practice.
+    if (!impact.promptTokens || !impact.totalTokens) {
+      log('skip: 0-token interaction', { promptTokens: impact.promptTokens, totalTokens: impact.totalTokens });
+      updateFloatingStatus('saved');
+      return;
+    }
 
     lastQueryImpact = impact;
     sessionStats.totalTokens += impact.totalTokens;
@@ -215,39 +363,39 @@
     sessionStats.totalCo2G += impact.co2G;
     sessionStats.queryCount += 1;
 
-    // Send to backend
-    if (currentSessionId) {
-      sendMessage({
-        type: 'API_REQUEST',
-        payload: {
-          method: 'POST',
-          endpoint: '/queries',
-          body: {
-            sessionId: currentSessionId,
-            promptTokens: impact.promptTokens,
-            responseTokens: impact.responseTokens,
-            totalTokens: impact.totalTokens,
-            energyWh: impact.energyWh,
-            waterMl: impact.waterMl,
-            co2G: impact.co2G
-          }
-        }
-      });
+    if (currentSessionId && extAlive()) {
+      try {
+        await PFStorage.addQuery(currentSessionId, {
+          platform: adapter.id,
+          promptTokens: impact.promptTokens,
+          responseTokens: impact.responseTokens,
+          totalTokens: impact.totalTokens,
+          energyWh: impact.energyWh,
+          waterMl: impact.waterMl,
+          co2G: impact.co2G,
+          responseTimeMs,
+        });
+        log('storage write ok — session', currentSessionId, 'tokens', impact.totalTokens);
+      } catch (e) {
+        log('storage write FAILED:', e && e.message);
+      }
+    } else {
+      log('skip storage write — no session or extension context');
     }
 
     updateFloatingStatus('saved');
     updateModalStats();
-    console.log('[PromptFootprint] Query logged:', impact);
+    log('Query logged:', { promptTokens: impact.promptTokens, responseTokens: impact.responseTokens, totalTokens: impact.totalTokens, responseTimeMs });
   }
 
-  // Floating Overlay
+  // ── Floating Overlay ───────────────────────────────────────────────────--
   function injectFloatingOverlay() {
     if (document.getElementById('pf-floating-overlay')) return;
 
     const container = document.createElement('div');
     container.id = 'pf-floating-overlay';
     container.innerHTML = `
-      <div class="pf-floating-pill">
+      <div class="pf-floating-pill" role="button" tabindex="0" aria-label="Open PromptFootprint session details">
         <div class="pf-floating-dot"></div>
         <span class="pf-floating-label">PF</span>
         <span class="pf-floating-status">Tracking</span>
@@ -255,11 +403,109 @@
     `;
 
     container.addEventListener('click', () => toggleModal());
+    // Keyboard parity: the pill is a button, so open the modal on Enter/Space.
+    const pill = container.querySelector('.pf-floating-pill');
+    if (pill) {
+      pill.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleModal();
+        }
+      });
+    }
     document.body.appendChild(container);
+    restoreCapsulePosition(container);
+    makeCapsuleDraggable(container);
 
     if (!config.overlayEnabled) {
       container.style.display = 'none';
     }
+  }
+
+  // ── Draggable capsule ──────────────────────────────────────────────────--
+  // The capsule can be dragged anywhere and its position persists across
+  // reloads (pf_capsule_pos). A move past a small threshold is treated as a
+  // drag (and suppresses the click that would otherwise open the panel); a tap
+  // still opens the panel, and keyboard Enter/Space still works (a11y intact).
+  function applyCapsulePosition(c, left, top) {
+    c.style.left = `${left}px`;
+    c.style.top = `${top}px`;
+    c.style.right = 'auto';
+    c.style.bottom = 'auto';
+  }
+
+  function saveCapsulePosition(left, top) {
+    if (!extAlive()) return;
+    try { chrome.storage.local.set({ pf_capsule_pos: { left, top } }); } catch (_) {}
+  }
+
+  function restoreCapsulePosition(c) {
+    if (!extAlive()) return;
+    try {
+      chrome.storage.local.get(['pf_capsule_pos'], (res) => {
+        void chrome.runtime.lastError;
+        const p = res && res.pf_capsule_pos;
+        if (!p || typeof p.left !== 'number' || typeof p.top !== 'number') return;
+        const size = { width: c.offsetWidth || 120, height: c.offsetHeight || 40 };
+        const pos = PFUiHelpers.clampToViewport(p, size, { width: window.innerWidth, height: window.innerHeight });
+        applyCapsulePosition(c, pos.left, pos.top);
+      });
+    } catch (_) {}
+  }
+
+  function makeCapsuleDraggable(container) {
+    const pill = container.querySelector('.pf-floating-pill');
+    if (!pill) return;
+    let startX = 0, startY = 0, originLeft = 0, originTop = 0, dragging = false, moved = false;
+
+    pill.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      const rect = container.getBoundingClientRect();
+      originLeft = rect.left;
+      originTop = rect.top;
+      startX = e.clientX;
+      startY = e.clientY;
+      pill.setPointerCapture?.(e.pointerId);
+    });
+    pill.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      moved = true;
+      container.classList.add('pf-floating-dragging');
+      const size = { width: container.offsetWidth, height: container.offsetHeight };
+      const pos = PFUiHelpers.clampToViewport(
+        { left: originLeft + dx, top: originTop + dy }, size,
+        { width: window.innerWidth, height: window.innerHeight });
+      applyCapsulePosition(container, pos.left, pos.top);
+    });
+    const end = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      pill.releasePointerCapture?.(e.pointerId);
+      container.classList.remove('pf-floating-dragging');
+      if (moved) {
+        // Swallow the click that fires right after a drag so it doesn't open
+        // the panel; the position is what the user wanted.
+        const supp = (ev) => { ev.stopPropagation(); ev.preventDefault(); pill.removeEventListener('click', supp, true); };
+        pill.addEventListener('click', supp, true);
+        const rect = container.getBoundingClientRect();
+        saveCapsulePosition(rect.left, rect.top);
+      }
+    };
+    pill.addEventListener('pointerup', end);
+    pill.addEventListener('pointercancel', end);
+  }
+
+  // Toggle the main panel from a keyboard shortcut (Alt+P). Bound once.
+  function setupPanelShortcut() {
+    document.addEventListener('keydown', (e) => {
+      if (!PFUiHelpers.isPanelToggleShortcut(e)) return;
+      e.preventDefault();
+      toggleModal();
+    }, true);
   }
 
   function updateFloatingStatus(status) {
@@ -279,7 +525,7 @@
     }
   }
 
-  // Modal Overlay
+  // ── Modal Overlay ──────────────────────────────────────────────────────--
   function injectModalOverlay() {
     if (document.getElementById('pf-modal-overlay')) return;
 
@@ -345,6 +591,7 @@
           <div class="pf-modal-query-count" id="pf-query-count">0 queries this session</div>
           <button class="pf-modal-btn" id="pf-open-stats-btn">View Full Stats</button>
         </div>
+        <div class="pf-modal-hint">Tip: press <kbd>Alt</kbd>+<kbd>P</kbd> to open or close this panel · drag the capsule to move it</div>
       </div>
     `;
 
@@ -352,8 +599,8 @@
 
     document.getElementById('pf-modal-close-btn').addEventListener('click', () => toggleModal(false));
     document.getElementById('pf-open-stats-btn').addEventListener('click', () => {
-      const statsUrl = `https://prompt-footprint-2bjl.vercel.app?userId=${userId}`;
-      window.open(statsUrl, '_blank');
+      // Local-first: stats live in the extension's own dashboard page.
+      chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
     });
   }
 
@@ -368,31 +615,8 @@
     }
   }
 
-  // Real-world conversion helpers — same logic as popup.js
-  function _fmtWater(ml) {
-    if (ml <= 0)   return '0 drops';
-    if (ml < 0.05) return '< 1 drop';
-    if (ml < 1.5)  return `≈ ${Math.round(ml * 20)} drops`;
-    if (ml < 5)    return `≈ ${(ml / 5).toFixed(1)} tsp`;
-    if (ml < 250)  return `≈ ${Math.round(ml / 250 * 100)}% of a glass`;
-    return           `≈ ${(ml / 250).toFixed(1)} glasses`;
-  }
-  function _fmtEnergy(wh) {
-    if (wh <= 0)   return '< 1 sec phone';
-    const s = wh * 1200;
-    if (s < 2)     return '< 2 sec phone';
-    if (s < 60)    return `≈ ${Math.round(s)}s phone`;
-    if (s < 3600)  return `≈ ${Math.round(s / 60)} min phone`;
-    return           `≈ ${(s / 3600).toFixed(1)} hr phone`;
-  }
-  function _fmtCo2(g) {
-    if (g <= 0)    return '< 1 cm by car';
-    const m = g * 5;
-    if (m < 1)     return `≈ ${Math.round(m * 100)} cm by car`;
-    if (m < 1000)  return `≈ ${m.toFixed(1)} m by car`;
-    return           `≈ ${(m / 1000).toFixed(2)} km by car`;
-  }
-
+  // Real-world conversion helpers — shared with popup.js via lib/formatters.js.
+  // The modal uses the single-line `compact` form.
   function updateModalStats() {
     const fmtRaw = (v, unit) => `${v.toFixed(3)} ${unit}`;
 
@@ -400,9 +624,9 @@
     const energyEl = document.getElementById('pf-session-energy');
     const waterEl  = document.getElementById('pf-session-water');
     const co2El    = document.getElementById('pf-session-co2');
-    if (energyEl) energyEl.textContent = _fmtEnergy(sessionStats.totalEnergyWh);
-    if (waterEl)  waterEl.textContent  = _fmtWater(sessionStats.totalWaterMl);
-    if (co2El)    co2El.textContent    = _fmtCo2(sessionStats.totalCo2G);
+    if (energyEl) energyEl.textContent = PFFormat.energy(sessionStats.totalEnergyWh).compact;
+    if (waterEl)  waterEl.textContent  = PFFormat.water(sessionStats.totalWaterMl).compact;
+    if (co2El)    co2El.textContent    = PFFormat.co2(sessionStats.totalCo2G).compact;
 
     // Last query — raw values (individual queries are tiny, context matters)
     if (lastQueryImpact) {
@@ -421,6 +645,396 @@
     if (countEl) countEl.textContent = `${sessionStats.queryCount} ${sessionStats.queryCount === 1 ? 'query' : 'queries'} this session`;
   }
 
+  // ── Prompt optimizer ───────────────────────────────────────────────────--
+  // Grammarly-style: as the user types a long prompt we show a shorter version
+  // and the estimated savings BEFORE they send. Two tiers:
+  //   1. LOCAL heuristic — instant, offline, always available.
+  //   2. AI (Gemini via the proxy Worker) — a stronger rewrite that arrives a
+  //      moment later and replaces the local suggestion when it's better.
+  // If the proxy isn't configured or fails, only the local tier shows.
+  const WRITING_MIN_CHARS = 12;      // analyze once there's a sentence to check
+  const OPTIMIZER_MIN_TOKENS = 1;    // only count savings if it saves something real
+                                      // (single filler-word accepts often save just 1 token)
+  const OPTIMIZER_DEBOUNCE_MS = 350; // local heuristic (instant feel)
+  const AI_DEBOUNCE_MS = 1100;       // AI (waits for a typing pause)
+  let optimizerTimer = null;
+  let aiTimer = null;
+  // Current chip state: { input, text, source:'local'|'ai', suggestions?,
+  // safeFixedText?, safeCount?, improved? }. Null when the chip is hidden.
+  let writingState = null;
+  let lastAiText = '';               // last prompt sent to the AI
+  const aiCache = new Map();         // prompt text -> AI improved text
+
+  // ── Offline dictionary (lazy) ───────────────────────────────────────────--
+  // Loaded once, on first analysis, so it never delays page load. The checker
+  // also works (curated typos + rules) before/without the dictionary, so a load
+  // failure degrades gracefully rather than disabling the feature.
+  let _typoChecker = null;
+  let _typoPromise = null;
+  function getWritingChecker() {
+    if (_typoChecker) return Promise.resolve(_typoChecker);
+    if (_typoPromise) return _typoPromise;
+    _typoPromise = (async () => {
+      try {
+        if (!extAlive() || typeof PFSpellChecker === 'undefined') return null;
+        const aff = await fetch(chrome.runtime.getURL('extension/lib/dict/en_US.aff')).then((r) => r.text());
+        const dic = await fetch(chrome.runtime.getURL('extension/lib/dict/en_US.dic')).then((r) => r.text());
+        _typoChecker = PFSpellChecker.createChecker(aff, dic);
+        log('spell dictionary loaded:', !!_typoChecker);
+      } catch (e) {
+        _typoChecker = null;
+        log('spell dictionary load failed:', e && e.message);
+      }
+      return _typoChecker;
+    })();
+    return _typoPromise;
+  }
+
+  function getInputText(el) {
+    if (!el) return '';
+    if (el.tagName === 'TEXTAREA') return el.value || '';
+    // For contenteditable, walk up to the actual editable root in case we
+    // received a child element (e.g. a <p> inside ProseMirror).
+    const root = el.isContentEditable ? el : (el.closest?.('[contenteditable="true"]') || el);
+    return root.textContent || '';
+  }
+
+  function setInputText(el, text) {
+    el.focus();
+    if (el.tagName === 'TEXTAREA') {
+      el.value = text;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    // contenteditable (ChatGPT / Claude): select all, then insertText so the
+    // host editor framework (Lexical / ProseMirror) registers the change.
+    const sel = window.getSelection();
+    sel.selectAllChildren(el);
+    document.execCommand('insertText', false, text);
+  }
+
+  function injectOptimizerChip() {
+    if (document.getElementById('pf-optimizer-chip')) return;
+    const chip = document.createElement('div');
+    chip.id = 'pf-optimizer-chip';
+    chip.setAttribute('role', 'dialog');
+    chip.setAttribute('aria-label', 'PromptFootprint writing suggestions');
+    chip.innerHTML = `
+      <div class="pf-opt-head" id="pf-opt-drag">
+        <span class="pf-opt-title">✦ Writing suggestions</span>
+        <span class="pf-opt-badge" id="pf-opt-badge">Local</span>
+      </div>
+      <div class="pf-opt-savings" id="pf-opt-savings" hidden></div>
+      <div class="pf-opt-list" id="pf-opt-list"></div>
+      <div class="pf-opt-preview" id="pf-opt-preview" hidden></div>
+      <div class="pf-opt-actions">
+        <button id="pf-opt-dismiss" type="button">Ignore</button>
+        <button id="pf-opt-acceptall" type="button" hidden>Accept all safe</button>
+        <button id="pf-opt-apply" type="button" hidden>Apply</button>
+      </div>
+    `;
+    document.body.appendChild(chip);
+    restoreOptimizerPosition(chip);
+    makeOptimizerDraggable(chip);
+
+    document.getElementById('pf-opt-dismiss').addEventListener('click', hideOptimizerChip);
+
+    // Accept all SAFE local fixes at once (spelling/caps/spacing) — never the
+    // advisory ones (a/an, missing period).
+    document.getElementById('pf-opt-acceptall').addEventListener('click', () => {
+      if (writingState && writingState.input && typeof writingState.safeFixedText === 'string') {
+        applyWritingText(writingState.input, writingState.text, writingState.safeFixedText);
+      }
+      hideOptimizerChip();
+    });
+
+    // Apply the AI "improved" rewrite.
+    document.getElementById('pf-opt-apply').addEventListener('click', () => {
+      if (writingState && writingState.input && writingState.improved) {
+        applyWritingText(writingState.input, writingState.text, writingState.improved);
+      }
+      hideOptimizerChip();
+    });
+
+    // Per-suggestion Accept (event-delegated; each row carries its index).
+    document.getElementById('pf-opt-list').addEventListener('click', (e) => {
+      const btn = e.target.closest?.('button[data-pf-accept]');
+      if (!btn || !writingState || !writingState.suggestions) return;
+      const sug = writingState.suggestions[Number(btn.dataset.pfAccept)];
+      const el = writingState.input;
+      if (!sug || !el) return;
+      const before = getInputText(el);
+      const after = PFSpellChecker.applyOne(before, sug);
+      applyWritingText(el, before, after);
+      // Re-analyze what remains so the list stays in sync.
+      analyzeWritingLocal(el);
+    });
+  }
+
+  // Set the composer text and record realized token savings (for the dashboard
+  // Savings tab) when the change is a net reduction.
+  function applyWritingText(el, before, after) {
+    if (!el || typeof after !== 'string' || after === before) return;
+    setInputText(el, after);
+    try {
+      const s = PFPromptOptimizer.savings(before, after, adapter.id);
+      if (s.changed && s.savedTokens >= OPTIMIZER_MIN_TOKENS) recordSavings(s);
+    } catch (_) { /* non-fatal */ }
+  }
+
+  // Persist savings the user actually realized by clicking Apply (never ignored
+  // suggestions) so the dashboard's Savings tab can total them.
+  function recordSavings(result) {
+    if (!result || !extAlive() || !PFStorage.addSavings) return;
+    try {
+      PFStorage.addSavings({
+        savedTokens: result.savedTokens || 0,
+        savedEnergyWh: result.savedEnergyWh || 0,
+        savedWaterMl: result.savedWaterMl || 0,
+        savedCo2G: result.savedCo2G || 0,
+      });
+      log('Savings recorded:', result.savedTokens, 'tokens');
+    } catch (_) {
+      // Extension context invalidated — non-fatal.
+    }
+  }
+
+  // ── Draggable chip ──────────────────────────────────────────────────────--
+  // The chip defaults above the composer but the user can drag it anywhere by
+  // its header; the position is remembered across pages.
+  function makeOptimizerDraggable(chip) {
+    const handle = chip.querySelector('#pf-opt-drag');
+    if (!handle) return;
+    let startX = 0, startY = 0, originLeft = 0, originTop = 0, dragging = false;
+
+    handle.addEventListener('pointerdown', (e) => {
+      // Ignore drags that start on interactive children (e.g. the badge).
+      dragging = true;
+      const rect = chip.getBoundingClientRect();
+      originLeft = rect.left;
+      originTop = rect.top;
+      startX = e.clientX;
+      startY = e.clientY;
+      handle.setPointerCapture?.(e.pointerId);
+      chip.classList.add('pf-opt-dragging');
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const w = chip.offsetWidth, h = chip.offsetHeight;
+      const left = Math.max(8, Math.min(window.innerWidth - w - 8, originLeft + (e.clientX - startX)));
+      const top = Math.max(8, Math.min(window.innerHeight - h - 8, originTop + (e.clientY - startY)));
+      applyOptimizerPosition(chip, left, top);
+    });
+    const end = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      chip.classList.remove('pf-opt-dragging');
+      handle.releasePointerCapture?.(e.pointerId);
+      const rect = chip.getBoundingClientRect();
+      saveOptimizerPosition(rect.left, rect.top);
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
+  // Pin the chip to explicit coordinates (overriding the CSS bottom/centered default).
+  function applyOptimizerPosition(chip, left, top) {
+    chip.style.left = `${left}px`;
+    chip.style.top = `${top}px`;
+    chip.style.bottom = 'auto';
+    chip.style.transform = 'none';
+  }
+
+  function saveOptimizerPosition(left, top) {
+    if (!extAlive()) return;
+    try { chrome.storage.local.set({ pf_optimizer_pos: { left, top } }); } catch (_) {}
+  }
+
+  function restoreOptimizerPosition(chip) {
+    if (!extAlive()) return;
+    try {
+      chrome.storage.local.get(['pf_optimizer_pos'], (res) => {
+        void chrome.runtime.lastError;
+        const p = res && res.pf_optimizer_pos;
+        if (p && typeof p.left === 'number' && typeof p.top === 'number') {
+          const left = Math.max(8, Math.min(window.innerWidth - 60, p.left));
+          const top = Math.max(8, Math.min(window.innerHeight - 60, p.top));
+          applyOptimizerPosition(chip, left, top);
+        }
+      });
+    } catch (_) {}
+  }
+
+  function hideOptimizerChip() {
+    const chip = document.getElementById('pf-optimizer-chip');
+    if (chip) chip.classList.remove('pf-opt-visible');
+    writingState = null;
+  }
+
+  function setBadge(source) {
+    const badgeEl = document.getElementById('pf-opt-badge');
+    if (!badgeEl) return;
+    badgeEl.textContent = source === 'ai' ? 'AI' : 'Local';
+    badgeEl.classList.toggle('pf-opt-badge-ai', source === 'ai');
+  }
+
+  // Estimated token savings badge for a single filler/concision suggestion
+  // (e.g. "Saved ~1 token"), shown so the user can see the impact of each
+  // suggestion before accepting it. Spelling/capitalization/punctuation/
+  // grammar suggestions don't change token count meaningfully, so this is
+  // filler-only.
+  function fillerSavingsBadge(s) {
+    if (s.type !== 'filler') return '';
+    let saved = 0;
+    try { saved = PFPromptOptimizer.savings(s.original, s.suggestion, adapter.id).savedTokens; } catch (_) {}
+    if (saved <= 0) return '';
+    return ` · <span class="pf-opt-item-savings">Saved ~${saved} token${saved === 1 ? '' : 's'}</span>`;
+  }
+
+  // Local tier: a short, scannable list of suggestions with the changed text
+  // bolded and a one-line reason, plus "Accept all safe".
+  function renderWritingSuggestions(res) {
+    const chip = document.getElementById('pf-optimizer-chip');
+    if (!chip) return;
+    const listEl = document.getElementById('pf-opt-list');
+    const savingsEl = document.getElementById('pf-opt-savings');
+    const previewEl = document.getElementById('pf-opt-preview');
+    const applyBtn = document.getElementById('pf-opt-apply');
+    const acceptAllBtn = document.getElementById('pf-opt-acceptall');
+
+    const titleEl = chip.querySelector('.pf-opt-title');
+    if (titleEl) titleEl.textContent = '✦ Writing suggestions';
+    setBadge('local');
+    savingsEl.hidden = true;
+    previewEl.hidden = true;
+    applyBtn.hidden = true;
+
+    // Cap the visible rows so the chip stays calm; the rest are covered by
+    // "Accept all safe".
+    const rows = res.suggestions.slice(0, 6).map((s, i) => {
+      const idx = res.suggestions.indexOf(s);
+      return `<div class="pf-opt-item">
+          <div class="pf-opt-item-text">${PFWritingFormat.renderSuggestion(s)}</div>
+          <div class="pf-opt-item-reason">${PFWritingFormat.escapeHtml(s.reason)}${fillerSavingsBadge(s)}</div>
+          <button class="pf-opt-accept" type="button" data-pf-accept="${idx}">Accept</button>
+        </div>`;
+    }).join('');
+    listEl.innerHTML = rows;
+    listEl.hidden = false;
+
+    if (res.safeCount > 0) {
+      acceptAllBtn.hidden = false;
+      acceptAllBtn.textContent = `Accept all safe (${res.safeCount})`;
+    } else {
+      acceptAllBtn.hidden = true;
+    }
+    chip.classList.add('pf-opt-visible');
+  }
+
+  // AI tier: the improved rewrite with changed words bolded, plus token savings
+  // when the rewrite is also shorter.
+  function renderImproved(originalText, improvedText) {
+    const chip = document.getElementById('pf-optimizer-chip');
+    if (!chip) return;
+    const listEl = document.getElementById('pf-opt-list');
+    const savingsEl = document.getElementById('pf-opt-savings');
+    const previewEl = document.getElementById('pf-opt-preview');
+    const applyBtn = document.getElementById('pf-opt-apply');
+    const acceptAllBtn = document.getElementById('pf-opt-acceptall');
+
+    const titleEl = chip.querySelector('.pf-opt-title');
+    if (titleEl) titleEl.textContent = '✦ Improved version';
+    setBadge('ai');
+    listEl.hidden = true;
+    acceptAllBtn.hidden = true;
+
+    previewEl.innerHTML = PFWritingFormat.diffBold(originalText, improvedText);
+    previewEl.hidden = false;
+    applyBtn.textContent = 'Use improved version';
+    applyBtn.hidden = false;
+
+    let saved = null;
+    try { saved = PFPromptOptimizer.savings(originalText, improvedText, adapter.id); } catch (_) {}
+    if (saved && saved.savedTokens >= OPTIMIZER_MIN_TOKENS) {
+      savingsEl.innerHTML =
+        `Save <strong>~${saved.savedTokens} tokens</strong> (${saved.savedPct}%) · ` +
+        `${PFFormat.water(saved.savedWaterMl).compact} · ${PFFormat.energy(saved.savedEnergyWh).compact}`;
+      savingsEl.hidden = false;
+    } else {
+      savingsEl.hidden = true;
+    }
+    chip.classList.add('pf-opt-visible');
+  }
+
+  // Tier 1 — instant, offline writing checks (spelling/grammar/caps/punctuation).
+  async function analyzeWritingLocal(el) {
+    if (config.writingChecksEnabled === false) { hideOptimizerChip(); return; }
+    const text = getInputText(el);
+    if (text.length < WRITING_MIN_CHARS) { hideOptimizerChip(); return; }
+    const checker = await getWritingChecker(); // may be null (curated rules still run)
+    if (getInputText(el) !== text) return;     // user kept typing
+    const res = PFSpellChecker.analyzeWriting(text, { typo: checker });
+    if (!res.suggestions.length) {
+      // Don't clobber an AI "improved" card already showing for this text.
+      if (!writingState || writingState.source !== 'ai') hideOptimizerChip();
+      return;
+    }
+    writingState = { input: el, text, source: 'local',
+      suggestions: res.suggestions, safeFixedText: res.safeFixedText, safeCount: res.safeCount };
+    renderWritingSuggestions(res);
+  }
+
+  // Tier 2 — AI writing improvement via the Gemini proxy (background →
+  // IMPROVE_WRITING). No-op (local card stays) if the proxy isn't configured,
+  // fails, rate-limits, or returns nothing — the UI never breaks.
+  async function analyzeWritingAI(el) {
+    if (config.writingChecksEnabled === false) return;
+    const text = getInputText(el);
+    if (text.length < WRITING_MIN_CHARS) return;
+    if (text === lastAiText) return;
+    lastAiText = text;
+
+    let improved = aiCache.get(text);
+    if (improved === undefined) {
+      const resp = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text } });
+      improved = (resp && resp.improved) || '';
+      aiCache.set(text, improved);
+    }
+    if (!improved || improved.trim() === text.trim()) return;
+    if (getInputText(el) !== text) return; // user kept typing
+
+    writingState = { input: el, text, source: 'ai', improved };
+    renderImproved(text, improved);
+  }
+
+  let optimizerListenersAttached = false;
+  function setupPromptOptimizer() {
+    injectOptimizerChip();
+    // Guard against attaching duplicate document listeners if setup ever runs
+    // more than once (each would re-run analysis on every keystroke).
+    if (optimizerListenersAttached) return;
+
+    function handleInputChange(e) {
+      const target = e.target;
+      const el = target.matches?.(adapter.inputSelector)
+        ? target
+        : target.closest?.(adapter.inputSelector)
+        || target.closest?.('[contenteditable="true"]')
+        || (target.tagName === 'TEXTAREA' ? target : null);
+      if (!el) return;
+      clearTimeout(optimizerTimer);
+      clearTimeout(aiTimer);
+      // Paste: read text after the paste has been inserted into the DOM.
+      const delay = e.type === 'paste' ? 100 : 0;
+      optimizerTimer = setTimeout(() => analyzeWritingLocal(el), OPTIMIZER_DEBOUNCE_MS + delay);
+      aiTimer = setTimeout(() => analyzeWritingAI(el), AI_DEBOUNCE_MS + delay);
+    }
+
+    document.addEventListener('input', handleInputChange, true);
+    document.addEventListener('paste', handleInputChange, true);
+    optimizerListenersAttached = true;
+  }
+
   // Listen for config changes from popup
   chrome.runtime.onMessage.addListener((message, sender) => {
     // SECURITY: Only accept messages from our own extension
@@ -436,6 +1050,14 @@
           message.config.energyPerTokenMultiplier <= 20) {
         config.energyPerTokenMultiplier = message.config.energyPerTokenMultiplier;
       }
+      if (typeof message.config.debug === 'boolean') {
+        config.debug = message.config.debug;
+        log('debug logging', config.debug ? 'ENABLED' : 'disabled');
+      }
+      if (typeof message.config.writingChecksEnabled === 'boolean') {
+        config.writingChecksEnabled = message.config.writingChecksEnabled;
+        if (!config.writingChecksEnabled) hideOptimizerChip();
+      }
       const overlay = document.getElementById('pf-floating-overlay');
       if (overlay) {
         overlay.style.display = config.overlayEnabled ? 'block' : 'none';
@@ -443,17 +1065,19 @@
     }
   });
 
-  // End session on page unload
+  // End session on page unload (best-effort; background also closes on tab removal)
   window.addEventListener('beforeunload', () => {
     if (currentSessionId) {
       sendMessage({ type: 'END_SESSION', payload: { sessionId: currentSessionId } });
     }
   });
 
-  // Start
+  // Start. The overlay is injected before any storage call, so a storage
+  // failure degrades to "UI visible, tracking off" rather than throwing.
+  const startTracking = () => init().catch((e) => log('init failed:', e && e.message));
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', startTracking);
   } else {
-    init();
+    startTracking();
   }
 })();

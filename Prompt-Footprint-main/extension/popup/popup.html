@@ -77,13 +77,48 @@
 
     <!-- Overlay toggle -->
     <div class="pf-setting">
-      <span class="pf-setting-label">Show overlay on ChatGPT</span>
+      <span class="pf-setting-label">Show overlay on AI chats</span>
       <label class="pf-toggle">
         <input type="checkbox" id="pf-overlay-toggle" checked>
         <span class="pf-toggle-track">
           <span class="pf-toggle-thumb"></span>
         </span>
       </label>
+    </div>
+
+    <!-- Writing suggestions toggle -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">Writing &amp; spell-check suggestions</span>
+      <label class="pf-toggle">
+        <input type="checkbox" id="pf-writing-toggle" checked>
+        <span class="pf-toggle-track">
+          <span class="pf-toggle-thumb"></span>
+        </span>
+      </label>
+    </div>
+
+    <!-- AI writing status (read-only; configured on the dashboard) -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">AI writing help</span>
+      <span class="pf-setting-value" id="pf-ai-status">Local only</span>
+    </div>
+
+    <!-- Debug logging toggle (dev) -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">Debug logging (dev)</span>
+      <label class="pf-toggle">
+        <input type="checkbox" id="pf-debug-toggle">
+        <span class="pf-toggle-track">
+          <span class="pf-toggle-thumb"></span>
+        </span>
+      </label>
+    </div>
+
+    <!-- Keyboard shortcut help -->
+    <div class="pf-hint">
+      Press <kbd>Alt</kbd>+<kbd>P</kbd> on a chat page to open the panel · drag the
+      capsule to move it. Configure AI writing help &amp; privacy in
+      <a href="#" id="pf-open-settings">dashboard settings</a>.
     </div>
 
     <!-- CTA -->
@@ -96,7 +131,17 @@
       </button>
     </div>
 
+    <!-- AI optimizer disclosure -->
+    <div class="pf-disclosure">
+      Prompt usage is tracked locally on your device. AI-powered rewrite
+      suggestions send your draft prompt to an optimization service. See the
+      <a href="https://github.com/sahilp15/prompt_footprint/blob/main/Prompt-Footprint-main/docs/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.
+    </div>
+
   </div>
+  <script src="../lib/storage.js"></script>
+  <script src="../lib/proxyConfig.js"></script>
+  <script src="../lib/formatters.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

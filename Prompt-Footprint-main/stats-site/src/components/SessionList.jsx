@@ -110,7 +110,7 @@ export default function SessionList() {
       {sessions.length === 0 ? (
         <div className="empty-sessions">
           <Zap size={40} />
-          <p>No sessions yet. Start chatting on ChatGPT to begin tracking.</p>
+          <p>No sessions yet. Start chatting on ChatGPT or Claude to begin tracking.</p>
         </div>
       ) : (
         <div className="sessions-list">

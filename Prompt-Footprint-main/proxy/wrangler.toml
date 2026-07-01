@@ -1,0 +1,7 @@
+name = "promptfootprint-proxy"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# The Gemini API key is NOT stored here. It is a secret set out-of-band with:
+#   npx wrangler secret put GEMINI_API_KEY
+# Secrets never appear in this file, the repo, or the deployed bundle's source.

@@ -6,11 +6,13 @@ import LightBulb from '../animations/LightBulb'
 import GasTank from '../animations/GasTank'
 import { SplineScene } from './ui/splite'
 import { Spotlight } from './ui/spotlight'
+import { isExtensionContext } from '../lib/api'
 import './AnimationPage.css'
 
 export default function AnimationPage() {
   const { data, loading, error } = useWeeklyStats()
   const totals = data?.totals || {}
+  const inExtension = isExtensionContext()
 
   if (loading) return (
     <div className="page-loading">
@@ -18,24 +20,31 @@ export default function AnimationPage() {
       Loading your weekly impact...
     </div>
   )
-  if (error) return <div className="page-error"><p>Could not connect to server.</p></div>
+  if (error) return <div className="page-error"><p>Could not load data.</p></div>
 
   return (
     <div className="anim-page">
-      {/* Hero section with MeshGradient background + Spline 3D */}
+      {/* Hero section — CSS gradient in extension (Spline workers blocked by MV3 CSP),
+          full MeshGradient + Spline on the public web build */}
       <div className="anim-hero">
-        <MeshGradient
-          className="anim-hero-gradient"
-          colors={['#FAF0E0', '#D4C5A9', '#B8A882', '#8B7355', '#6B5A3A']}
-          speed={0.25}
-          backgroundColor="#FAF7F0"
-        />
-        <div className="anim-hero-spline">
-          <SplineScene
-            scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
-            className="w-full h-full"
+        {inExtension ? (
+          <div className="anim-hero-gradient anim-hero-gradient-css" />
+        ) : (
+          <MeshGradient
+            className="anim-hero-gradient"
+            colors={['#FAF0E0', '#D4C5A9', '#B8A882', '#8B7355', '#6B5A3A']}
+            speed={0.25}
+            backgroundColor="#FAF7F0"
           />
-        </div>
+        )}
+        {!inExtension && (
+          <div className="anim-hero-spline">
+            <SplineScene
+              scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
+              className="w-full h-full"
+            />
+          </div>
+        )}
         <div className="anim-hero-content">
           <div className="anim-hero-badge">
             <Leaf size={14} />
