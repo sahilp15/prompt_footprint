@@ -4,9 +4,12 @@ A Chrome extension that passively tracks your AI chat usage (**ChatGPT** and
 **Claude**, extensible to more) and estimates its environmental impact — energy
 (Wh), water (mL), and CO₂ (g) — using a token-level, response-time-aware model.
 
-**Local-first:** all data stays on your device in `chrome.storage.local`. There
-is no backend to run and nothing leaves your browser. 🏆 *3rd Place — Climate
-ChangeMakers Challenge 2026* · [Devpost](https://devpost.com/software/prompt-footprint)
+**Local-first:** by default all data stays on your device in
+`chrome.storage.local` and nothing leaves your browser. No backend is required to
+run it. Optional accounts (Supabase) can sync your settings and stats *summaries*
+across devices — never your prompt text and never your Gemini key; see
+[`docs/ACCOUNTS.md`](docs/ACCOUNTS.md). 🏆 *3rd Place — Climate ChangeMakers
+Challenge 2026* · [Devpost](https://devpost.com/software/prompt-footprint)
 
 ## Architecture
 
@@ -35,7 +38,8 @@ Prompt-Footprint/
 │   ├── test/              Unit tests (node:test)
 │   └── styles/            Shared design system CSS
 ├── stats-site/            React + Vite dashboard; build output is copied to extension/dashboard
-└── server/                Legacy Express/Postgres backend (no longer required)
+├── supabase/              Optional accounts/sync: schema + RLS migration, config, RLS test
+└── server/                Legacy Express/Postgres backend (dormant; not used)
 ```
 
 ## Environmental model
@@ -165,6 +169,7 @@ data only when opened as the extension's dashboard.
 - [`docs/CHROME_STORE_LISTING.md`](docs/CHROME_STORE_LISTING.md) — store listing copy,
   permission justifications, and data-use disclosure answers.
 - [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md) — optional login/sync design.
+- [`docs/BACKEND_DEPLOYMENT.md`](docs/BACKEND_DEPLOYMENT.md) — provision Supabase and wire keys.
 - [`docs/TESTING.md`](docs/TESTING.md) — manual test steps.
 
 ## Publishing to the Chrome Web Store
