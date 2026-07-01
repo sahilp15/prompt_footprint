@@ -17,8 +17,8 @@
   'use strict';
 
   // ── Project config (public). Replace for your Supabase project. ──────────
-  const SUPABASE_URL = '';       // e.g. 'https://abcdefgh.supabase.co'
-  const SUPABASE_ANON_KEY = '';  // anon/publishable key (safe by RLS)
+  const SUPABASE_URL = 'https://cpwbtulpufhqexrrzjzt.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable__EGNJa2cYPhYelN7fke7jA_ZJ5ImaPU'; // publishable key (safe by RLS)
 
   const AUTH_KEY = 'pf_auth';    // chrome.storage.local bag holding the session
 
