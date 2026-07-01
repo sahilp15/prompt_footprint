@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
-import { UserRound, LogIn, LogOut, RefreshCw, Trash2, Check } from 'lucide-react'
+import { UserRound, LogIn, LogOut, RefreshCw, Trash2, Check, X, Eye, EyeOff } from 'lucide-react'
 import { authStatus, signUp, login, logout, deleteAccount, syncNow, isExtensionRuntime } from '../lib/auth'
 import './Account.css'
+
+// A sensible baseline shown while typing a new password. Supabase's actual
+// project policy may differ; if so, the specific reason from Supabase (surfaced
+// via res.message on failure) still tells the user exactly what's missing.
+const PASSWORD_RULES = [
+  { label: 'At least 8 characters', test: (p) => p.length >= 8 },
+  { label: 'An uppercase and a lowercase letter', test: (p) => /[a-z]/.test(p) && /[A-Z]/.test(p) },
+  { label: 'A number', test: (p) => /[0-9]/.test(p) },
+  { label: 'A symbol (e.g. ! ? # @)', test: (p) => /[^A-Za-z0-9]/.test(p) },
+]
 
 // Account section rendered inside the Settings page (kept out of the top nav to
 // keep it uncluttered). Optional: logged-out users lose nothing.
@@ -15,6 +25,7 @@ export default function Account() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)          // { kind: 'ok'|'err'|'info', text }
+  const [showPassword, setShowPassword] = useState(false)
 
   async function refresh() {
     const s = await authStatus()
@@ -38,9 +49,9 @@ export default function Account() {
       await refresh()
       syncNow().then(() => setMsg({ kind: 'ok', text: 'Signed in and synced.' }))
     } else if (res.error === 'invalid_credentials') {
-      setMsg({ kind: 'err', text: 'Couldn’t sign in. Check your email and password (confirm your email first).' })
+      setMsg({ kind: 'err', text: res.message || 'Couldn’t sign in. Check your email and password.' })
     } else if (res.error === 'signup_failed') {
-      setMsg({ kind: 'err', text: 'Couldn’t create the account. The email may be in use or the password too weak.' })
+      setMsg({ kind: 'err', text: res.message || 'Couldn’t create the account. Try again in a moment.' })
     } else {
       setMsg({ kind: 'err', text: 'The account service isn’t reachable right now. Local features still work.' })
     }
@@ -114,8 +125,38 @@ export default function Account() {
           </label>
           <label className="settings-field">
             <span className="settings-label">Password</span>
-            <input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />
+            <div className="account-password-wrap">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+              />
+              <button
+                type="button"
+                className="account-password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </label>
+          {mode === 'signup' && (
+            <ul className="account-password-rules">
+              {PASSWORD_RULES.map((rule) => {
+                const met = rule.test(password)
+                return (
+                  <li key={rule.label} className={met ? 'met' : ''}>
+                    {met ? <Check size={13} /> : <X size={13} />} {rule.label}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
           <button className="account-btn" type="submit" disabled={busy}>
             <LogIn size={15} /> {mode === 'signup' ? 'Create account' : 'Log in'}
           </button>
