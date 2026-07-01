@@ -20,7 +20,15 @@
     if (!client) return { error: 'not_configured' };
     try {
       const { data, error } = await client.auth.signUp({ email, password });
-      if (error) return { error: 'signup_failed' };
+      if (error) {
+        // Weak-password messages are specific and non-sensitive (e.g. "needs a
+        // number and a symbol") — worth surfacing so the user knows what to fix,
+        // unlike other signup errors which we keep generic.
+        if (error.code === 'weak_password' && error.message) {
+          return { error: 'weak_password', message: error.message };
+        }
+        return { error: 'signup_failed' };
+      }
       // With email confirmations on, there is no active session yet.
       const needsVerify = !data.session;
       return { status: needsVerify ? 'verify_sent' : 'logged_in' };

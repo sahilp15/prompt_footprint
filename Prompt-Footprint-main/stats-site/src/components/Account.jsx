@@ -39,8 +39,10 @@ export default function Account() {
       syncNow().then(() => setMsg({ kind: 'ok', text: 'Signed in and synced.' }))
     } else if (res.error === 'invalid_credentials') {
       setMsg({ kind: 'err', text: 'Couldn’t sign in. Check your email and password (confirm your email first).' })
+    } else if (res.error === 'weak_password') {
+      setMsg({ kind: 'err', text: res.message || 'That password is too weak.' })
     } else if (res.error === 'signup_failed') {
-      setMsg({ kind: 'err', text: 'Couldn’t create the account. The email may be in use or the password too weak.' })
+      setMsg({ kind: 'err', text: 'Couldn’t create the account. The email may already be in use.' })
     } else {
       setMsg({ kind: 'err', text: 'The account service isn’t reachable right now. Local features still work.' })
     }

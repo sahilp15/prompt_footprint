@@ -59,6 +59,15 @@ test('signup failure is normalized, never leaks the raw error', async () => {
   assert.deepStrictEqual(await PFAuth.signUp('a@b.co', 'pw'), { error: 'signup_failed' });
 });
 
+test('weak-password signup errors surface the specific reason (non-sensitive, actionable)', async () => {
+  const weak = { code: 'weak_password', message: 'Password should contain at least one number and one symbol' };
+  withSupabase(() => stubClient({ signUpResult: { data: {}, error: weak } }));
+  assert.deepStrictEqual(await PFAuth.signUp('a@b.co', 'pw'), {
+    error: 'weak_password',
+    message: 'Password should contain at least one number and one symbol',
+  });
+});
+
 test('login success returns logged_in + account email', async () => {
   const session = { user: { id: 'u1', email: 'a@b.co' } };
   withSupabase(() => stubClient({ signInResult: { data: { session, user: session.user }, error: null } }));
