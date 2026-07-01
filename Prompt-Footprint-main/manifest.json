@@ -47,8 +47,8 @@
   "action": {
     "default_popup": "extension/popup/popup.html",
     "default_icon": {
-      "48": "Images/PF_Icon.png",
-      "128": "Images/PF_Icon.png"
+      "48": "Images/PF_Icon(48).png",
+      "128": "Images/PF_Icon(128).png"
     }
   },
   "web_accessible_resources": [
