@@ -54,17 +54,26 @@ test('signup with email confirmation returns verify_sent (no active session yet)
   assert.deepStrictEqual(await PFAuth.signUp('a@b.co', 'pw'), { status: 'verify_sent' });
 });
 
-test('signup failure is normalized, never leaks the raw error', async () => {
+test('signup failure surfaces Supabase\'s message under a normalized error tag', async () => {
   withSupabase(() => stubClient({ signUpResult: { data: {}, error: { message: 'boom' } } }));
-  assert.deepStrictEqual(await PFAuth.signUp('a@b.co', 'pw'), { error: 'signup_failed' });
+  assert.deepStrictEqual(await PFAuth.signUp('a@b.co', 'pw'), { error: 'signup_failed', message: 'boom' });
 });
 
-test('weak-password signup errors surface the specific reason (non-sensitive, actionable)', async () => {
+test('signup errors surface Supabase\'s actual message instead of a guess', async () => {
   const weak = { code: 'weak_password', message: 'Password should contain at least one number and one symbol' };
   withSupabase(() => stubClient({ signUpResult: { data: {}, error: weak } }));
   assert.deepStrictEqual(await PFAuth.signUp('a@b.co', 'pw'), {
-    error: 'weak_password',
+    error: 'signup_failed',
     message: 'Password should contain at least one number and one symbol',
+  });
+});
+
+test('login errors surface Supabase\'s actual message (e.g. unconfirmed email) instead of a guess', async () => {
+  const unconfirmed = { message: 'Email not confirmed' };
+  withSupabase(() => stubClient({ signInResult: { data: { session: null }, error: unconfirmed } }));
+  assert.deepStrictEqual(await PFAuth.login('a@b.co', 'pw'), {
+    error: 'invalid_credentials',
+    message: 'Email not confirmed',
   });
 });
 
@@ -76,9 +85,9 @@ test('login success returns logged_in + account email', async () => {
   assert.strictEqual(res.account.email, 'a@b.co');
 });
 
-test('login failure returns invalid_credentials', async () => {
+test('login failure returns invalid_credentials with Supabase\'s message', async () => {
   withSupabase(() => stubClient({ signInResult: { data: { session: null }, error: { message: 'nope' } } }));
-  assert.deepStrictEqual(await PFAuth.login('a@b.co', 'bad'), { error: 'invalid_credentials' });
+  assert.deepStrictEqual(await PFAuth.login('a@b.co', 'bad'), { error: 'invalid_credentials', message: 'nope' });
 });
 
 test('logout signs out AND clears the local auth bag (but keeps pf_* data)', async () => {

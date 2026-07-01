@@ -20,15 +20,10 @@
     if (!client) return { error: 'not_configured' };
     try {
       const { data, error } = await client.auth.signUp({ email, password });
-      if (error) {
-        // Weak-password messages are specific and non-sensitive (e.g. "needs a
-        // number and a symbol") — worth surfacing so the user knows what to fix,
-        // unlike other signup errors which we keep generic.
-        if (error.code === 'weak_password' && error.message) {
-          return { error: 'weak_password', message: error.message };
-        }
-        return { error: 'signup_failed' };
-      }
+      // Supabase's own error messages (weak password, rate-limited, etc.) are
+      // already written to be shown to the user — pass them through rather than
+      // guessing a reason, which risks showing a WRONG explanation.
+      if (error) return { error: 'signup_failed', message: error.message };
       // With email confirmations on, there is no active session yet.
       const needsVerify = !data.session;
       return { status: needsVerify ? 'verify_sent' : 'logged_in' };
@@ -42,7 +37,7 @@
     if (!client) return { error: 'not_configured' };
     try {
       const { data, error } = await client.auth.signInWithPassword({ email, password });
-      if (error || !data.session) return { error: 'invalid_credentials' };
+      if (error || !data.session) return { error: 'invalid_credentials', message: error && error.message };
       return { status: 'logged_in', account: { email: data.user ? data.user.email : email } };
     } catch (_) {
       return { error: 'invalid_credentials' };
