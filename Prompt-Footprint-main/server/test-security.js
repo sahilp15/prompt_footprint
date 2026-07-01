@@ -286,9 +286,8 @@ test('No document.write in codebase', () => {
 });
 
 test('All API URLs use HTTPS', () => {
-  const allFiles = [bgJs, contentJs, dashJs, 
-    readFile('extension/popup/popup.js'),
-    readFile('extension/lib/apiClient.js')];
+  const allFiles = [bgJs, contentJs, dashJs,
+    readFile('extension/popup/popup.js')];
   allFiles.forEach(f => {
     const urls = f.match(/['"]https?:\/\/[^'"]+/g) || [];
     urls.forEach(url => {

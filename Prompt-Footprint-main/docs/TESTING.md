@@ -3,8 +3,17 @@
 ## Automated tests
 ```bash
 cd extension
-npm test        # node:test suite (token estimation, optimizer, storage/savings, platforms)
+npm test        # node:test suite (token estimation, optimizer, storage/savings,
+                # platforms, plus Phase-2 sync payload/merge/auth-state/auth-service)
 ```
+
+The Phase-2 account/sync logic is unit-tested without a database via pure
+modules: `syncPayload` (proves raw text + the Gemini key are never in the upload
+payload), `syncMerge` (proves sync is idempotent and savings can't double-count),
+`authState` (logged-out/in/offline + local-only fallback), and `authService`
+(login/logout/status/delete with a stubbed Supabase). Row-Level Security itself
+needs a real Postgres and is tested separately with `supabase test db`
+(`supabase/tests/rls.test.sql`).
 
 ## Load the extension
 1. `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the
@@ -68,3 +77,36 @@ Repeat on **both** sites:
 ## Branding
 - The optimizer chip uses the PromptFootprint palette (cream surface, earthy-green accents,
   Source Serif / JetBrains Mono) — consistent with the popup, floating pill, and dashboard.
+
+## Optional accounts & sync (Phase 2)
+Prerequisite: a configured Supabase project (see `docs/BACKEND_DEPLOYMENT.md`). If
+Supabase is **not** configured, the Account section shows "Accounts aren't set up
+in this build" and everything else keeps working — verify that first.
+
+1. **Local-only unaffected.** With no account, confirm tracking, savings, spell
+   check, and the dashboard all work exactly as before. Nothing should prompt you
+   to log in.
+2. **Sign up + verify.** Dashboard → **Settings → Account** → *Create account*.
+   You should see "Check your email to confirm". Confirm via the email, then log in.
+3. **Claim + sync.** After first login, open the Supabase table editor: your
+   existing local sessions/savings/settings appear under your `user_id` (numbers
+   only — no prompt text columns exist). Confirm `profiles.anon_client_id` matches
+   `pf_userId`.
+4. **No double-count.** Note your Savings totals. Click **Sync now** several times
+   and reload — the totals must not change. (Idempotent upserts + derived totals.)
+5. **Cross-device.** Log in on a second Chrome profile; confirm your sessions and
+   savings appear there. Realize new savings on each, sync both, and confirm no
+   day is double-counted.
+6. **Offline fallback.** Go offline (DevTools → Network → Offline). Tracking and
+   savings still record locally; the Account pill reads "Signed in (offline)";
+   "Sync now" fails quietly and retries later. No data is lost.
+7. **Logout keeps local data.** Log out — the dashboard still shows your local
+   sessions/savings, and tracking still works. Only the session was cleared.
+8. **Privacy check.** In DevTools → Network while typing and syncing, confirm no
+   request body to `*.supabase.co` contains prompt/response text or the Gemini key.
+9. **Delete account.** *Delete account* removes your rows from Supabase (verify in
+   the table editor) and returns you to local-only mode; local data remains until
+   you clear it.
+10. **RLS.** With a second account, confirm from the Supabase SQL editor
+    (impersonating each user's JWT) that neither can read the other's rows, or run
+    `supabase test db`.

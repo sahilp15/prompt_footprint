@@ -78,9 +78,10 @@ export default function Savings() {
           <Leaf size={13} />
           <span>Energy Saver</span>
         </div>
-        <h1 className="page-title">Your Savings</h1>
+        <h1 className="page-title">Your savings</h1>
         <p className="page-subtitle">
-          Impact you avoided by applying shorter prompt suggestions
+          Tokens — and the energy, water, and CO₂ behind them — you avoided by applying
+          shorter-prompt suggestions.
         </p>
       </div>
 
@@ -121,7 +122,7 @@ export default function Savings() {
           </div>
 
           <div className="anim-grid-section">
-            <h2 className="section-title">Visualized Savings</h2>
+            <h2 className="section-title">Savings, visualized</h2>
             <div className="anim-grid">
               <div className="anim-card-outer">
                 <Spotlight className="-top-20 left-0" fill="#4AADB5" />

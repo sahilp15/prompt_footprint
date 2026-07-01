@@ -4,6 +4,11 @@
   "private": true,
   "description": "PromptFootprint browser extension (local-first, multi-platform)",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "build:vendor": "esbuild lib/vendor/_supabase-entry.js --bundle --format=iife --global-name=supabase --minify --outfile=lib/vendor/supabase.js --legal-comments=none"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "esbuild": "^0.24.0"
   }
 }

@@ -1,0 +1,145 @@
+import { useEffect, useState } from 'react'
+import { UserRound, LogIn, LogOut, RefreshCw, Trash2, Check } from 'lucide-react'
+import { authStatus, signUp, login, logout, deleteAccount, syncNow, isExtensionRuntime } from '../lib/auth'
+import './Account.css'
+
+// Account section rendered inside the Settings page (kept out of the top nav to
+// keep it uncluttered). Optional: logged-out users lose nothing.
+export default function Account() {
+  const runtime = isExtensionRuntime()
+  // Initialize synchronously so we never setState inside the effect: in the web
+  // build (no runtime) there is no account to manage.
+  const [status, setStatus] = useState(() => (runtime ? null : { state: 'logged_out', configured: false }))
+  const [mode, setMode] = useState('login')     // 'login' | 'signup'
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)          // { kind: 'ok'|'err'|'info', text }
+
+  async function refresh() {
+    const s = await authStatus()
+    setStatus(s)
+  }
+
+  useEffect(() => {
+    if (runtime) authStatus().then(setStatus)
+  }, [runtime])
+
+  async function onSubmit(e) {
+    e.preventDefault()
+    setBusy(true); setMsg(null)
+    const res = mode === 'signup' ? await signUp(email, password) : await login(email, password)
+    setBusy(false)
+    if (res.status === 'verify_sent') {
+      setMsg({ kind: 'info', text: 'Check your email to confirm your account, then log in.' })
+    } else if (res.status === 'logged_in') {
+      setPassword('')
+      setMsg({ kind: 'ok', text: 'Signed in. Syncing your data…' })
+      await refresh()
+      syncNow().then(() => setMsg({ kind: 'ok', text: 'Signed in and synced.' }))
+    } else if (res.error === 'invalid_credentials') {
+      setMsg({ kind: 'err', text: 'Couldn’t sign in. Check your email and password (confirm your email first).' })
+    } else if (res.error === 'signup_failed') {
+      setMsg({ kind: 'err', text: 'Couldn’t create the account. The email may be in use or the password too weak.' })
+    } else {
+      setMsg({ kind: 'err', text: 'The account service isn’t reachable right now. Local features still work.' })
+    }
+  }
+
+  async function onLogout() {
+    setBusy(true)
+    await logout()
+    setBusy(false); setMsg(null)
+    await refresh()
+  }
+
+  async function onSync() {
+    setBusy(true); setMsg(null)
+    const r = await syncNow()
+    setBusy(false)
+    setMsg(r.ok ? { kind: 'ok', text: 'Synced.' } : { kind: 'err', text: 'Sync isn’t available right now — it will retry later.' })
+  }
+
+  async function onDelete() {
+    if (!window.confirm('Delete your account and all synced data? Your on-device data stays until you clear it.')) return
+    setBusy(true)
+    const r = await deleteAccount()
+    setBusy(false)
+    setMsg(r.status === 'deleted'
+      ? { kind: 'ok', text: 'Account deleted. You’re back to local-only mode.' }
+      : { kind: 'err', text: 'Couldn’t delete the account right now. Try again later.' })
+    await refresh()
+  }
+
+  const signedIn = status && (status.state === 'logged_in' || status.state === 'offline')
+
+  return (
+    <section className="settings-section">
+      <div className="settings-section-head">
+        <UserRound size={18} /><h2>Account</h2>
+        {status && (
+          <span className={`settings-pill ${signedIn ? 'on' : 'off'}`}>
+            {signedIn ? (status.state === 'offline' ? 'Signed in (offline)' : 'Signed in') : 'Local only'}
+          </span>
+        )}
+      </div>
+
+      <p className="settings-desc">
+        PromptFootprint works fully without an account. Sign in only if you want your
+        settings and stats to follow you to another device. We sync numbers only —
+        <strong> never your prompt text, and never your Gemini key.</strong>
+      </p>
+
+      {!runtime && (
+        <div className="settings-note">
+          Open this page from the PromptFootprint extension to manage your account.
+        </div>
+      )}
+
+      {runtime && status && status.configured === false && (
+        <div className="settings-note">
+          Accounts aren’t set up in this build. Everything runs locally on your device.
+        </div>
+      )}
+
+      {runtime && status && status.configured !== false && !signedIn && (
+        <form className="account-form" onSubmit={onSubmit}>
+          <div className="account-tabs">
+            <button type="button" className={`account-tab${mode === 'login' ? ' active' : ''}`} onClick={() => { setMode('login'); setMsg(null) }}>Log in</button>
+            <button type="button" className={`account-tab${mode === 'signup' ? ' active' : ''}`} onClick={() => { setMode('signup'); setMsg(null) }}>Create account</button>
+          </div>
+          <label className="settings-field">
+            <span className="settings-label">Email</span>
+            <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+          </label>
+          <label className="settings-field">
+            <span className="settings-label">Password</span>
+            <input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />
+          </label>
+          <button className="account-btn" type="submit" disabled={busy}>
+            <LogIn size={15} /> {mode === 'signup' ? 'Create account' : 'Log in'}
+          </button>
+        </form>
+      )}
+
+      {runtime && signedIn && (
+        <div className="account-panel">
+          <div className="account-row">
+            <span className="account-email">{status.email || 'Signed in'}</span>
+          </div>
+          <div className="account-actions">
+            <button className="account-btn" onClick={onSync} disabled={busy}><RefreshCw size={15} /> Sync now</button>
+            <button className="account-btn ghost" onClick={onLogout} disabled={busy}><LogOut size={15} /> Log out</button>
+            <button className="account-btn danger" onClick={onDelete} disabled={busy}><Trash2 size={15} /> Delete account</button>
+          </div>
+        </div>
+      )}
+
+      {msg && (
+        <div className={`account-msg ${msg.kind}`}>
+          {msg.kind === 'ok' && <Check size={14} />} {msg.text}
+        </div>
+      )}
+    </section>
+  )
+}

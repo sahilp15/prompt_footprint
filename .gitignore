@@ -3,3 +3,7 @@ dist/
 .env
 .env.local
 *.local
+
+# Backend secrets — never commit. (.env above already covers these; explicit for clarity.)
+Prompt-Footprint-main/supabase/.env
+Prompt-Footprint-main/stats-site/.env

@@ -1,0 +1,23 @@
+# Supabase CLI project config for PromptFootprint.
+# Docs: https://supabase.com/docs/guides/cli/config
+#
+# `project_id` is a local label used by the CLI; it is not a secret. Link this
+# folder to your hosted project with:  supabase link --project-ref <PROJECT_REF>
+
+project_id = "promptfootprint"
+
+[auth]
+# Email + password sign-in with verification (matches the extension flow).
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true   # require email verification before a session is valid
+
+[db]
+# Local dev database port (only used by `supabase start`).
+port = 54322
+
+[api]
+# PostgREST schemas the anon/authenticated roles may reach. RLS still applies.
+schemas = ["public"]

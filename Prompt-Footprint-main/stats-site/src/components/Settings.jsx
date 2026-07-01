@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Sparkles, Keyboard, Shield, PencilLine, Server, Check } from 'lucide-react'
 import { fetchConfig, saveConfig, resolveWritingProvider, isExtensionContext } from '../lib/api'
+import Account from './Account'
 import './Settings.css'
 
 export default function Settings() {
@@ -42,6 +43,9 @@ export default function Settings() {
           extension (popup → “View Full Stats”) to change your real settings.
         </div>
       )}
+
+      {/* ── Account (optional) ──────────────────────────────────────────── */}
+      <Account />
 
       {/* ── AI writing help ─────────────────────────────────────────────── */}
       <section className="settings-section">
@@ -160,6 +164,11 @@ export default function Settings() {
             suggestion. It is not stored by PromptFootprint. If the Worker is not
             configured, fails, or is rate-limited, the extension silently falls
             back to the offline checker.</p>
+          <p><strong>Optional account sync.</strong> If you sign in (Account, above),
+            your non-sensitive settings, per-session <em>summaries</em> (numbers only),
+            and per-day savings totals sync across your devices. Your prompt and
+            response text is never stored or uploaded, and your Gemini key never
+            leaves this device.</p>
           <p><strong>How to disable.</strong> Turn off “Writing editor” above to
             stop all suggestions, or clear the Worker URL / Gemini key to use
             offline-only mode. Uninstalling the extension removes all on-device

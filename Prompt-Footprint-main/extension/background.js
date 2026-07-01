@@ -1,10 +1,24 @@
 // PromptFootprint Background Service Worker
-// Local-first: there is no remote backend. The worker manages the anonymous
-// user id, maps tabs to sessions so they can be closed on tab removal, and
-// opens the dashboard. All persistence goes through lib/storage.js
-// (chrome.storage.local).
+// Local-first: the extension works fully offline with no account. The worker
+// manages the anonymous user id, maps tabs to sessions so they can be closed on
+// tab removal, opens the dashboard, and runs the optional Gemini writing proxy.
+//
+// Optional accounts (Phase 2): the worker is also the sole owner of the Supabase
+// client and auth session. The dashboard drives auth/sync by message passing and
+// never sees the tokens. Sync is best-effort; local features never depend on it.
+// All local persistence still goes through lib/storage.js (chrome.storage.local).
 
-importScripts('lib/proxyConfig.js', 'lib/storage.js');
+importScripts(
+  'lib/proxyConfig.js',
+  'lib/storage.js',
+  'lib/vendor/supabase.js',
+  'lib/supabaseClient.js',
+  'lib/authState.js',
+  'lib/authService.js',
+  'lib/syncPayload.js',
+  'lib/syncMerge.js',
+  'lib/syncService.js'
+);
 
 // Supported platform origins (must match manifest host_permissions).
 const ALLOWED_ORIGINS = [
@@ -95,9 +109,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // async
   }
 
+  // ── Optional accounts & sync (Phase 2) ─────────────────────────────────
+  // Driven by the dashboard. Every handler degrades gracefully: if Supabase is
+  // not configured, auth returns {error:'not_configured'} and sync returns
+  // {ok:false}. Local features are never affected.
+  if (message.type === 'AUTH_SIGNUP') {
+    PFAuth.signUp(message.payload?.email, message.payload?.password).then(sendResponse);
+    return true;
+  }
+  if (message.type === 'AUTH_LOGIN') {
+    PFAuth.login(message.payload?.email, message.payload?.password).then((res) => {
+      // On success, claim local data + first sync in the background (non-blocking).
+      if (res && res.status === 'logged_in') PFSync.claimAndSync().catch(() => {});
+      sendResponse(res);
+    });
+    return true;
+  }
+  if (message.type === 'AUTH_LOGOUT') {
+    PFAuth.logout().then(sendResponse);
+    return true;
+  }
+  if (message.type === 'AUTH_STATUS') {
+    PFAuth.getStatus().then(sendResponse);
+    return true;
+  }
+  if (message.type === 'AUTH_DELETE') {
+    PFAuth.deleteAccount().then(sendResponse);
+    return true;
+  }
+  if (message.type === 'SYNC_NOW') {
+    PFSync.syncNow().then(sendResponse);
+    return true;
+  }
+
   sendResponse({ error: 'Unknown message type' });
   return false;
 });
+
+// Best-effort periodic sync for signed-in users. Harmless when signed out or
+// when Supabase is not configured (syncNow returns {ok:false} immediately).
+try {
+  chrome.alarms.create('pf_sync', { periodInMinutes: 60 });
+  chrome.alarms.onAlarm.addListener((a) => {
+    if (a.name === 'pf_sync' && typeof PFSync !== 'undefined') PFSync.syncNow().catch(() => {});
+  });
+} catch (_) { /* alarms unavailable: skip periodic sync, on-demand still works */ }
 
 // ── AI writing layer (proxy-first, graceful) ───────────────────────────────--
 // Resolves the provider from user config each call: a configured Worker URL

@@ -4,9 +4,12 @@ A Chrome extension that passively tracks your AI chat usage (**ChatGPT** and
 **Claude**, extensible to more) and estimates its environmental impact — energy
 (Wh), water (mL), and CO₂ (g) — using a token-level, response-time-aware model.
 
-**Local-first:** all data stays on your device in `chrome.storage.local`. There
-is no backend to run and nothing leaves your browser. 🏆 *3rd Place — Climate
-ChangeMakers Challenge 2026* · [Devpost](https://devpost.com/software/prompt-footprint)
+**Local-first:** by default all data stays on your device in
+`chrome.storage.local` and nothing leaves your browser. No backend is required to
+run it. Optional accounts (Supabase) can sync your settings and stats *summaries*
+across devices — never your prompt text and never your Gemini key; see
+[`docs/ACCOUNTS.md`](docs/ACCOUNTS.md). 🏆 *3rd Place — Climate ChangeMakers
+Challenge 2026* · [Devpost](https://devpost.com/software/prompt-footprint)
 
 ## Architecture
 
@@ -35,7 +38,8 @@ Prompt-Footprint/
 │   ├── test/              Unit tests (node:test)
 │   └── styles/            Shared design system CSS
 ├── stats-site/            React + Vite dashboard; build output is copied to extension/dashboard
-└── server/                Legacy Express/Postgres backend (no longer required)
+├── supabase/              Optional accounts/sync: schema + RLS migration, config, RLS test
+└── server/                Legacy Express/Postgres backend (dormant; not used)
 ```
 
 ## Environmental model
@@ -154,11 +158,32 @@ data only when opened as the extension's dashboard.
   dictionary) — nothing is uploaded.
 - **Exception:** the optional **AI writing help** tier sends your in-progress
   draft to the Cloudflare Worker you configured (→ Gemini) to generate a
-  suggestion. It is disabled until you set a Worker URL. See
-  [`docs/PRIVACY.md`](docs/PRIVACY.md) for the full policy and Chrome Web Store
-  readiness checklist, and
-  [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md) for the (proposed, not yet built) optional
-  login/sync design. Manual test steps: [`docs/TESTING.md`](docs/TESTING.md).
+  suggestion. It is disabled until you set a Worker URL.
+
+### Legal & publishing docs
+
+- [`docs/PRIVACY.md`](docs/PRIVACY.md) — full privacy policy.
+- [`docs/TERMS.md`](docs/TERMS.md) — terms of service (first draft).
+- [`docs/DATA_DELETION.md`](docs/DATA_DELETION.md) — how to delete local and account data.
+- [`docs/SECURITY.md`](docs/SECURITY.md) — security model and how to report issues.
+- [`docs/CHROME_STORE_LISTING.md`](docs/CHROME_STORE_LISTING.md) — store listing copy,
+  permission justifications, and data-use disclosure answers.
+- [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md) — optional login/sync design.
+- [`docs/BACKEND_DEPLOYMENT.md`](docs/BACKEND_DEPLOYMENT.md) — provision Supabase and wire keys.
+- [`docs/TESTING.md`](docs/TESTING.md) — manual test steps.
+
+## Publishing to the Chrome Web Store
+
+1. Rebuild the dashboard (`stats-site` → `extension/dashboard`, see above) so the
+   packaged options page is current.
+2. Confirm the manifest permissions and `connect-src` list only what's needed (see
+   [`docs/SECURITY.md`](docs/SECURITY.md)); if you enable optional accounts, set the
+   real Supabase project origin (no wildcard).
+3. Host [`docs/PRIVACY.md`](docs/PRIVACY.md) at a public URL (GitHub Pages works) and
+   put that URL in the listing.
+4. Fill in the store listing and data-use disclosures from
+   [`docs/CHROME_STORE_LISTING.md`](docs/CHROME_STORE_LISTING.md).
+5. Zip the repo root (the folder containing `manifest.json`) and upload it.
 
 ## Adding a platform
 

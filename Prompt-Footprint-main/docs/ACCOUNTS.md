@@ -1,57 +1,79 @@
-# Proposal: Optional User Accounts & Cross-Device Sync
+# Optional Accounts & Cross-Device Sync
 
-_Status: proposal only — not implemented. Core fixes (tracking, savings, popup,
-branding) take priority._
+_Status: implemented (Phase 2). Optional and off by default — signed-out use is
+unchanged. This supersedes the earlier proposal in this file, which recommended
+reviving the legacy `server/`._
 
-## Today
+## Decision
 
-PromptFootprint is **local-first**: each install gets an anonymous UUID
-(`pf_userId`) and all data lives in `chrome.storage.local`. There is no login.
-Data does not sync across devices or survive a profile reset. A legacy Express +
-Postgres server exists under `server/` (with `Session`, `Query`, `Config` Sequelize
-models) but is currently unused.
+PromptFootprint uses **Supabase** (managed Postgres + Auth + Row-Level Security)
+for optional accounts and sync, with **email + password** sign-in.
 
-## Goal
+Why Supabase over reviving `server/`:
 
-Let a user optionally sign in so their PromptFootprint data follows them across
-browsers/devices — **without weakening the local-first, privacy-preserving
-default** for users who don't sign in.
+- It provides email verification, password reset, refresh-token rotation, and
+  auth rate limiting out of the box — all the parts that are easy to get wrong
+  when hand-rolled on Express.
+- Row-Level Security expresses least-privilege declaratively in SQL, so the
+  shipped anon key is safe: every row is locked to its owner.
+- Less code to write, host, and maintain for a solo project going public.
 
-## Recommended approach
+Trade-off: Supabase is one additional data sub-processor, disclosed in
+[PRIVACY.md](./PRIVACY.md).
 
-1. **Keep local-first as the default.** Accounts are strictly opt-in. Anonymous
-   users see no change.
-2. **Revive the existing `server/`** rather than adding a new stack — the data
-   models already match the on-device schema. Add:
-   - An `auth` layer: passwordless **email magic-link** (lowest friction, no
-     password storage) or **Google OAuth**. Issue a short-lived JWT + refresh token.
-   - A `users` table; link the existing anonymous `pf_userId` to a `user_id` on
-     first sign-in so prior local data can be claimed.
-3. **Sync model:** on sign-in, push local sessions/savings to the server and pull
-   the merged set back. Use last-write-wins per session id (sessions are
-   append-only, so conflicts are rare). Continue writing locally first, then sync
-   in the background, so the extension keeps working offline.
-4. **Storage of tokens:** keep auth tokens in `chrome.storage.local` (per-profile,
-   not exposed to page content scripts). Never store them in page-accessible
-   storage.
+## What syncs (and what never does)
 
-## Security / privacy requirements
+Syncs when signed in:
+- Non-sensitive settings (overlay on/off, writing checks on/off, energy multiplier).
+- Per-session **summaries**: token counts, timing, and estimated energy/water/CO₂
+  — **numbers only, no prompt/response text**.
+- Realized savings as a **per-day** total.
 
-- All sync traffic over HTTPS; CORS already restricted in `server/` — extend the
-  allowlist to the extension origin only.
-- Continue to **never transmit prompt/response text** — sync only counts and
-  metrics, consistent with the current privacy stance.
-- Make account deletion + data export available (also helps store compliance).
-- Disclose the optional cloud sync in the privacy policy when this ships.
+Never syncs (by construction):
+- Prompt/response text — never stored locally, never uploaded.
+- The Gemini API key and the Worker URL.
+- Overlay/optimizer positions and the debug flag.
 
-## Why not a third-party BaaS (Supabase/Firebase)?
+The uploaded payload is built by a whitelist-only function
+(`extension/lib/syncPayload.js`), so the exclusion is structural, not a filter
+that can be forgotten. See `extension/test/syncPayload.test.js`.
 
-Viable and faster to stand up, but it adds a new vendor, new data-processor
-disclosure, and duplicates models we already have. Prefer reusing `server/`
-unless hosting/maintenance cost argues otherwise.
+## How it works
 
-## Scope estimate
+- The **service worker** owns the Supabase client and session; the dashboard
+  drives auth/sync by message passing and never sees the tokens. The session is
+  stored in `chrome.storage.local` under `pf_auth` via a custom adapter
+  (`extension/lib/supabaseClient.js`), which is per-profile and not reachable by
+  content scripts.
+- **Sync is idempotent.** Sessions upsert on `(user_id, session_id)`; savings
+  upsert on `(user_id, day)`. Running totals are recomputed from the daily map,
+  never accumulated, so re-syncing cannot double-count
+  (`extension/lib/syncMerge.js`).
+- **First login runs a one-time "claim"** that records the anonymous install id
+  and pushes existing local data up. It's guarded by `pf_auth.claimedFor`, and
+  because every write is an upsert on a stable key, re-running is harmless.
+- **Local-first is preserved.** Writes always go local first; sync is best-effort
+  off explicit triggers (dashboard open, "Sync now", an hourly alarm). On any
+  failure it returns quietly and never wipes local data. Logging out clears only
+  the session; all `pf_*` data stays.
 
-Auth + users table + claim-on-signin + background sync is a multi-day effort and
-touches the server, the extension background worker, and the dashboard. It should
-be a separate, well-tested change after the current correctness work lands.
+## Data model
+
+Four owner-scoped tables in `supabase/migrations/0001_init.sql`: `profiles`,
+`user_settings`, `session_stats`, `savings_daily` — all with RLS enabled and
+`auth.uid() = user_id` policies. A `handle_new_user` trigger provisions the
+profile + settings rows on signup; a `delete_user` RPC powers self-service
+account deletion (cascades to every table).
+
+## Multi-device trade-off
+
+Savings are a per-day aggregate merged by keeping the larger realized total per
+day, not the sum. If two devices realize savings on the same day while offline,
+that day reflects the larger of the two, never the sum — an under-count at worst,
+never a double-count. Exact cross-device summation would need a per-device grain
+and is out of scope for this version.
+
+## Setup
+
+See [BACKEND_DEPLOYMENT.md](./BACKEND_DEPLOYMENT.md) for provisioning, running the
+migration, and wiring the keys.
