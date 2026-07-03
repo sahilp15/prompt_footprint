@@ -107,6 +107,27 @@ const RESPONSE_TIME_MODEL = {
   MIN_RESPONSE_SEC: 0.5,   // below this duration, skip timing adjustment (too noisy)
 };
 
+// ─────────────────────────────────────────────────────────────────────────--
+// Heatwave / cooling model (contextual overlay only)
+// ─────────────────────────────────────────────────────────────────────────--
+// The per-token intensities above bake in an ANNUALIZED PUE (~1.1). During
+// extreme heat, cooling demand at (especially dry-cooled) data centers spikes:
+// a facility that averages PUE ~1.1 can approach 1.3–1.4 at peak, so the cooling
+// overhead — and thus energy/water — can be several times higher than the
+// annualized figure implies. See Shaolei Ren (UC Riverside) and AP, 2024
+// (apnews.com/article/data-center-heat-wave-lowell-...).
+//
+// We express this as a display-only factor = peakPUE(temp) / annualPUE, applied
+// as a clearly-labeled overlay. It is NEVER stored and never claims to know the
+// exact data center serving a request — it uses nearby weather as a proxy.
+const HEATWAVE_MODEL = {
+  ANNUAL_PUE: 1.1,      // annualized PUE already baked into the base intensities
+  BASE_TEMP_C: 25,      // at/below this, cooling ~ annualized (factor ~1.0)
+  PEAK_TEMP_C: 40,      // at/above this, peak PUE approaches PEAK_PUE
+  PEAK_PUE: 1.4,        // extreme-heat peak PUE (Ren; AP 2024)
+  HEATWAVE_TEMP_C: 32,  // apparent temp (°C) above which we flag a heatwave context
+};
+
 // Export for use in both extension and module contexts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -117,6 +138,7 @@ if (typeof module !== 'undefined' && module.exports) {
     REASONING_MULTIPLIERS,
     AVG_PROMPT_WORDS, AVG_RESPONSE_WORDS, AVG_TOKENS_PER_INTERACTION,
     DAILY_MESSAGES,
-    CLAUDE_RELATIVE_INTENSITY, PLATFORM_PROFILES, RESPONSE_TIME_MODEL
+    CLAUDE_RELATIVE_INTENSITY, PLATFORM_PROFILES, RESPONSE_TIME_MODEL,
+    HEATWAVE_MODEL
   };
 }

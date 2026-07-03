@@ -1,10 +1,38 @@
+import { useEffect, useState } from 'react'
 import { Zap, Droplets, Wind, TrendingUp, Hash, Leaf } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import { useWeeklyStats } from '../hooks/useStats'
+import { formatDayLabel } from '../lib/dates'
+import { authStatus, greetingName, isSignedIn, isExtensionRuntime } from '../lib/auth'
+import { fetchConfig } from '../lib/api'
+import WeatherCard from './WeatherCard'
 import Globe from './ui/globe-cdn'
 import './WeeklyStats.css'
+
+// Resolve a friendly name for the greeting: signed-in display name (or email
+// guess), else a locally saved name for local-only users, else nothing.
+function useGreeting() {
+  const [name, setName] = useState(null)
+  useEffect(() => {
+    let done = false
+    async function run() {
+      if (isExtensionRuntime()) {
+        const s = await authStatus()
+        const n = isSignedIn(s) ? greetingName(s) : null
+        if (n) { if (!done) setName(n); return }
+      }
+      const cfg = await fetchConfig()
+      if (!done && cfg && typeof cfg.displayName === 'string' && cfg.displayName.trim()) {
+        setName(cfg.displayName.trim())
+      }
+    }
+    run()
+    return () => { done = true }
+  }, [])
+  return name
+}
 
 function MetricCard({ icon: Icon, label, value, unit, color }) {
   return (
@@ -48,6 +76,7 @@ const MultiTooltip = ({ active, payload, label }) => {
 
 export default function WeeklyStats() {
   const { data, loading, error } = useWeeklyStats()
+  const name = useGreeting()
 
   if (loading) return <div className="page-loading">Loading your weekly data...</div>
   if (error) return (
@@ -60,7 +89,7 @@ export default function WeeklyStats() {
   const { totals, daily } = data || { totals: {}, daily: [] }
   const fmt = (v, d = 4) => (v || 0).toFixed(d)
 
-  const fmtDate = d => new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  const fmtDate = d => formatDayLabel(d)
 
   const maxEnergy = Math.max(...(daily || []).map(d => d.energyWh || 0), 1e-9)
   const maxWater  = Math.max(...(daily || []).map(d => d.waterMl  || 0), 1e-9)
@@ -86,13 +115,12 @@ export default function WeeklyStats() {
               <Leaf size={13} />
               <span>Why this matters</span>
             </div>
-            <h2 className="mission-heading">Every prompt runs in a data center</h2>
+            <h2 className="mission-heading">Every Prompt Runs in a Data Center</h2>
             <p className="mission-body">
-              AI replies are generated on servers that draw electricity from the grid and evaporate
-              water to stay cool. One prompt is tiny, but a week of them adds up. PromptFootprint
-              estimates the energy, water, and CO₂ behind your ChatGPT and Claude use so you can watch
-              the trend and trim it. The numbers are estimates, not meter readings — see “How it works”
-              for the method.
+              AI replies run on data centers that use electricity and water for cooling. One prompt may
+              seem small, but over time, those prompts add up. PromptFootprint estimates the energy,
+              water, and CO₂ tied to your ChatGPT and Claude use, helping you spot trends and reduce
+              unnecessary usage.
             </p>
             <div className="mission-pills">
               <span className="mission-pill">⚡ Grid electricity</span>
@@ -110,8 +138,13 @@ export default function WeeklyStats() {
         </div>
       </section>
 
+      {/* Weather-aware estimate — surfaced here (not buried in How it Works). */}
+      <section className="weather-section">
+        <WeatherCard />
+      </section>
+
       <div className="page-header">
-        <h1 className="page-title">This week</h1>
+        <h1 className="page-title">{name ? `Hi ${name}! This week` : 'This week'}</h1>
         <p className="page-subtitle">Estimated energy, water, and CO₂ from your AI chats over the last 7 days.</p>
       </div>
 

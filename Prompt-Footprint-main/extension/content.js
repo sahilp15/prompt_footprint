@@ -534,6 +534,7 @@
     modal.classList.add('pf-modal-hidden');
     modal.innerHTML = `
       <div class="pf-modal-container">
+        <div class="pf-modal-resize" id="pf-modal-resize" title="Drag to resize" aria-label="Resize panel"></div>
         <div class="pf-modal-header">
           <span class="pf-modal-title">PromptFootprint</span>
           <button class="pf-modal-close" id="pf-modal-close-btn">
@@ -544,6 +545,7 @@
           </button>
         </div>
 
+        <div class="pf-modal-body">
         <div class="pf-modal-section">
           <div class="pf-modal-section-label">Session Totals</div>
           <div class="pf-modal-stats-grid">
@@ -586,12 +588,13 @@
             </div>
           </div>
         </div>
+        </div>
 
         <div class="pf-modal-footer">
           <div class="pf-modal-query-count" id="pf-query-count">0 queries this session</div>
           <button class="pf-modal-btn" id="pf-open-stats-btn">View Full Stats</button>
         </div>
-        <div class="pf-modal-hint">Tip: press <kbd>Alt</kbd>+<kbd>P</kbd> to open or close this panel · drag the capsule to move it</div>
+        <div class="pf-modal-hint">Tip: press <kbd>Alt</kbd>+<kbd>P</kbd> to open or close · drag the capsule to move it · drag the top-left corner to resize</div>
       </div>
     `;
 
@@ -602,6 +605,70 @@
       // Local-first: stats live in the extension's own dashboard page.
       chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
     });
+
+    restoreModalSize();
+    makeModalResizable();
+  }
+
+  // Persisted user resizing of the stats panel. Bounds keep it usable and out of
+  // the way of the page's composer even at max size.
+  const MODAL_MIN = { w: 240, h: 200 };
+  function modalMax() {
+    return { w: Math.min(460, window.innerWidth - 40), h: Math.min(560, window.innerHeight - 40) };
+  }
+  function clampModalSize(w, h) {
+    const max = modalMax();
+    return {
+      w: Math.round(Math.min(Math.max(w, MODAL_MIN.w), Math.max(MODAL_MIN.w, max.w))),
+      h: Math.round(Math.min(Math.max(h, MODAL_MIN.h), Math.max(MODAL_MIN.h, max.h))),
+    };
+  }
+  function saveModalSize(w, h) {
+    try { chrome.storage.local.set({ pf_modal_size: { w, h } }); } catch (_) {}
+  }
+  function restoreModalSize() {
+    const container = document.querySelector('#pf-modal-overlay .pf-modal-container');
+    if (!container || !chrome?.storage?.local) return;
+    chrome.storage.local.get(['pf_modal_size'], (res) => {
+      const s = res && res.pf_modal_size;
+      if (!s || typeof s.w !== 'number' || typeof s.h !== 'number') return;
+      const c = clampModalSize(s.w, s.h);
+      container.style.width = c.w + 'px';
+      container.style.height = c.h + 'px';
+    });
+  }
+  function makeModalResizable() {
+    const handle = document.getElementById('pf-modal-resize');
+    const container = document.querySelector('#pf-modal-overlay .pf-modal-container');
+    if (!handle || !container) return;
+    let startX = 0, startY = 0, startW = 0, startH = 0, resizing = false;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      resizing = true;
+      startX = e.clientX; startY = e.clientY;
+      startW = container.offsetWidth; startH = container.offsetHeight;
+      container.classList.add('pf-modal-resizing');
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      // Panel is anchored bottom-right, so dragging the top-left handle up/left
+      // (negative dx/dy) grows the panel.
+      const c = clampModalSize(startW - (e.clientX - startX), startH - (e.clientY - startY));
+      container.style.width = c.w + 'px';
+      container.style.height = c.h + 'px';
+    });
+    const end = (e) => {
+      if (!resizing) return;
+      resizing = false;
+      container.classList.remove('pf-modal-resizing');
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      saveModalSize(container.offsetWidth, container.offsetHeight);
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
   }
 
   function toggleModal(forceState) {
@@ -656,14 +723,45 @@
   const OPTIMIZER_MIN_TOKENS = 1;    // only count savings if it saves something real
                                       // (single filler-word accepts often save just 1 token)
   const OPTIMIZER_DEBOUNCE_MS = 350; // local heuristic (instant feel)
-  const AI_DEBOUNCE_MS = 1100;       // AI (waits for a typing pause)
+  const AI_DEBOUNCE_MS = 1500;       // AI (waits for a real typing pause)
+  const AI_MIN_INTERVAL_MS = 4000;   // hard floor between AI calls from this tab,
+                                      // so holding down keys can't burn quota
   let optimizerTimer = null;
   let aiTimer = null;
+  let lastAiSentAt = 0;              // epoch ms of the last AI request from this tab
   // Current chip state: { input, text, source:'local'|'ai', suggestions?,
   // safeFixedText?, safeCount?, improved? }. Null when the chip is hidden.
   let writingState = null;
   let lastAiText = '';               // last prompt sent to the AI
   const aiCache = new Map();         // prompt text -> AI improved text
+
+  // The user's own average prompt size, refreshed lazily from stored sessions so
+  // the size indicator compares against personal history (not a global number).
+  let personalPromptAvg = { avgPromptTokens: 0, sampleCount: 0 };
+  let personalAvgLoadedAt = 0;
+  function refreshPersonalPromptAvg() {
+    if (typeof PFStorage === 'undefined' || typeof PFStorage.getSessions !== 'function') return;
+    if (Date.now() - personalAvgLoadedAt < 60000) return; // at most once a minute
+    personalAvgLoadedAt = Date.now();
+    PFStorage.getSessions(userId)
+      .then((sessions) => { personalPromptAvg = PFStorage.computeAveragePromptTokens(sessions); })
+      .catch(() => {});
+  }
+
+  // Build an advisory prompt-size hint for the CURRENT draft, comparing its token
+  // estimate to the user's personal average. Returns null when there's nothing
+  // worth saying (typical/short prompts, or too little text).
+  function sizeHintSuggestion(text) {
+    if (typeof PFPromptSize === 'undefined' || typeof estimateTokens === 'undefined') return null;
+    let curTokens = 0;
+    try { curTokens = estimateTokens(text); } catch (_) { return null; }
+    const cls = PFPromptSize.classifyPromptSize(curTokens, personalPromptAvg);
+    if (!cls.message) return null;
+    const reason = cls.hasHistory
+      ? `Your average prompt: ${cls.avgPromptTokens} tokens`
+      : 'Based on typical prompt sizes';
+    return { type: 'size', original: cls.message, suggestion: '', reason, safe: false };
+  }
 
   // ── Offline dictionary (lazy) ───────────────────────────────────────────--
   // Loaded once, on first analysis, so it never delays page load. The checker
@@ -732,10 +830,13 @@
         <button id="pf-opt-acceptall" type="button" hidden>Accept all safe</button>
         <button id="pf-opt-apply" type="button" hidden>Apply</button>
       </div>
+      <div class="pf-opt-resize" id="pf-opt-resize" title="Drag to resize" aria-label="Resize"></div>
     `;
     document.body.appendChild(chip);
     restoreOptimizerPosition(chip);
+    restoreOptimizerSize(chip);
     makeOptimizerDraggable(chip);
+    makeOptimizerResizable(chip);
 
     document.getElementById('pf-opt-dismiss').addEventListener('click', hideOptimizerChip);
 
@@ -865,6 +966,67 @@
     } catch (_) {}
   }
 
+  // ── Optimizer chip resizing (persisted) ──────────────────────────────────
+  const OPT_MIN = { w: 280, h: 130 };
+  function optMax() {
+    return { w: Math.min(600, window.innerWidth - 24), h: Math.min(Math.round(window.innerHeight * 0.75), window.innerHeight - 24) };
+  }
+  function clampOptSize(w, h) {
+    const max = optMax();
+    return {
+      w: Math.round(Math.min(Math.max(w, OPT_MIN.w), Math.max(OPT_MIN.w, max.w))),
+      h: Math.round(Math.min(Math.max(h, OPT_MIN.h), Math.max(OPT_MIN.h, max.h))),
+    };
+  }
+  function restoreOptimizerSize(chip) {
+    if (!extAlive()) return;
+    try {
+      chrome.storage.local.get(['pf_optimizer_size'], (res) => {
+        void chrome.runtime.lastError;
+        const s = res && res.pf_optimizer_size;
+        if (s && typeof s.w === 'number' && typeof s.h === 'number') {
+          const c = clampOptSize(s.w, s.h);
+          chip.style.width = c.w + 'px';
+          chip.style.height = c.h + 'px';
+        }
+      });
+    } catch (_) {}
+  }
+  function makeOptimizerResizable(chip) {
+    const handle = chip.querySelector('#pf-opt-resize');
+    if (!handle) return;
+    let startX = 0, startY = 0, startW = 0, startH = 0, resizing = false;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      resizing = true;
+      // Pin the chip at its current spot (it may still be bottom-centered by CSS)
+      // so a bottom-right grip grows predictably down-and-right.
+      const rect = chip.getBoundingClientRect();
+      applyOptimizerPosition(chip, rect.left, rect.top);
+      startX = e.clientX; startY = e.clientY;
+      startW = chip.offsetWidth; startH = chip.offsetHeight;
+      chip.classList.add('pf-opt-resizing');
+      handle.setPointerCapture?.(e.pointerId);
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      const c = clampOptSize(startW + (e.clientX - startX), startH + (e.clientY - startY));
+      chip.style.width = c.w + 'px';
+      chip.style.height = c.h + 'px';
+    });
+    const end = (e) => {
+      if (!resizing) return;
+      resizing = false;
+      chip.classList.remove('pf-opt-resizing');
+      handle.releasePointerCapture?.(e.pointerId);
+      if (!extAlive()) return;
+      try { chrome.storage.local.set({ pf_optimizer_size: { w: chip.offsetWidth, h: chip.offsetHeight } }); } catch (_) {}
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
   function hideOptimizerChip() {
     const chip = document.getElementById('pf-optimizer-chip');
     if (chip) chip.classList.remove('pf-opt-visible');
@@ -913,10 +1075,14 @@
     // "Accept all safe".
     const rows = res.suggestions.slice(0, 6).map((s, i) => {
       const idx = res.suggestions.indexOf(s);
-      return `<div class="pf-opt-item">
+      // Advisory hints (prompt-size, repetition, long sentences) are informational
+      // only — there is nothing to "Accept", so we omit the button for them.
+      const advisory = s.type === 'size' || s.type === 'clarity';
+      const acceptBtn = advisory ? '' : `<button class="pf-opt-accept" type="button" data-pf-accept="${idx}">Accept</button>`;
+      return `<div class="pf-opt-item${advisory ? ' pf-opt-item-advisory' : ''}">
           <div class="pf-opt-item-text">${PFWritingFormat.renderSuggestion(s)}</div>
           <div class="pf-opt-item-reason">${PFWritingFormat.escapeHtml(s.reason)}${fillerSavingsBadge(s)}</div>
-          <button class="pf-opt-accept" type="button" data-pf-accept="${idx}">Accept</button>
+          ${acceptBtn}
         </div>`;
     }).join('');
     listEl.innerHTML = rows;
@@ -973,15 +1139,19 @@
     if (text.length < WRITING_MIN_CHARS) { hideOptimizerChip(); return; }
     const checker = await getWritingChecker(); // may be null (curated rules still run)
     if (getInputText(el) !== text) return;     // user kept typing
+    refreshPersonalPromptAvg();
     const res = PFSpellChecker.analyzeWriting(text, { typo: checker });
-    if (!res.suggestions.length) {
+    // Prepend a personal prompt-size hint (advisory, informational) when relevant.
+    const sizeHint = sizeHintSuggestion(text);
+    const suggestions = sizeHint ? [sizeHint, ...res.suggestions] : res.suggestions;
+    if (!suggestions.length) {
       // Don't clobber an AI "improved" card already showing for this text.
       if (!writingState || writingState.source !== 'ai') hideOptimizerChip();
       return;
     }
     writingState = { input: el, text, source: 'local',
-      suggestions: res.suggestions, safeFixedText: res.safeFixedText, safeCount: res.safeCount };
-    renderWritingSuggestions(res);
+      suggestions, safeFixedText: res.safeFixedText, safeCount: res.safeCount };
+    renderWritingSuggestions({ ...res, suggestions });
   }
 
   // Tier 2 — AI writing improvement via the Gemini proxy (background →
@@ -989,16 +1159,36 @@
   // fails, rate-limits, or returns nothing — the UI never breaks.
   async function analyzeWritingAI(el) {
     if (config.writingChecksEnabled === false) return;
+    // Opt-in gate: never send draft text to the cloud unless the user enabled it.
+    if (config.cloudAnalysisEnabled !== true) return;
     const text = getInputText(el);
     if (text.length < WRITING_MIN_CHARS) return;
     if (text === lastAiText) return;
-    lastAiText = text;
 
     let improved = aiCache.get(text);
     if (improved === undefined) {
+      // Client-side floor: never send faster than the min interval, however the
+      // debounce fires. Reschedule (don't drop) so a real pause still gets one
+      // call once the interval elapses.
+      const sinceLast = Date.now() - lastAiSentAt;
+      if (sinceLast < AI_MIN_INTERVAL_MS) {
+        clearTimeout(aiTimer);
+        aiTimer = setTimeout(() => analyzeWritingAI(el), AI_MIN_INTERVAL_MS - sinceLast);
+        return;
+      }
+      lastAiText = text;
+      lastAiSentAt = Date.now();
       const resp = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text } });
       improved = (resp && resp.improved) || '';
-      aiCache.set(text, improved);
+      const status = resp && resp.status;
+      // Cache only a definitive answer. Transient states (rate_limited, cooldown,
+      // throttled, error) are NOT cached, and we clear lastAiText so the same
+      // draft can be retried on a later pause instead of being stuck on local.
+      if (status === 'success' || status === 'cached' || status === 'unconfigured') {
+        aiCache.set(text, improved);
+      } else {
+        lastAiText = '';
+      }
     }
     if (!improved || improved.trim() === text.trim()) return;
     if (getInputText(el) !== text) return; // user kept typing

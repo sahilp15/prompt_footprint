@@ -22,7 +22,7 @@
 // (where it requires its dependencies).
 
 const _C = (typeof PLATFORM_PROFILES !== 'undefined')
-  ? { PLATFORM_PROFILES, RESPONSE_TIME_MODEL }
+  ? { PLATFORM_PROFILES, RESPONSE_TIME_MODEL, HEATWAVE_MODEL }
   : require('./constants.js');
 const _T = (typeof estimateQueryTokens !== 'undefined')
   ? { estimateQueryTokens }
@@ -96,6 +96,47 @@ function calculateQueryImpact(promptText, responseText, options) {
   };
 }
 
+// ── Heatwave overlay (contextual, display-only) ────────────────────────────--
+// These NEVER change the stored/base impact. They compute how much higher
+// cooling-driven energy/water/CO2 could run right now given nearby weather,
+// relative to the annualized PUE already baked into the base numbers. It is an
+// APPROXIMATION using the nearest known cloud region as a proxy — we do not
+// claim to know the exact data center serving a request.
+
+// Peak PUE rises with ambient heat: a linear ramp from the annualized PUE at
+// BASE_TEMP_C to PEAK_PUE at PEAK_TEMP_C.
+function heatwavePeakPue(tempC) {
+  const h = _C.HEATWAVE_MODEL;
+  if (typeof tempC !== 'number' || Number.isNaN(tempC)) return h.ANNUAL_PUE;
+  if (tempC <= h.BASE_TEMP_C) return h.ANNUAL_PUE;
+  if (tempC >= h.PEAK_TEMP_C) return h.PEAK_PUE;
+  const frac = (tempC - h.BASE_TEMP_C) / (h.PEAK_TEMP_C - h.BASE_TEMP_C);
+  return h.ANNUAL_PUE + frac * (h.PEAK_PUE - h.ANNUAL_PUE);
+}
+
+// Contextual heat factor (>= 1): peakPUE(temp) / annualPUE.
+function heatwaveFactor(tempC) {
+  return heatwavePeakPue(tempC) / _C.HEATWAVE_MODEL.ANNUAL_PUE;
+}
+
+// Apply the overlay to a base impact ({ energyWh, waterMl, co2G }). Returns the
+// adjusted figures plus the factor, the modeled peak PUE, and whether the
+// weather qualifies as a heatwave context. tempC null/absent => factor 1 (no-op).
+function applyHeatwaveContext(base, opts) {
+  const o = opts || {};
+  const tempC = typeof o.tempC === 'number' ? o.tempC : null;
+  const factor = tempC == null ? 1 : heatwaveFactor(tempC);
+  const b = base || {};
+  return {
+    factor,
+    peakPue: tempC == null ? _C.HEATWAVE_MODEL.ANNUAL_PUE : heatwavePeakPue(tempC),
+    isHeatwave: tempC != null && tempC >= _C.HEATWAVE_MODEL.HEATWAVE_TEMP_C && factor > 1.001,
+    energyWh: (b.energyWh || 0) * factor,
+    waterMl: (b.waterMl || 0) * factor,
+    co2G: (b.co2G || 0) * factor,
+  };
+}
+
 function getMultiplierForLevel(reasoningLevel) {
   const r = (typeof REASONING_MULTIPLIERS !== 'undefined')
     ? REASONING_MULTIPLIERS
@@ -104,5 +145,5 @@ function getMultiplierForLevel(reasoningLevel) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { calculateImpact, calculateQueryImpact, getMultiplierForLevel, computeTimeFactor, resolveProfile };
+  module.exports = { calculateImpact, calculateQueryImpact, getMultiplierForLevel, computeTimeFactor, resolveProfile, heatwavePeakPue, heatwaveFactor, applyHeatwaveContext };
 }

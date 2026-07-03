@@ -65,6 +65,19 @@
     });
   }
 
+  // ── Dates ──────────────────────────────────────────────────────────────---
+  // Timestamps are stored as UTC ISO strings (correct — they are instants). But
+  // day grouping and reset windows must follow the user's LOCAL calendar day so
+  // "today" and the weekly buckets match the clock on the wall, not UTC. Build
+  // the key from local parts rather than slicing an ISO string (which is UTC).
+  function localDayKey(dateLike) {
+    const d = dateLike == null ? new Date() : (dateLike instanceof Date ? dateLike : new Date(dateLike));
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   // ── User id ──────────────────────────────────────────────────────────────
   async function getUserId() {
     const res = await getLocal([USER_ID_KEY]);
@@ -86,6 +99,18 @@
     if (typeof patch.overlayEnabled === 'boolean') next.overlayEnabled = patch.overlayEnabled;
     if (typeof patch.debug === 'boolean') next.debug = patch.debug;
     if (typeof patch.writingChecksEnabled === 'boolean') next.writingChecksEnabled = patch.writingChecksEnabled;
+    // Cloud analysis is OPT-IN (default off). When false, draft text is never
+    // sent to Gemini/the proxy — only the offline checker runs.
+    if (typeof patch.cloudAnalysisEnabled === 'boolean') next.cloudAnalysisEnabled = patch.cloudAnalysisEnabled;
+    // Heatwave estimate: chosen location mode + a COARSE (privacy) coordinate and
+    // a human label. 'geo' | 'manual' | 'general' | 'off'. Only what's needed to
+    // look up nearby data-center weather is stored — never a precise position.
+    if (typeof patch.heatwaveLocationMode === 'string') next.heatwaveLocationMode = patch.heatwaveLocationMode;
+    if (typeof patch.heatwaveLat === 'number' || patch.heatwaveLat === null) next.heatwaveLat = patch.heatwaveLat;
+    if (typeof patch.heatwaveLon === 'number' || patch.heatwaveLon === null) next.heatwaveLon = patch.heatwaveLon;
+    if (typeof patch.heatwavePlaceLabel === 'string') next.heatwavePlaceLabel = patch.heatwavePlaceLabel;
+    // Display name for local-only users (signed-in users' names live in Supabase).
+    if (typeof patch.displayName === 'string') next.displayName = patch.displayName.trim().slice(0, 80);
     // AI writing layer config (kept on-device; the Gemini key, if any, never
     // leaves chrome.storage.local — it is only read by the service worker).
     if (typeof patch.proxyUrl === 'string') next.proxyUrl = patch.proxyUrl.trim();
@@ -229,7 +254,7 @@
     s.totalWaterMl += waterMl;
     s.totalCo2G += co2G;
 
-    const key = day || new Date().toISOString().slice(0, 10);
+    const key = day || localDayKey();
     const bucket = s.daily[key] || { count: 0, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0 };
     bucket.count += 1;
     bucket.tokens += tokens;
@@ -273,6 +298,22 @@
     );
   }
 
+  // Average prompt size (tokens) across this user's own history, from the
+  // per-query promptTokens recorded in each session. Returns { avgPromptTokens,
+  // sampleCount } where sampleCount is the number of queries counted. Queries
+  // with a 0/absent promptTokens are ignored so partial records don't skew it.
+  function computeAveragePromptTokens(sessions) {
+    let sum = 0;
+    let count = 0;
+    for (const s of sessions || []) {
+      for (const q of (s && s.queries) || []) {
+        const t = q && typeof q.promptTokens === 'number' ? q.promptTokens : 0;
+        if (t > 0) { sum += t; count += 1; }
+      }
+    }
+    return { avgPromptTokens: count ? sum / count : 0, sampleCount: count };
+  }
+
   // Mirrors the shape returned by the legacy server's weekly endpoint:
   // { totals, daily: [{ date, tokens, energyWh, waterMl, co2G, queries }] }
   function computeWeeklyStats(sessions, now) {
@@ -282,13 +323,12 @@
 
     const dailyMap = new Map();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(ref.getTime() - i * 24 * 60 * 60 * 1000);
-      const key = d.toISOString().slice(0, 10);
+      const key = localDayKey(ref.getTime() - i * 24 * 60 * 60 * 1000);
       dailyMap.set(key, { date: key, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0, queries: 0 });
     }
 
     for (const s of recent) {
-      const key = new Date(s.startTime).toISOString().slice(0, 10);
+      const key = localDayKey(s.startTime);
       const bucket = dailyMap.get(key);
       if (!bucket) continue;
       bucket.tokens += s.totalTokens || 0;
@@ -346,9 +386,11 @@
     getSavings,
     addSavings,
     // pure helpers
+    localDayKey,
     emptySavings,
     mergeSavings,
     computeTotals,
+    computeAveragePromptTokens,
     computeWeeklyStats,
     computePlatformBreakdown,
   };

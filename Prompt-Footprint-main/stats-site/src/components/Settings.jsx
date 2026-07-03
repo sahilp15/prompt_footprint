@@ -22,6 +22,7 @@ export default function Settings() {
   if (!cfg) return <div className="settings-page"><div className="page-header"><h1 className="page-title">Settings</h1></div></div>
 
   const provider = resolveWritingProvider({ ...cfg, proxyUrl, geminiApiKey })
+  const cloudOn = cfg.cloudAnalysisEnabled === true && provider === 'gemini'
 
   async function update(patch) {
     const next = await saveConfig(patch)
@@ -51,17 +52,37 @@ export default function Settings() {
       <section className="settings-section">
         <div className="settings-section-head">
           <Sparkles size={18} /><h2>AI writing help</h2>
-          <span className={`settings-pill ${provider === 'gemini' ? 'on' : 'off'}`}>
-            {provider === 'gemini' ? 'Enabled' : 'Local only'}
+          <span className={`settings-pill ${cloudOn ? 'on' : 'off'}`}>
+            {cloudOn ? 'Cloud on' : 'Local only'}
           </span>
         </div>
         <p className="settings-desc">
-          PromptFootprint works fully offline using a local spell &amp; grammar
-          checker. For higher-quality suggestions (clarity, tone, sentence
-          cleanup) you can enable an optional <strong>Gemini</strong> layer. This
-          is <strong>proxy-first</strong>: your draft text is sent to a Cloudflare
-          Worker you control, which holds the Gemini key — the key is never stored
-          in the extension.
+          PromptFootprint checks your writing on-device by default — spelling,
+          grammar, filler, repetition, and overly long sentences, with nothing
+          leaving your browser. For deeper suggestions that read the whole prompt
+          for meaning and clarity, you can turn on an optional <strong>cloud
+          analysis</strong> layer powered by Gemini. It stays off until you enable
+          it below.
+        </p>
+
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={cfg.cloudAnalysisEnabled === true}
+            disabled={!extension}
+            onChange={(e) => update({ cloudAnalysisEnabled: e.target.checked })}
+          />
+          <span>
+            Enable cloud analysis — send the draft you’re typing to Gemini
+            <strong> when you pause</strong>, to get a meaning-aware rewrite.
+            Off by default; your text never leaves the device while this is off.
+          </span>
+        </label>
+        <p className="settings-help">
+          Requires a Worker URL (or an advanced key) below. When enabled, the
+          current draft is sent on a typing pause, rate-limited, and never stored.
+          If the service is unavailable or rate-limited, PromptFootprint silently
+          falls back to the on-device checker.
         </p>
 
         <label className="settings-field">
@@ -135,6 +156,7 @@ export default function Settings() {
         <ul className="settings-keys">
           <li><kbd>Alt</kbd> + <kbd>P</kbd> — open / close the main PromptFootprint panel</li>
           <li>Drag the floating capsule anywhere; its position is remembered across reloads</li>
+          <li>Drag the stats panel’s top-left corner to resize it — the size is remembered too</li>
           <li>The capsule stays keyboard-operable: focus it and press <kbd>Enter</kbd> / <kbd>Space</kbd></li>
         </ul>
       </section>
@@ -154,16 +176,26 @@ export default function Settings() {
               <tr><td>Token counts, timing, energy/water/CO₂ metrics</td><td><code>chrome.storage.local</code></td><td>No</td></tr>
               <tr><td>Anonymous install ID, settings, realized savings</td><td><code>chrome.storage.local</code></td><td>No</td></tr>
               <tr><td><strong>Prompt / response text</strong></td><td>Not stored</td><td>No</td></tr>
-              <tr><td>Local spell &amp; grammar checking</td><td>In-browser (Typo.js + dictionary)</td><td>No</td></tr>
-              <tr><td>AI writing help (only if you enable it)</td><td>Sent to your Worker → Gemini</td><td><strong>Yes, when enabled</strong></td></tr>
+              <tr><td>Local spell, grammar, clarity &amp; repetition checks</td><td>In-browser (Typo.js + dictionary)</td><td>No</td></tr>
+              <tr><td>Cloud analysis (only if you turn it on above)</td><td>Draft sent to your Worker → Gemini</td><td><strong>Yes, when enabled</strong></td></tr>
+              <tr><td>Heatwave location (only if you choose one)</td><td>Rounded ~11 km coordinate + label, on device</td><td><strong>Coordinate → Open-Meteo for weather</strong></td></tr>
+              <tr><td>Account name &amp; synced summaries (only if you sign in)</td><td>Supabase (numbers only, never prompt text)</td><td><strong>Yes, when signed in</strong></td></tr>
             </tbody>
           </table>
-          <p><strong>The one exception:</strong> if you enable AI writing help, the
-            draft text you are typing is sent — when you pause — to the Cloudflare
-            Worker URL you configured, which forwards it to Gemini and returns a
-            suggestion. It is not stored by PromptFootprint. If the Worker is not
-            configured, fails, or is rate-limited, the extension silently falls
-            back to the offline checker.</p>
+          <p><strong>When text leaves the device:</strong> only if you turn on
+            cloud analysis. Then the draft you are typing is sent — when you pause,
+            debounced and rate-limited — to the Cloudflare Worker URL you configured,
+            which forwards it to Gemini and returns a suggestion. It is not stored by
+            PromptFootprint. If cloud analysis is off, or the Worker is missing,
+            failing, or rate-limited, the extension silently falls back to the
+            offline checker.</p>
+          <p><strong>Location &amp; weather.</strong> The heatwave estimate is
+            optional. If you choose a location on the “How it Works” page, only a
+            rounded coordinate (about 11 km — never your exact position) and a place
+            label are kept on this device, and the coordinate (or the city/ZIP you
+            type) is sent to <strong>Open-Meteo</strong> to read nearby weather. No
+            account or key is involved, and you can switch to a general estimate at
+            any time.</p>
           <p><strong>Optional account sync.</strong> If you sign in (Account, above),
             your non-sensitive settings, per-session <em>summaries</em> (numbers only),
             and per-day savings totals sync across your devices. Your prompt and

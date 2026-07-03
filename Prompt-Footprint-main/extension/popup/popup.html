@@ -24,6 +24,9 @@
       </div>
     </div>
 
+    <!-- Personalized greeting (shown when a name is known) -->
+    <div class="pf-greeting" id="pf-greeting" hidden>Hello, <span id="pf-greeting-name"></span></div>
+
     <!-- This Week -->
     <div class="pf-section">
       <div class="pf-section-label">This Week's Impact</div>
@@ -73,6 +76,9 @@
           <div class="pf-card-sub" id="pf-co2-sub">CO₂</div>
         </div>
       </div>
+
+      <!-- Personal average prompt size -->
+      <div class="pf-avg" id="pf-avg">Your average prompt: —</div>
     </div>
 
     <!-- Overlay toggle -->
@@ -133,14 +139,16 @@
 
     <!-- AI optimizer disclosure -->
     <div class="pf-disclosure">
-      Prompt usage is tracked locally on your device. AI-powered rewrite
-      suggestions send your draft prompt to an optimization service. See the
+      Everything is tracked locally on your device. Writing checks run offline;
+      draft text is only sent for AI suggestions if you turn on cloud analysis in
+      Settings. See the
       <a href="https://github.com/sahilp15/prompt_footprint/blob/main/Prompt-Footprint-main/docs/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.
     </div>
 
   </div>
   <script src="../lib/storage.js"></script>
   <script src="../lib/proxyConfig.js"></script>
+  <script src="../lib/promptSize.js"></script>
   <script src="../lib/formatters.js"></script>
   <script src="popup.js"></script>
 </body>

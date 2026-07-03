@@ -3,16 +3,18 @@
   "version": "1.0",
   "manifest_version": 3,
   "description": "Visualize the environmental impact of every AI prompt — energy, water, and CO2",
-  "permissions": ["storage", "activeTab", "alarms"],
+  "permissions": ["storage", "activeTab", "alarms", "geolocation"],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://claude.ai/*",
     "https://*.workers.dev/*",
-    "https://cpwbtulpufhqexrrzjzt.supabase.co/*"
+    "https://cpwbtulpufhqexrrzjzt.supabase.co/*",
+    "https://api.open-meteo.com/*",
+    "https://geocoding-api.open-meteo.com/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; worker-src 'self'; connect-src 'self' https://*.workers.dev https://cpwbtulpufhqexrrzjzt.supabase.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'none';"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; worker-src 'self'; connect-src 'self' https://*.workers.dev https://cpwbtulpufhqexrrzjzt.supabase.co https://api.open-meteo.com https://geocoding-api.open-meteo.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'none';"
   },
   "background": {
     "service_worker": "extension/background.js"
@@ -27,6 +29,7 @@
         "extension/lib/constants.js",
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",
+        "extension/lib/promptSize.js",
         "extension/lib/promptOptimizer.js",
         "extension/lib/vendor/typo.js",
         "extension/lib/spellChecker.js",

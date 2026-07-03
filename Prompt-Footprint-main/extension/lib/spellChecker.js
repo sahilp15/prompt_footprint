@@ -280,6 +280,9 @@
       // (safe: false) — kept out of safeFixedText/safeCount so they never
       // get bulk-applied by "Accept all safe"; spelling stays untouched.
       ..._O.detectFiller(raw),
+      // Content-level hints (type: 'clarity'): unnecessary repetition and
+      // overly long sentences. Also advisory, computed locally (no network).
+      ...(typeof _O.detectRedundancy === 'function' ? _O.detectRedundancy(raw) : []),
     ];
     // De-duplicate identical suggestions.
     const seen = new Set();

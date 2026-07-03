@@ -1,5 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Settings as SettingsIcon } from 'lucide-react'
+import { Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Settings as SettingsIcon, CircleUserRound } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
 import SessionList from './components/SessionList'
 import Savings from './components/Savings'
@@ -31,13 +31,21 @@ function App() {
               <Leaf size={16} /><span>Savings</span>
             </NavLink>
             <NavLink to="/learn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <GraduationCap size={16} /><span>How it works</span>
+              <GraduationCap size={16} /><span>How it Works</span>
             </NavLink>
             <NavLink to="/awards" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Trophy size={16} /><span>Awards</span>
             </NavLink>
             <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <SettingsIcon size={16} /><span>Settings</span>
+            </NavLink>
+            <NavLink
+              to="/settings"
+              className={({ isActive }) => `nav-account${isActive ? ' active' : ''}`}
+              title="Account"
+              aria-label="Account"
+            >
+              <CircleUserRound size={20} />
             </NavLink>
           </div>
         </div>

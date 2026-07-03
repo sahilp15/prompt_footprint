@@ -9,6 +9,12 @@
   transform: translateX(-50%) translateY(8px);
   z-index: 2147483646;
   width: min(440px, calc(100vw - 32px));
+  min-width: 280px;
+  max-width: min(600px, calc(100vw - 24px));
+  max-height: 75vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   background: rgba(250, 247, 240, 0.98);
   color: #2C1810;
   border: 1px solid #D4C5A9;
@@ -22,6 +28,29 @@
   pointer-events: none;
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
+
+/* The suggestions list is the flexible, scrollable region so the chip can be
+   made shorter without clipping the header/actions. */
+#pf-optimizer-chip .pf-opt-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+
+/* Custom resize grip, bottom-right (the chip grows down-and-right once pinned). */
+#pf-optimizer-chip .pf-opt-resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 2;
+  background:
+    linear-gradient(315deg, #B8A483 0 2px, transparent 2px) 9px 9px/6px 6px no-repeat,
+    linear-gradient(315deg, #B8A483 0 2px, transparent 2px) 5px 5px/6px 6px no-repeat;
+  opacity: 0.55;
+  border-bottom-right-radius: 14px;
+}
+#pf-optimizer-chip .pf-opt-resize:hover { opacity: 0.9; }
+#pf-optimizer-chip.pf-opt-resizing { transition: none; user-select: none; }
 
 #pf-optimizer-chip.pf-opt-visible {
   opacity: 1;
@@ -150,6 +179,14 @@
   border: 1px solid #E8E0D0;
   border-radius: 8px;
   padding: 7px 10px;
+}
+
+/* Advisory rows (prompt-size, repetition, long sentences) are informational —
+   no Accept button, a calmer tone, and a subtle left accent. */
+.pf-opt-item-advisory {
+  background: #F0EDE5;
+  border-color: #E2D8C6;
+  border-left: 3px solid #C17F24;
 }
 
 .pf-opt-item-text {

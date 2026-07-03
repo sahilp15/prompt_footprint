@@ -73,6 +73,9 @@
   function renderSuggestion(sug) {
     if (!sug) return '';
     if (sug.suggestion === '') {
+      // Advisory content hints (repetition, long sentences, prompt-size) have no
+      // replacement word — the reason explains them, so just show the flagged text.
+      if (sug.type === 'clarity' || sug.type === 'size') return escapeHtml(sug.original);
       return `${escapeHtml(sug.original)} &rarr; <strong>remove</strong>`;
     }
     const to = `<strong>${escapeHtml(sug.suggestion)}</strong>`;

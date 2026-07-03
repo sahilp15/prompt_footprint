@@ -85,6 +85,7 @@
   .mission-heading { font-size: 26px; }
 }
 
+.weather-section { margin: 20px 0 8px; }
 .page-header { margin-bottom: 8px; }
 .page-title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
 .page-subtitle { font-size: 14px; color: var(--text-muted); }

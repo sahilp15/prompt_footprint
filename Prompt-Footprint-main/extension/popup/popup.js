@@ -46,15 +46,51 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load config (overlay + writing + debug toggle state)
   const cfg = await PFStorage.getConfig();
+
+  // Personalized greeting: signed-in name (or email guess) from the background,
+  // else a locally saved name. Hidden when we have nothing to show.
+  (async () => {
+    const greetEl = document.getElementById('pf-greeting');
+    const nameEl = document.getElementById('pf-greeting-name');
+    if (!greetEl || !nameEl) return;
+    function guessFromEmail(email) {
+      if (!email || !email.includes('@')) return null;
+      const local = email.split('@')[0].replace(/[._+-]+/g, ' ').trim();
+      return local ? local.charAt(0).toUpperCase() + local.slice(1) : null;
+    }
+    let name = null;
+    try {
+      const s = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }, (r) => {
+          if (chrome.runtime.lastError) resolve(null); else resolve(r);
+        });
+      });
+      if (s && (s.state === 'logged_in' || s.state === 'offline')) {
+        name = s.displayName || guessFromEmail(s.email);
+      }
+    } catch (_) { /* ignore */ }
+    if (!name && typeof cfg.displayName === 'string' && cfg.displayName.trim()) name = cfg.displayName.trim();
+    if (name) { nameEl.textContent = name; greetEl.hidden = false; }
+  })();
   overlayToggle.checked = cfg.overlayEnabled !== false;
   if (writingToggle) writingToggle.checked = cfg.writingChecksEnabled !== false;
   if (debugToggle) debugToggle.checked = cfg.debug === true;
 
-  // AI writing status is derived from config (proxy URL or advanced key).
+  // AI writing status: reflect the real state — cloud is opt-in, and if the
+  // service is cooling down after a rate-limit we say so instead of looking on.
   if (aiStatusEl) {
     const provider = (typeof PFProxyConfig !== 'undefined')
       ? PFProxyConfig.resolveWritingProvider(cfg) : 'local';
-    aiStatusEl.textContent = provider === 'gemini' ? 'On (Gemini proxy)' : 'Local only';
+    if (cfg.cloudAnalysisEnabled === true && provider === 'gemini') {
+      aiStatusEl.textContent = 'Cloud on';
+      chrome.runtime.sendMessage({ type: 'GET_AI_STATS' }, (resp) => {
+        if (chrome.runtime.lastError || !resp) return;
+        if (resp.cooling) aiStatusEl.textContent = 'Paused (rate-limited)';
+        else if (resp.successRate != null) aiStatusEl.textContent = `Cloud on (${Math.round(resp.successRate * 100)}% ok)`;
+      });
+    } else {
+      aiStatusEl.textContent = 'Local only';
+    }
   }
 
   // Load weekly stats and display as conversions
@@ -82,6 +118,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const c = co2Conversion(co2);
   document.getElementById('pf-co2').textContent    = c.main;
   document.getElementById('pf-co2-sub').textContent = c.sub;
+
+  // Personal average prompt size (from this user's own saved queries).
+  const avgEl = document.getElementById('pf-avg');
+  if (avgEl && typeof PFStorage.computeAveragePromptTokens === 'function' && typeof PFPromptSize !== 'undefined') {
+    try {
+      const sessions = await PFStorage.getSessions(userId);
+      const { avgPromptTokens, sampleCount } = PFStorage.computeAveragePromptTokens(sessions);
+      avgEl.textContent = PFPromptSize.averageLabel(avgPromptTokens, sampleCount);
+    } catch (_) {
+      avgEl.textContent = 'Your average prompt: —';
+    }
+  }
 
   // Overlay toggle
   overlayToggle.addEventListener('change', async () => {
