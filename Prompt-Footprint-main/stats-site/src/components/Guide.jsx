@@ -1,4 +1,5 @@
-import { Hash, Zap, Droplets, Wind, Clock, Eye, Calculator, Scissors, Layers, Repeat, Gauge, ShieldCheck, MonitorSmartphone, PencilLine, AlertTriangle, ExternalLink, FileText } from 'lucide-react'
+import { Hash, Zap, Droplets, Wind, Clock, Eye, Calculator, Scissors, Layers, Repeat, Gauge, ShieldCheck, MonitorSmartphone, PencilLine, AlertTriangle, ExternalLink, FileText, Thermometer } from 'lucide-react'
+import HeatwaveCard from './HeatwaveCard'
 import './Guide.css'
 
 const STATS = [
@@ -30,6 +31,7 @@ const LIMITS = [
   'Claude’s numbers are inferred from ChatGPT’s, because Anthropic doesn’t publish per-prompt energy or water figures.',
   'Response time includes network and queue delays, not just the model’s compute, so the time adjustment is capped at 3×.',
   'We can’t see provider-side batching, caching, or which hardware ran the request.',
+  'The heatwave adjustment uses the nearest known cloud region as a proxy — real request routing isn’t public — and reads weather near that region, not the exact data center.',
 ]
 
 const REFS = [
@@ -38,6 +40,7 @@ const REFS = [
   { id: 3, authors: 'Jegham, N., et al.', year: 2025, title: 'How Hungry is AI? Benchmarking Energy, Water, and Carbon Footprint of LLM Inference', journal: 'arXiv:2505.09598', url: 'https://arxiv.org/abs/2505.09598' },
   { id: 4, authors: 'Li, P., et al.', year: 2023, title: "Making AI Less 'Thirsty': Uncovering and Addressing the Secret Water Footprint of AI Models", journal: 'arXiv:2304.03271', url: 'https://arxiv.org/abs/2304.03271' },
   { id: 5, authors: 'International Energy Agency', year: 2023, title: 'Data Centres and Data Transmission Networks', journal: 'IEA', url: 'https://www.iea.org/energy-system/buildings/data-centres-and-data-transmission-networks' },
+  { id: 6, authors: 'Associated Press', year: 2024, title: 'As heat waves grow, data centers’ thirst for power and water strains the grid', journal: 'AP News', url: 'https://apnews.com/article/data-center-heat-wave-lowell-5607b4ea8ef9776b28268561060752a8' },
 ]
 
 const PDF_URL = 'https://drive.google.com/file/d/1nDAt8aSZNNfovCfc_9QFwZ_-LtZ_wdB1/view?usp=sharing'
@@ -46,7 +49,7 @@ export default function Guide() {
   return (
     <div className="guide-page">
       <div className="page-header">
-        <h1 className="page-title">How PromptFootprint works</h1>
+        <h1 className="page-title">How PromptFootprint Works</h1>
         <p className="page-subtitle">What the numbers mean, how they’re calculated, and where the estimates end.</p>
       </div>
 
@@ -121,6 +124,32 @@ export default function Guide() {
         <div className="guide-formula">
           impact = tokens × per-token cost × time factor
         </div>
+      </section>
+
+      {/* Heatwave / weather adjustment */}
+      <section className="guide-section">
+        <h2 className="guide-h2"><Thermometer size={18} className="guide-h2-icon" /> When hot weather changes the estimate</h2>
+        <p className="guide-lead">
+          The per-token costs above bake in a data center’s <em>average</em>
+          cooling overhead for the year. That average hides a real problem: during
+          a heatwave, cooling demand spikes. A site that normally runs at a power
+          usage effectiveness (PUE) of about 1.1 — roughly 10% overhead on top of
+          the computing itself — can climb toward 1.3–1.4 in extreme heat, which
+          means three to four times the cooling power. Hot spells also strain the
+          grid the data center draws from, since thermal and nuclear plants lose
+          capacity when the water they rely on runs warm.
+        </p>
+        <p className="guide-lead">
+          So the same prompt can carry more energy and water on a scorching
+          afternoon than on a mild one. When you share a rough location,
+          PromptFootprint looks up the current weather near the closest known cloud
+          region and shows a heat-adjusted figure when it’s warranted. One honest
+          caveat: we can’t see which data center actually served your request —
+          that routing isn’t public — so this always uses the <strong>nearest known
+          cloud region as a proxy</strong> and is clearly marked as an approximation.
+        </p>
+
+        <HeatwaveCard />
       </section>
 
       {/* Token savings */}

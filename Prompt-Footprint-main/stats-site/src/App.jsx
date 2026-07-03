@@ -31,7 +31,7 @@ function App() {
               <Leaf size={16} /><span>Savings</span>
             </NavLink>
             <NavLink to="/learn" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <GraduationCap size={16} /><span>How it works</span>
+              <GraduationCap size={16} /><span>How it Works</span>
             </NavLink>
             <NavLink to="/awards" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Trophy size={16} /><span>Awards</span>

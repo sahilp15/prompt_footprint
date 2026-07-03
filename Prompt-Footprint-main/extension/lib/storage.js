@@ -102,6 +102,13 @@
     // Cloud analysis is OPT-IN (default off). When false, draft text is never
     // sent to Gemini/the proxy — only the offline checker runs.
     if (typeof patch.cloudAnalysisEnabled === 'boolean') next.cloudAnalysisEnabled = patch.cloudAnalysisEnabled;
+    // Heatwave estimate: chosen location mode + a COARSE (privacy) coordinate and
+    // a human label. 'geo' | 'manual' | 'general' | 'off'. Only what's needed to
+    // look up nearby data-center weather is stored — never a precise position.
+    if (typeof patch.heatwaveLocationMode === 'string') next.heatwaveLocationMode = patch.heatwaveLocationMode;
+    if (typeof patch.heatwaveLat === 'number' || patch.heatwaveLat === null) next.heatwaveLat = patch.heatwaveLat;
+    if (typeof patch.heatwaveLon === 'number' || patch.heatwaveLon === null) next.heatwaveLon = patch.heatwaveLon;
+    if (typeof patch.heatwavePlaceLabel === 'string') next.heatwavePlaceLabel = patch.heatwavePlaceLabel;
     // AI writing layer config (kept on-device; the Gemini key, if any, never
     // leaves chrome.storage.local — it is only read by the service worker).
     if (typeof patch.proxyUrl === 'string') next.proxyUrl = patch.proxyUrl.trim();
