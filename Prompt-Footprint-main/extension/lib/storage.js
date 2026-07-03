@@ -289,6 +289,22 @@
     );
   }
 
+  // Average prompt size (tokens) across this user's own history, from the
+  // per-query promptTokens recorded in each session. Returns { avgPromptTokens,
+  // sampleCount } where sampleCount is the number of queries counted. Queries
+  // with a 0/absent promptTokens are ignored so partial records don't skew it.
+  function computeAveragePromptTokens(sessions) {
+    let sum = 0;
+    let count = 0;
+    for (const s of sessions || []) {
+      for (const q of (s && s.queries) || []) {
+        const t = q && typeof q.promptTokens === 'number' ? q.promptTokens : 0;
+        if (t > 0) { sum += t; count += 1; }
+      }
+    }
+    return { avgPromptTokens: count ? sum / count : 0, sampleCount: count };
+  }
+
   // Mirrors the shape returned by the legacy server's weekly endpoint:
   // { totals, daily: [{ date, tokens, energyWh, waterMl, co2G, queries }] }
   function computeWeeklyStats(sessions, now) {
@@ -365,6 +381,7 @@
     emptySavings,
     mergeSavings,
     computeTotals,
+    computeAveragePromptTokens,
     computeWeeklyStats,
     computePlatformBreakdown,
   };

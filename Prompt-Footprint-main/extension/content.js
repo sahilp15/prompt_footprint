@@ -668,6 +668,34 @@
   let lastAiText = '';               // last prompt sent to the AI
   const aiCache = new Map();         // prompt text -> AI improved text
 
+  // The user's own average prompt size, refreshed lazily from stored sessions so
+  // the size indicator compares against personal history (not a global number).
+  let personalPromptAvg = { avgPromptTokens: 0, sampleCount: 0 };
+  let personalAvgLoadedAt = 0;
+  function refreshPersonalPromptAvg() {
+    if (typeof PFStorage === 'undefined' || typeof PFStorage.getSessions !== 'function') return;
+    if (Date.now() - personalAvgLoadedAt < 60000) return; // at most once a minute
+    personalAvgLoadedAt = Date.now();
+    PFStorage.getSessions(userId)
+      .then((sessions) => { personalPromptAvg = PFStorage.computeAveragePromptTokens(sessions); })
+      .catch(() => {});
+  }
+
+  // Build an advisory prompt-size hint for the CURRENT draft, comparing its token
+  // estimate to the user's personal average. Returns null when there's nothing
+  // worth saying (typical/short prompts, or too little text).
+  function sizeHintSuggestion(text) {
+    if (typeof PFPromptSize === 'undefined' || typeof estimateTokens === 'undefined') return null;
+    let curTokens = 0;
+    try { curTokens = estimateTokens(text); } catch (_) { return null; }
+    const cls = PFPromptSize.classifyPromptSize(curTokens, personalPromptAvg);
+    if (!cls.message) return null;
+    const reason = cls.hasHistory
+      ? `Your average prompt: ${cls.avgPromptTokens} tokens`
+      : 'Based on typical prompt sizes';
+    return { type: 'size', original: cls.message, suggestion: '', reason, safe: false };
+  }
+
   // ── Offline dictionary (lazy) ───────────────────────────────────────────--
   // Loaded once, on first analysis, so it never delays page load. The checker
   // also works (curated typos + rules) before/without the dictionary, so a load
@@ -916,10 +944,14 @@
     // "Accept all safe".
     const rows = res.suggestions.slice(0, 6).map((s, i) => {
       const idx = res.suggestions.indexOf(s);
-      return `<div class="pf-opt-item">
+      // Advisory hints (prompt-size, repetition, long sentences) are informational
+      // only — there is nothing to "Accept", so we omit the button for them.
+      const advisory = s.type === 'size' || s.type === 'clarity';
+      const acceptBtn = advisory ? '' : `<button class="pf-opt-accept" type="button" data-pf-accept="${idx}">Accept</button>`;
+      return `<div class="pf-opt-item${advisory ? ' pf-opt-item-advisory' : ''}">
           <div class="pf-opt-item-text">${PFWritingFormat.renderSuggestion(s)}</div>
           <div class="pf-opt-item-reason">${PFWritingFormat.escapeHtml(s.reason)}${fillerSavingsBadge(s)}</div>
-          <button class="pf-opt-accept" type="button" data-pf-accept="${idx}">Accept</button>
+          ${acceptBtn}
         </div>`;
     }).join('');
     listEl.innerHTML = rows;
@@ -976,15 +1008,19 @@
     if (text.length < WRITING_MIN_CHARS) { hideOptimizerChip(); return; }
     const checker = await getWritingChecker(); // may be null (curated rules still run)
     if (getInputText(el) !== text) return;     // user kept typing
+    refreshPersonalPromptAvg();
     const res = PFSpellChecker.analyzeWriting(text, { typo: checker });
-    if (!res.suggestions.length) {
+    // Prepend a personal prompt-size hint (advisory, informational) when relevant.
+    const sizeHint = sizeHintSuggestion(text);
+    const suggestions = sizeHint ? [sizeHint, ...res.suggestions] : res.suggestions;
+    if (!suggestions.length) {
       // Don't clobber an AI "improved" card already showing for this text.
       if (!writingState || writingState.source !== 'ai') hideOptimizerChip();
       return;
     }
     writingState = { input: el, text, source: 'local',
-      suggestions: res.suggestions, safeFixedText: res.safeFixedText, safeCount: res.safeCount };
-    renderWritingSuggestions(res);
+      suggestions, safeFixedText: res.safeFixedText, safeCount: res.safeCount };
+    renderWritingSuggestions({ ...res, suggestions });
   }
 
   // Tier 2 — AI writing improvement via the Gemini proxy (background →

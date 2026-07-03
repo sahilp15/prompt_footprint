@@ -152,6 +152,14 @@
   padding: 7px 10px;
 }
 
+/* Advisory rows (prompt-size, repetition, long sentences) are informational —
+   no Accept button, a calmer tone, and a subtle left accent. */
+.pf-opt-item-advisory {
+  background: #F0EDE5;
+  border-color: #E2D8C6;
+  border-left: 3px solid #C17F24;
+}
+
 .pf-opt-item-text {
   grid-column: 1;
   grid-row: 1;

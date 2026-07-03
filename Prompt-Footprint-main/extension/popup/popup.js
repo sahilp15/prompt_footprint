@@ -50,11 +50,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (writingToggle) writingToggle.checked = cfg.writingChecksEnabled !== false;
   if (debugToggle) debugToggle.checked = cfg.debug === true;
 
-  // AI writing status is derived from config (proxy URL or advanced key).
+  // AI writing status: reflect the real state — cloud is opt-in, and if the
+  // service is cooling down after a rate-limit we say so instead of looking on.
   if (aiStatusEl) {
     const provider = (typeof PFProxyConfig !== 'undefined')
       ? PFProxyConfig.resolveWritingProvider(cfg) : 'local';
-    aiStatusEl.textContent = provider === 'gemini' ? 'On (Gemini proxy)' : 'Local only';
+    if (cfg.cloudAnalysisEnabled === true && provider === 'gemini') {
+      aiStatusEl.textContent = 'Cloud on';
+      chrome.runtime.sendMessage({ type: 'GET_AI_STATS' }, (resp) => {
+        if (chrome.runtime.lastError || !resp) return;
+        if (resp.cooling) aiStatusEl.textContent = 'Paused (rate-limited)';
+        else if (resp.successRate != null) aiStatusEl.textContent = `Cloud on (${Math.round(resp.successRate * 100)}% ok)`;
+      });
+    } else {
+      aiStatusEl.textContent = 'Local only';
+    }
   }
 
   // Load weekly stats and display as conversions
@@ -82,6 +92,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const c = co2Conversion(co2);
   document.getElementById('pf-co2').textContent    = c.main;
   document.getElementById('pf-co2-sub').textContent = c.sub;
+
+  // Personal average prompt size (from this user's own saved queries).
+  const avgEl = document.getElementById('pf-avg');
+  if (avgEl && typeof PFStorage.computeAveragePromptTokens === 'function' && typeof PFPromptSize !== 'undefined') {
+    try {
+      const sessions = await PFStorage.getSessions(userId);
+      const { avgPromptTokens, sampleCount } = PFStorage.computeAveragePromptTokens(sessions);
+      avgEl.textContent = PFPromptSize.averageLabel(avgPromptTokens, sampleCount);
+    } catch (_) {
+      avgEl.textContent = 'Your average prompt: —';
+    }
+  }
 
   // Overlay toggle
   overlayToggle.addEventListener('change', async () => {

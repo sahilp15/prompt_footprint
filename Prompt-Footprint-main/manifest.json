@@ -27,6 +27,7 @@
         "extension/lib/constants.js",
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",
+        "extension/lib/promptSize.js",
         "extension/lib/promptOptimizer.js",
         "extension/lib/vendor/typo.js",
         "extension/lib/spellChecker.js",
