@@ -10,6 +10,7 @@
 
 importScripts(
   'lib/proxyConfig.js',
+  'lib/aiClient.js',
   'lib/storage.js',
   'lib/vendor/supabase.js',
   'lib/supabaseClient.js',
@@ -99,14 +100,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // rate limit, bad JSON) so the content script falls back to local-only
   // suggestions and the UI never breaks.
   if (message.type === 'OPTIMIZE_PROMPT') {
-    handleAiRequest('shorten', message.payload?.text)
-      .then((text) => sendResponse({ rewritten: text }));
+    runAiRequest('shorten', message.payload?.text)
+      .then((r) => sendResponse({ rewritten: r.text, status: r.status }));
     return true; // async
   }
   if (message.type === 'IMPROVE_WRITING') {
-    handleAiRequest('improve', message.payload?.text)
-      .then((text) => sendResponse({ improved: text }));
+    runAiRequest('improve', message.payload?.text)
+      .then((r) => sendResponse({ improved: r.text, status: r.status }));
     return true; // async
+  }
+  // Truthful health of the AI writing layer, for the popup/UI to show a clear
+  // state (success rate over real network attempts; whether we're cooling down
+  // after a 429). Never counts "not configured" / cached / throttled as failures.
+  if (message.type === 'GET_AI_STATS') {
+    chrome.storage.local.get([AI_STATS_KEY], (res) => {
+      const stats = res[AI_STATS_KEY] || PFAiClient.emptyAiStats();
+      sendResponse({
+        stats,
+        successRate: PFAiClient.successRate(stats),
+        cooling: Date.now() < aiCooldownUntil,
+        cooldownUntil: aiCooldownUntil,
+      });
+    });
+    return true;
   }
 
   // ── Optional accounts & sync (Phase 2) ─────────────────────────────────
@@ -155,13 +171,51 @@ try {
   });
 } catch (_) { /* alarms unavailable: skip periodic sync, on-demand still works */ }
 
-// ── AI writing layer (proxy-first, graceful) ───────────────────────────────--
+// ── AI writing layer (proxy-first, rate-limited, graceful) ─────────────────--
 // Resolves the provider from user config each call: a configured Worker URL
 // (built-in default or user override) is preferred; an advanced user-supplied
 // Gemini key is the fallback; otherwise local-only. `mode` is 'shorten' or
-// 'improve'. Always resolves to a string ('' means "use local suggestions").
+// 'improve'. Returns { text, status }; text '' means "use local suggestions".
+//
+// The service worker is the single cross-tab chokepoint, so all rate control
+// lives here: a token-bucket backstop, a bounded TTL cache, in-flight dedup, and
+// — crucially — a global cooldown after a 429 (honoring Retry-After) so we stop
+// spending quota instead of hammering. Transient 5xx/network errors get a couple
+// of backoff-with-jitter retries; a 429 does NOT (that would make it worse).
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const AI_REQUEST_TIMEOUT_MS = 10000;
+const AI_MAX_TRANSIENT_RETRIES = 2;      // 5xx / network only
+const AI_DEFAULT_COOLDOWN_MS = 30000;    // when a 429 gives no Retry-After
+const AI_MAX_COOLDOWN_MS = 120000;       // clamp a hostile Retry-After
+const AI_STATS_KEY = 'pf_ai_stats';
+
+// Cross-tab rate control (service worker is a singleton).
+let aiBucket = PFAiClient.createTokenBucket({ capacity: 5, refillPerMinute: 10, now: Date.now() });
+let aiCache = PFAiClient.createTtlCache({ maxEntries: 100, ttlMs: 10 * 60 * 1000 });
+let aiCooldownUntil = 0;           // epoch ms; while now < this, do not hit the network
+const aiInFlight = new Map();      // cacheKey -> Promise (dedup concurrent identical work)
+
+// Test-only hook (harmless in production; never called by the extension). Lets
+// unit tests reset the cross-request rate-limit state between cases.
+if (typeof self !== 'undefined') {
+  self.__pfResetAiState = () => {
+    aiBucket = PFAiClient.createTokenBucket({ capacity: 5, refillPerMinute: 10, now: Date.now() });
+    aiCache = PFAiClient.createTtlCache({ maxEntries: 100, ttlMs: 10 * 60 * 1000 });
+    aiCooldownUntil = 0;
+    aiInFlight.clear();
+  };
+}
+
+function aiDelay(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function recordAiOutcome(outcome) {
+  try {
+    const res = await new Promise((resolve) => chrome.storage.local.get([AI_STATS_KEY], resolve));
+    const next = PFAiClient.nextAiStats(res[AI_STATS_KEY], outcome, Date.now());
+    await new Promise((resolve) => chrome.storage.local.set({ [AI_STATS_KEY]: next }, resolve));
+  } catch (_) { /* metrics are best-effort */ }
+}
+
 const GEMINI_IMPROVE_SYSTEM = [
   'You are a writing assistant. Improve the user\'s text for spelling, grammar,',
   'capitalization, punctuation, clarity, tone, and concision while preserving the',
@@ -185,39 +239,12 @@ async function fetchWithTimeout(url, opts, timeoutMs) {
   }
 }
 
-async function handleAiRequest(mode, text) {
-  if (typeof text !== 'string' || !text.trim()) return '';
-  let config = {};
-  try { config = await PFStorage.getConfig(); } catch (_) {}
-  const field = mode === 'improve' ? 'improved' : 'rewritten';
-  const proxyUrl = PFProxyConfig.resolveProxyUrl(config);
-
-  try {
-    if (proxyUrl) {
-      const r = await fetchWithTimeout(proxyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, mode }),
-      }, AI_REQUEST_TIMEOUT_MS);
-      if (!r.ok) return '';
-      const d = await r.json().catch(() => null);
-      // Worker may answer with {improved} or {rewritten}; accept either.
-      return PFProxyConfig.pickField(d, field) || PFProxyConfig.pickField(d, 'rewritten');
-    }
-    // Advanced: user supplied their own Gemini key (kept on-device only).
-    const key = config && typeof config.geminiApiKey === 'string' ? config.geminiApiKey.trim() : '';
-    if (key) return await callGeminiDirect(key, mode, text);
-  } catch (_) {
-    // fall through to local-only
-  }
-  return '';
-}
-
-async function callGeminiDirect(key, mode, text) {
+// Build the direct-Gemini request (advanced users who supplied their own key).
+function buildGeminiDirect(key, mode, text) {
   const system = mode === 'improve' ? GEMINI_IMPROVE_SYSTEM
     : 'Rewrite the prompt to use fewer tokens while preserving exact meaning. Output ONLY the rewritten prompt.';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`;
-  const r = await fetchWithTimeout(url, {
+  const opts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -225,12 +252,103 @@ async function callGeminiDirect(key, mode, text) {
       contents: [{ role: 'user', parts: [{ text }] }],
       generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
     }),
-  }, AI_REQUEST_TIMEOUT_MS);
-  if (!r.ok) return '';
-  const data = await r.json().catch(() => null);
-  const parts = data && data.candidates && data.candidates[0] &&
-    data.candidates[0].content && data.candidates[0].content.parts;
-  return Array.isArray(parts) ? parts.map((p) => p.text || '').join('').trim() : '';
+  };
+  return { url, opts };
+}
+
+// One network attempt. Returns a classified result WITHOUT deciding retry policy:
+//   { kind:'ok', text } | { kind:'rate_limited', retryAfterMs }
+//   | { kind:'server_error' } | { kind:'client_error' } | { kind:'network_error' }
+async function aiFetchOnce(proxyUrl, config, mode, text, field) {
+  try {
+    let r;
+    let extract;
+    if (proxyUrl) {
+      r = await fetchWithTimeout(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, mode }),
+      }, AI_REQUEST_TIMEOUT_MS);
+      extract = async (resp) => {
+        const d = await resp.json().catch(() => null);
+        // Worker may answer with {improved} or {rewritten}; accept either.
+        return PFProxyConfig.pickField(d, field) || PFProxyConfig.pickField(d, 'rewritten');
+      };
+    } else {
+      const key = config && typeof config.geminiApiKey === 'string' ? config.geminiApiKey.trim() : '';
+      const built = buildGeminiDirect(key, mode, text);
+      r = await fetchWithTimeout(built.url, built.opts, AI_REQUEST_TIMEOUT_MS);
+      extract = async (resp) => {
+        const data = await resp.json().catch(() => null);
+        const parts = data && data.candidates && data.candidates[0] &&
+          data.candidates[0].content && data.candidates[0].content.parts;
+        return Array.isArray(parts) ? parts.map((p) => p.text || '').join('').trim() : '';
+      };
+    }
+    const cls = PFAiClient.classifyStatus(r.status);
+    if (cls === 'ok') return { kind: 'ok', text: await extract(r) };
+    if (cls === 'rate_limited') {
+      const ra = r.headers && typeof r.headers.get === 'function' ? r.headers.get('Retry-After') : null;
+      return { kind: 'rate_limited', retryAfterMs: PFAiClient.parseRetryAfterMs(ra, Date.now()) };
+    }
+    if (cls === 'server_error') return { kind: 'server_error' };
+    return { kind: 'client_error' };
+  } catch (_) {
+    return { kind: 'network_error' };
+  }
+}
+
+// Orchestrates one AI writing request with full rate control. Returns
+// { text, status } — see the section header for the status vocabulary.
+async function runAiRequest(mode, text) {
+  if (typeof text !== 'string' || !text.trim()) return { text: '', status: 'unconfigured' };
+  let config = {};
+  try { config = await PFStorage.getConfig(); } catch (_) {}
+  const field = mode === 'improve' ? 'improved' : 'rewritten';
+  const proxyUrl = PFProxyConfig.resolveProxyUrl(config);
+  const key = config && typeof config.geminiApiKey === 'string' ? config.geminiApiKey.trim() : '';
+  // Not configured is NOT a failure — never record it, never count it against
+  // the success rate. This is the fix for the misleading "0% success".
+  if (!proxyUrl && !key) return { text: '', status: 'unconfigured' };
+
+  const cacheKey = mode + ' ' + text;
+  const cached = aiCache.get(cacheKey, Date.now());
+  if (cached !== undefined) { recordAiOutcome('cached'); return { text: cached, status: 'cached' }; }
+  if (aiInFlight.has(cacheKey)) return aiInFlight.get(cacheKey);
+
+  const work = (async () => {
+    // Cooling down after a recent 429: don't touch the network.
+    if (Date.now() < aiCooldownUntil) { await recordAiOutcome('cooldown'); return { text: '', status: 'cooldown' }; }
+    // Local backstop against runaway calls.
+    if (!aiBucket.tryRemove(Date.now())) { await recordAiOutcome('throttled'); return { text: '', status: 'throttled' }; }
+
+    let attempt = 0;
+    for (;;) {
+      const res = await aiFetchOnce(proxyUrl, config, mode, text, field);
+      if (res.kind === 'ok') {
+        const out = res.text || '';
+        if (out) aiCache.set(cacheKey, out, Date.now());
+        await recordAiOutcome('success');
+        return { text: out, status: 'success' };
+      }
+      if (res.kind === 'rate_limited') {
+        const cd = res.retryAfterMs != null ? res.retryAfterMs : AI_DEFAULT_COOLDOWN_MS;
+        aiCooldownUntil = Date.now() + Math.min(Math.max(cd, 1000), AI_MAX_COOLDOWN_MS);
+        await recordAiOutcome('rate_limited');
+        return { text: '', status: 'rate_limited' };
+      }
+      if ((res.kind === 'server_error' || res.kind === 'network_error') && attempt < AI_MAX_TRANSIENT_RETRIES) {
+        await aiDelay(PFAiClient.computeBackoffMs(attempt, { base: 400, cap: 8000 }));
+        attempt += 1;
+        continue;
+      }
+      await recordAiOutcome('error');
+      return { text: '', status: 'error' };
+    }
+  })().finally(() => aiInFlight.delete(cacheKey));
+
+  aiInFlight.set(cacheKey, work);
+  return work;
 }
 
 // End session when its tab is closed.

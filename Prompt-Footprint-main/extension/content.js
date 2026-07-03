@@ -656,9 +656,12 @@
   const OPTIMIZER_MIN_TOKENS = 1;    // only count savings if it saves something real
                                       // (single filler-word accepts often save just 1 token)
   const OPTIMIZER_DEBOUNCE_MS = 350; // local heuristic (instant feel)
-  const AI_DEBOUNCE_MS = 1100;       // AI (waits for a typing pause)
+  const AI_DEBOUNCE_MS = 1500;       // AI (waits for a real typing pause)
+  const AI_MIN_INTERVAL_MS = 4000;   // hard floor between AI calls from this tab,
+                                      // so holding down keys can't burn quota
   let optimizerTimer = null;
   let aiTimer = null;
+  let lastAiSentAt = 0;              // epoch ms of the last AI request from this tab
   // Current chip state: { input, text, source:'local'|'ai', suggestions?,
   // safeFixedText?, safeCount?, improved? }. Null when the chip is hidden.
   let writingState = null;
@@ -992,13 +995,31 @@
     const text = getInputText(el);
     if (text.length < WRITING_MIN_CHARS) return;
     if (text === lastAiText) return;
-    lastAiText = text;
 
     let improved = aiCache.get(text);
     if (improved === undefined) {
+      // Client-side floor: never send faster than the min interval, however the
+      // debounce fires. Reschedule (don't drop) so a real pause still gets one
+      // call once the interval elapses.
+      const sinceLast = Date.now() - lastAiSentAt;
+      if (sinceLast < AI_MIN_INTERVAL_MS) {
+        clearTimeout(aiTimer);
+        aiTimer = setTimeout(() => analyzeWritingAI(el), AI_MIN_INTERVAL_MS - sinceLast);
+        return;
+      }
+      lastAiText = text;
+      lastAiSentAt = Date.now();
       const resp = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text } });
       improved = (resp && resp.improved) || '';
-      aiCache.set(text, improved);
+      const status = resp && resp.status;
+      // Cache only a definitive answer. Transient states (rate_limited, cooldown,
+      // throttled, error) are NOT cached, and we clear lastAiText so the same
+      // draft can be retried on a later pause instead of being stuck on local.
+      if (status === 'success' || status === 'cached' || status === 'unconfigured') {
+        aiCache.set(text, improved);
+      } else {
+        lastAiText = '';
+      }
     }
     if (!improved || improved.trim() === text.trim()) return;
     if (getInputText(el) !== text) return; // user kept typing
