@@ -1,11 +1,12 @@
 # PromptFootprint — Privacy Policy
 
-_Last updated: 2026-07-01_
+_Last updated: 2026-07-03_
 
 PromptFootprint is a browser extension that estimates the environmental impact
 (tokens → energy, water, CO₂) of your AI chat usage on ChatGPT and Claude, offers
-a local spell/grammar checker and an optional AI writing helper, and suggests
-shorter prompts that use fewer tokens.
+a local spell/grammar checker and an optional AI writing helper, suggests shorter
+prompts that use fewer tokens, and can show a heatwave-adjusted estimate using
+nearby weather when you opt in to sharing a rough location.
 
 This policy explains exactly what the extension does with data. The short version:
 **everything works on your device by default, and your prompts and the models'
@@ -26,6 +27,8 @@ device — but only ones you turn on yourself, and this policy spells out each o
 - Runs an offline spelling/grammar/clarity checker as you type.
 - Optionally rewrites your draft with Google Gemini, if you enable it.
 - Suggests shorter prompts and totals up the tokens you save when you apply them.
+- Optionally checks the weather near the closest known cloud region — if you share
+  a rough location — to show a heatwave-adjusted impact estimate when it's warranted.
 
 ## 2. What is stored, and where
 
@@ -36,8 +39,9 @@ which is private to the extension in your Chrome profile.
 |------|--------------|---------------------|
 | Token counts, timing, estimated energy/water/CO₂ per session | `chrome.storage.local` | **No** |
 | Anonymous install ID (random UUID) | `chrome.storage.local` | **No** |
-| Settings (overlay/writing toggles, energy multiplier, capsule/optimizer position, Worker URL, optional Gemini key) | `chrome.storage.local` | **No** |
+| Settings (overlay/writing toggles, cloud-analysis opt-in, energy multiplier, capsule/optimizer position and panel size, Worker URL, optional Gemini key, optional display name) | `chrome.storage.local` | **No** |
 | Realized savings from applying shorter-prompt suggestions | `chrome.storage.local` (`pf_savings`) | **No** |
+| Optional heatwave location: a **rounded** coordinate (~11 km) + a place/region label | `chrome.storage.local` | **No** (used only to fetch weather — see §6) |
 | **The text of your prompts and the models' replies** | **Not stored** | **No** |
 
 **We never store the text of your prompts or the models' responses.** The extension
@@ -60,14 +64,20 @@ The writing helper has two tiers:
    to an external service to produce higher-quality suggestions (clarity, tone,
    sentence cleanup).
 
-This second tier is **proxy-first and disabled by default.** It does nothing until
-you set a Cloudflare Worker URL (which holds the Gemini API key) on the dashboard
-Settings page. The Gemini key is **never** shipped in the extension.
+This second tier is **proxy-first and disabled by default.** It stays off until you
+do two things on the dashboard Settings page: (1) turn on the **"Enable cloud
+analysis"** toggle, and (2) provide a Cloudflare Worker URL (which holds the Gemini
+API key). Until both are set, no draft text ever leaves your device — this is
+enforced both where the request is triggered and again at the network boundary in
+the extension's background worker. The Gemini key is **never** shipped in the
+extension.
 
-What is sent, only when you enable this tier: the in-progress draft text, when you
-pause typing. It is used solely to generate the suggestion and is **not stored** by
-PromptFootprint or (in the recommended setup) by the Worker. If the Worker is unset,
-fails, or is rate-limited, the editor silently falls back to the offline checker.
+What is sent, only when you have opted in: the in-progress draft text, when you
+pause typing. Requests are debounced and rate-limited so typing can't spam the
+service. The text is used solely to generate the suggestion and is **not stored** by
+PromptFootprint or (in the recommended setup) by the Worker. If cloud analysis is
+off, or the Worker is unset, fails, or is rate-limited, the editor silently falls
+back to the offline checker.
 
 To keep everything on-device, leave the Worker URL blank. The offline checker still
 works. You can also turn off all suggestions from the popup or Settings.
@@ -104,14 +114,37 @@ account can read them. Signing out keeps all of your local data and returns the
 extension to on-device-only mode. If you are offline or the service is unavailable,
 local tracking keeps working and syncs later.
 
-## 6. Analytics and diagnostics
+## 6. Optional location & weather (heatwave estimate, off by default)
+
+Cooling a data center takes more energy and water in hot weather, so PromptFootprint
+can show a heatwave-adjusted estimate. This needs a rough idea of where you are, and
+it is **entirely optional and off until you choose a location** on the "How it Works"
+page.
+
+- **You choose how.** You can allow the browser's location prompt, type a **city or
+  ZIP/postal code**, or pick **"use a general estimate"** (no location at all). If you
+  decline the browser prompt, nothing breaks — the manual and general options remain.
+- **What is stored:** only a **rounded** coordinate (to about 11 km — never your exact
+  position or address) and a short place/region label, in `chrome.storage.local` on
+  your device. This is stored so the choice persists; it is not uploaded by us.
+- **What is looked up:** the current weather near the **nearest known cloud region**
+  (a proxy — real request routing isn't public, so we never claim to know the exact
+  data center). Weather comes from **Open-Meteo** (`api.open-meteo.com`,
+  `geocoding-api.open-meteo.com`), a free service that needs **no account or API key**.
+  A weather/geocoding request sends the coordinate (or the city/ZIP you typed) to
+  Open-Meteo; see their privacy terms for how they handle requests. We send nothing
+  else, and we don't store the weather.
+- **How to turn it off:** choose "use a general estimate" or "clear location" on the
+  How it Works page. The rest of PromptFootprint is unaffected.
+
+## 7. Analytics and diagnostics
 
 There are **no analytics or telemetry SDKs** (no Google Analytics, Mixpanel,
 Sentry, or similar). The extension does not phone home. An optional "Debug logging"
 toggle prints tracking events to your own browser console for troubleshooting; that
 output stays in your browser and is off by default.
 
-## 7. How to delete your data
+## 8. How to delete your data
 
 - **Local data:** open the popup → Settings, or uninstall the extension — removing
   it deletes all on-device data. You can also clear it from
@@ -122,7 +155,7 @@ output stays in your browser and is off by default.
 
 Full steps are in [DATA_DELETION.md](./DATA_DELETION.md).
 
-## 8. Permissions and why each is needed
+## 9. Permissions and why each is needed
 
 - `storage` — save your metrics, settings, and savings locally.
 - `activeTab` — let the toolbar popup toggle the overlay on the ChatGPT/Claude tab
@@ -134,16 +167,22 @@ Full steps are in [DATA_DELETION.md](./DATA_DELETION.md).
   - `https://*.workers.dev/*` — reach the optional Gemini writing proxy you configure.
   - `https://<your-project>.supabase.co/*` — reach the account/sync backend (only
     used if you sign in).
+  - `https://api.open-meteo.com/*`, `https://geocoding-api.open-meteo.com/*` — look
+    up weather and geocode a city/ZIP for the heatwave estimate (only if you opt in
+    to a location).
+
+The browser's geolocation prompt is only shown if you click "Use my location" on the
+How it Works page; you can decline it and use the manual or general option instead.
 
 No `tabs`, `<all_urls>`, `webRequest`, `cookies`, or remote-code permissions are
 requested. The extension contains no remotely loaded or `eval`'d code.
 
-## 9. Contact and support
+## 10. Contact and support
 
 - Issues and questions: <https://github.com/sahilp15/prompt_footprint/issues>
 - Email (placeholder — replace before publishing): `support@promptfootprint.app`
 
-## 10. Changes to this policy
+## 11. Changes to this policy
 
 We'll update the "Last updated" date above when this policy changes and note
 material changes in the extension's release notes.

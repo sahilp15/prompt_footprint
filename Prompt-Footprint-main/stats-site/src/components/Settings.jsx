@@ -156,6 +156,7 @@ export default function Settings() {
         <ul className="settings-keys">
           <li><kbd>Alt</kbd> + <kbd>P</kbd> — open / close the main PromptFootprint panel</li>
           <li>Drag the floating capsule anywhere; its position is remembered across reloads</li>
+          <li>Drag the stats panel’s top-left corner to resize it — the size is remembered too</li>
           <li>The capsule stays keyboard-operable: focus it and press <kbd>Enter</kbd> / <kbd>Space</kbd></li>
         </ul>
       </section>
@@ -175,16 +176,26 @@ export default function Settings() {
               <tr><td>Token counts, timing, energy/water/CO₂ metrics</td><td><code>chrome.storage.local</code></td><td>No</td></tr>
               <tr><td>Anonymous install ID, settings, realized savings</td><td><code>chrome.storage.local</code></td><td>No</td></tr>
               <tr><td><strong>Prompt / response text</strong></td><td>Not stored</td><td>No</td></tr>
-              <tr><td>Local spell &amp; grammar checking</td><td>In-browser (Typo.js + dictionary)</td><td>No</td></tr>
-              <tr><td>AI writing help (only if you enable it)</td><td>Sent to your Worker → Gemini</td><td><strong>Yes, when enabled</strong></td></tr>
+              <tr><td>Local spell, grammar, clarity &amp; repetition checks</td><td>In-browser (Typo.js + dictionary)</td><td>No</td></tr>
+              <tr><td>Cloud analysis (only if you turn it on above)</td><td>Draft sent to your Worker → Gemini</td><td><strong>Yes, when enabled</strong></td></tr>
+              <tr><td>Heatwave location (only if you choose one)</td><td>Rounded ~11 km coordinate + label, on device</td><td><strong>Coordinate → Open-Meteo for weather</strong></td></tr>
+              <tr><td>Account name &amp; synced summaries (only if you sign in)</td><td>Supabase (numbers only, never prompt text)</td><td><strong>Yes, when signed in</strong></td></tr>
             </tbody>
           </table>
-          <p><strong>The one exception:</strong> if you enable AI writing help, the
-            draft text you are typing is sent — when you pause — to the Cloudflare
-            Worker URL you configured, which forwards it to Gemini and returns a
-            suggestion. It is not stored by PromptFootprint. If the Worker is not
-            configured, fails, or is rate-limited, the extension silently falls
-            back to the offline checker.</p>
+          <p><strong>When text leaves the device:</strong> only if you turn on
+            cloud analysis. Then the draft you are typing is sent — when you pause,
+            debounced and rate-limited — to the Cloudflare Worker URL you configured,
+            which forwards it to Gemini and returns a suggestion. It is not stored by
+            PromptFootprint. If cloud analysis is off, or the Worker is missing,
+            failing, or rate-limited, the extension silently falls back to the
+            offline checker.</p>
+          <p><strong>Location &amp; weather.</strong> The heatwave estimate is
+            optional. If you choose a location on the “How it Works” page, only a
+            rounded coordinate (about 11 km — never your exact position) and a place
+            label are kept on this device, and the coordinate (or the city/ZIP you
+            type) is sent to <strong>Open-Meteo</strong> to read nearby weather. No
+            account or key is involved, and you can switch to a general estimate at
+            any time.</p>
           <p><strong>Optional account sync.</strong> If you sign in (Account, above),
             your non-sensitive settings, per-session <em>summaries</em> (numbers only),
             and per-day savings totals sync across your devices. Your prompt and

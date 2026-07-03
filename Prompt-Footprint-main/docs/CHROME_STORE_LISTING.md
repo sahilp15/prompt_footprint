@@ -56,6 +56,9 @@ example on the project's GitHub Pages site) and paste the URL here.
   proxy that the user configures.
 - **Host `https://<project>.supabase.co/*`** — Reach the optional account/sync
   backend, used only when the user signs in.
+- **Host `https://api.open-meteo.com/*`, `https://geocoding-api.open-meteo.com/*`** —
+  Look up weather (and geocode a city/ZIP) for the optional heatwave estimate, only
+  when the user opts in to a location. No API key.
 
 ## Data-use disclosures (Chrome Web Store "Privacy practices" form)
 
@@ -64,13 +67,17 @@ Declare the following data types as **collected**:
 - **Personally identifiable information (email address)** — only if the user creates
   an optional account. Used for authentication. Not sold; not used for advertising.
 - **Website content (user-typed text)** — the draft you are typing is sent to a
-  third-party AI service **only if** you enable AI writing help. It is used to
+  third-party AI service **only if** you turn on cloud analysis. It is used to
   generate the suggestion and is not stored by PromptFootprint. Prompt/reply text is
   otherwise never collected.
+- **Location (approximate)** — only if the user opts in to the heatwave estimate. A
+  **coarsened** coordinate (rounded to ~11 km, never precise) or a city/ZIP the user
+  types is sent to Open-Meteo to fetch nearby weather. Used only for that estimate,
+  stored locally, not sold, not used for advertising.
 
-Do **not** declare (because they don't apply): location, financial info, health
-info, authentication info beyond the account email/password handled by Supabase,
-personal communications content storage, web history, or user activity analytics.
+Do **not** declare (because they don't apply): financial info, health info,
+authentication info beyond the account email/password handled by Supabase, personal
+communications content storage, web history, or user activity analytics.
 
 Certification checkboxes to confirm:
 - [x] I do not sell or transfer user data to third parties outside of the approved
