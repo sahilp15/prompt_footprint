@@ -149,6 +149,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     PFAuth.getStatus().then(sendResponse);
     return true;
   }
+  if (message.type === 'AUTH_SET_NAME') {
+    PFAuth.setDisplayName(message.payload?.name).then(sendResponse);
+    return true;
+  }
   if (message.type === 'AUTH_DELETE') {
     PFAuth.deleteAccount().then(sendResponse);
     return true;

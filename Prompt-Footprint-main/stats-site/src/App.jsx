@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Settings as SettingsIcon } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
@@ -7,10 +8,19 @@ import Guide from './components/Guide'
 import Awards from './components/Awards'
 import Settings from './components/Settings'
 import { isDemoMode } from './lib/api'
+import { authStatus, greetingName, isSignedIn, isExtensionRuntime } from './lib/auth'
 import './App.css'
 
 function App() {
   const demo = isDemoMode()
+  const [account, setAccount] = useState(null)
+
+  // Fetch account status once so the header can greet a signed-in user.
+  useEffect(() => {
+    if (isExtensionRuntime()) authStatus().then(setAccount)
+  }, [])
+
+  const name = isSignedIn(account) ? greetingName(account) : null
 
   return (
     <div className="app">
@@ -40,6 +50,12 @@ function App() {
               <SettingsIcon size={16} /><span>Settings</span>
             </NavLink>
           </div>
+          {name && (
+            <NavLink to="/settings" className="nav-greeting" title="Account settings">
+              <span className="nav-greeting-avatar"><Leaf size={14} /></span>
+              <span className="nav-greeting-text">Hello, {name}</span>
+            </NavLink>
+          )}
         </div>
       </nav>
 

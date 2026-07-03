@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { UserRound, LogIn, LogOut, RefreshCw, Trash2, Check, X, Eye, EyeOff } from 'lucide-react'
-import { authStatus, signUp, login, logout, deleteAccount, syncNow, isExtensionRuntime } from '../lib/auth'
+import { UserRound, LogIn, LogOut, RefreshCw, Trash2, Check, X, Eye, EyeOff, Leaf, Pencil } from 'lucide-react'
+import { authStatus, signUp, login, logout, deleteAccount, syncNow, setDisplayName, greetingName, isExtensionRuntime } from '../lib/auth'
 import './Account.css'
 
 // A sensible baseline shown while typing a new password. Supabase's actual
@@ -26,6 +26,8 @@ export default function Account() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)          // { kind: 'ok'|'err'|'info', text }
   const [showPassword, setShowPassword] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput, setNameInput] = useState('')
 
   async function refresh() {
     const s = await authStatus()
@@ -35,6 +37,20 @@ export default function Account() {
   useEffect(() => {
     if (runtime) authStatus().then(setStatus)
   }, [runtime])
+
+  async function onSaveName(e) {
+    e.preventDefault()
+    setBusy(true); setMsg(null)
+    const r = await setDisplayName(nameInput)
+    setBusy(false)
+    if (r.status === 'ok') {
+      setEditingName(false)
+      setMsg({ kind: 'ok', text: 'Name saved.' })
+      await refresh()
+    } else {
+      setMsg({ kind: 'err', text: r.message || 'Couldn’t save your name right now. Try again later.' })
+    }
+  }
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -165,9 +181,40 @@ export default function Account() {
 
       {runtime && signedIn && (
         <div className="account-panel">
-          <div className="account-row">
-            <span className="account-email">{status.email || 'Signed in'}</span>
+          <div className="account-greeting">
+            <span className="account-avatar" aria-hidden="true"><Leaf size={20} /></span>
+            <div className="account-greeting-text">
+              <span className="account-hello">
+                {greetingName(status) ? `Hello, ${greetingName(status)}` : 'Hello there'}
+              </span>
+              <span className="account-email">{status.email || 'Signed in'}</span>
+            </div>
+            {!editingName && (
+              <button
+                className="account-name-edit"
+                onClick={() => { setNameInput(status.displayName || ''); setEditingName(true) }}
+              >
+                <Pencil size={13} /> {status.displayName ? 'Edit name' : 'Add your name'}
+              </button>
+            )}
           </div>
+
+          {editingName && (
+            <form className="account-name-form" onSubmit={onSaveName}>
+              <input
+                type="text"
+                value={nameInput}
+                maxLength={80}
+                autoFocus
+                placeholder="What should we call you?"
+                onChange={(e) => setNameInput(e.target.value)}
+                aria-label="Display name"
+              />
+              <button className="account-btn" type="submit" disabled={busy}><Check size={15} /> Save</button>
+              <button className="account-btn ghost" type="button" onClick={() => setEditingName(false)}>Cancel</button>
+            </form>
+          )}
+
           <div className="account-actions">
             <button className="account-btn" onClick={onSync} disabled={busy}><RefreshCw size={15} /> Sync now</button>
             <button className="account-btn ghost" onClick={onLogout} disabled={busy}><LogOut size={15} /> Log out</button>

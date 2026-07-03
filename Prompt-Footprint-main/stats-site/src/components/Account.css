@@ -45,8 +45,63 @@
 
 .account-panel { display: flex; flex-direction: column; gap: 14px; }
 .account-row { display: flex; align-items: center; gap: 10px; }
-.account-email { font-weight: 700; color: var(--text-primary, #2c1810); }
+.account-email { font-weight: 400; font-size: 12.5px; color: var(--text-muted, #8b7355); }
 .account-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* Signed-in greeting: PromptFootprint mark + "Hello, [Name]" */
+.account-greeting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle, #e8e0d0);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-green, #5b7c3a) 6%, var(--bg-card, #fff));
+}
+.account-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--accent-green, #5b7c3a);
+  color: #fff;
+  flex-shrink: 0;
+}
+.account-greeting-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.account-hello {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary, #2c1810);
+  letter-spacing: -0.2px;
+}
+.account-name-edit {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--text-muted, #8b7355);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.account-name-edit:hover { color: var(--accent-green, #5b7c3a); }
+.account-name-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.account-name-form input {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--border, #d4c5a9);
+  border-radius: 9px;
+  background: var(--bg-card, #fff);
+  color: var(--text-primary, #2c1810);
+  font-size: 13px;
+}
+.account-name-form input:focus { outline: none; border-color: var(--accent-green, #5b7c3a); }
 
 .account-msg {
   margin-top: 12px;

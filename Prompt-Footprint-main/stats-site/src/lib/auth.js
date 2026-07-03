@@ -33,3 +33,20 @@ export const login = (email, password) => send('AUTH_LOGIN', { email, password }
 export const logout = () => send('AUTH_LOGOUT');
 export const deleteAccount = () => send('AUTH_DELETE');
 export const syncNow = () => send('SYNC_NOW');
+export const setDisplayName = (name) => send('AUTH_SET_NAME', { name });
+
+// A friendly first name for greetings: saved display name, else a tidy guess
+// from the email local-part, else null (greet without a name).
+export function greetingName(status) {
+  if (status && status.displayName) return status.displayName;
+  const email = status && status.email;
+  if (email && email.includes('@')) {
+    const local = email.split('@')[0].replace(/[._+-]+/g, ' ').trim();
+    if (local) return local.charAt(0).toUpperCase() + local.slice(1);
+  }
+  return null;
+}
+
+export function isSignedIn(status) {
+  return !!status && (status.state === 'logged_in' || status.state === 'offline');
+}

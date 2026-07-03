@@ -109,6 +109,8 @@
     if (typeof patch.heatwaveLat === 'number' || patch.heatwaveLat === null) next.heatwaveLat = patch.heatwaveLat;
     if (typeof patch.heatwaveLon === 'number' || patch.heatwaveLon === null) next.heatwaveLon = patch.heatwaveLon;
     if (typeof patch.heatwavePlaceLabel === 'string') next.heatwavePlaceLabel = patch.heatwavePlaceLabel;
+    // Display name for local-only users (signed-in users' names live in Supabase).
+    if (typeof patch.displayName === 'string') next.displayName = patch.displayName.trim().slice(0, 80);
     // AI writing layer config (kept on-device; the Gemini key, if any, never
     // leaves chrome.storage.local — it is only read by the service worker).
     if (typeof patch.proxyUrl === 'string') next.proxyUrl = patch.proxyUrl.trim();

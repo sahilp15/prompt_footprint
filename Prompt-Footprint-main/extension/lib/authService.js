@@ -64,9 +64,39 @@
       const session = data ? data.session : null;
       const state = PFAuthState.authState({ session, online: online() });
       const email = session && session.user ? session.user.email : null;
-      return { state, configured: true, email };
+      let displayName = null;
+      if (session && session.user && state === 'logged_in') {
+        // Best-effort: a missing profile row or a network hiccup must not break
+        // status — we just return no name.
+        try {
+          const { data: prof } = await client
+            .from('profiles').select('display_name').eq('user_id', session.user.id).maybeSingle();
+          displayName = prof && typeof prof.display_name === 'string' ? prof.display_name : null;
+        } catch (_) { /* ignore */ }
+      }
+      return { state, configured: true, email, displayName };
     } catch (_) {
       return { state: 'logged_out', configured: true };
+    }
+  }
+
+  // Set (or clear) the signed-in user's display name. Upserts the profile row so
+  // it works whether or not a row already exists; leaves anon_client_id intact.
+  async function setDisplayName(name) {
+    const client = PFSupabase.getClient();
+    if (!client) return { error: 'not_configured' };
+    const trimmed = typeof name === 'string' ? name.trim().slice(0, 80) : '';
+    try {
+      const { data } = await client.auth.getSession();
+      const user = data && data.session ? data.session.user : null;
+      if (!user) return { error: 'not_signed_in' };
+      const { error } = await client
+        .from('profiles')
+        .upsert({ user_id: user.id, display_name: trimmed || null }, { onConflict: 'user_id' });
+      if (error) return { error: 'save_failed', message: error.message };
+      return { status: 'ok', displayName: trimmed || null };
+    } catch (_) {
+      return { error: 'save_failed' };
     }
   }
 
@@ -97,7 +127,7 @@
     }
   }
 
-  const api = { signUp, login, logout, getStatus, getUserId, deleteAccount, online };
+  const api = { signUp, login, logout, getStatus, getUserId, deleteAccount, setDisplayName, online };
   if (root) root.PFAuth = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);
