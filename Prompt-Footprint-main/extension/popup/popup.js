@@ -46,6 +46,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load config (overlay + writing + debug toggle state)
   const cfg = await PFStorage.getConfig();
+
+  // Personalized greeting: signed-in name (or email guess) from the background,
+  // else a locally saved name. Hidden when we have nothing to show.
+  (async () => {
+    const greetEl = document.getElementById('pf-greeting');
+    const nameEl = document.getElementById('pf-greeting-name');
+    if (!greetEl || !nameEl) return;
+    function guessFromEmail(email) {
+      if (!email || !email.includes('@')) return null;
+      const local = email.split('@')[0].replace(/[._+-]+/g, ' ').trim();
+      return local ? local.charAt(0).toUpperCase() + local.slice(1) : null;
+    }
+    let name = null;
+    try {
+      const s = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }, (r) => {
+          if (chrome.runtime.lastError) resolve(null); else resolve(r);
+        });
+      });
+      if (s && (s.state === 'logged_in' || s.state === 'offline')) {
+        name = s.displayName || guessFromEmail(s.email);
+      }
+    } catch (_) { /* ignore */ }
+    if (!name && typeof cfg.displayName === 'string' && cfg.displayName.trim()) name = cfg.displayName.trim();
+    if (name) { nameEl.textContent = name; greetEl.hidden = false; }
+  })();
   overlayToggle.checked = cfg.overlayEnabled !== false;
   if (writingToggle) writingToggle.checked = cfg.writingChecksEnabled !== false;
   if (debugToggle) debugToggle.checked = cfg.debug === true;

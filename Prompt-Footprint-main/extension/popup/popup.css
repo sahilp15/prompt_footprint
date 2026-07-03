@@ -58,6 +58,15 @@
   margin-bottom: 10px;
 }
 
+/* Personalized greeting */
+.pf-greeting {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pf-text-primary);
+  letter-spacing: -0.2px;
+  margin: 2px 0 12px;
+}
+
 /* Personal average prompt size */
 .pf-avg {
   margin-top: 9px;

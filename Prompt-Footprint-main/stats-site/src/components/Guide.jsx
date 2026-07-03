@@ -1,5 +1,4 @@
-import { Hash, Zap, Droplets, Wind, Clock, Eye, Calculator, Scissors, Layers, Repeat, Gauge, ShieldCheck, MonitorSmartphone, PencilLine, AlertTriangle, ExternalLink, FileText, Thermometer } from 'lucide-react'
-import HeatwaveCard from './HeatwaveCard'
+import { Hash, Zap, Droplets, Wind, Clock, Eye, Calculator, Scissors, Layers, Repeat, Gauge, ShieldCheck, MonitorSmartphone, PencilLine, AlertTriangle, ExternalLink, FileText, CloudSun } from 'lucide-react'
 import './Guide.css'
 
 const STATS = [
@@ -126,30 +125,29 @@ export default function Guide() {
         </div>
       </section>
 
-      {/* Heatwave / weather adjustment */}
+      {/* Weather adjustment */}
       <section className="guide-section">
-        <h2 className="guide-h2"><Thermometer size={18} className="guide-h2-icon" /> When hot weather changes the estimate</h2>
+        <h2 className="guide-h2"><CloudSun size={18} className="guide-h2-icon" /> When hot weather changes the estimate</h2>
         <p className="guide-lead">
           The per-token costs above bake in a data center’s <em>average</em>
-          cooling overhead for the year. That average hides a real problem: during
-          a heatwave, cooling demand spikes. A site that normally runs at a power
-          usage effectiveness (PUE) of about 1.1 — roughly 10% overhead on top of
-          the computing itself — can climb toward 1.3–1.4 in extreme heat, which
-          means three to four times the cooling power. Hot spells also strain the
-          grid the data center draws from, since thermal and nuclear plants lose
-          capacity when the water they rely on runs warm.
+          cooling overhead for the year. That average hides a real problem: in hot
+          weather, cooling demand spikes. A site that normally runs at a power usage
+          effectiveness (PUE) of about 1.1 — roughly 10% overhead on top of the
+          computing itself — can climb toward 1.3–1.4 in extreme heat, which means
+          three to four times the cooling power. Hot spells also strain the grid the
+          data center draws from, since thermal and nuclear plants lose capacity when
+          the water they rely on runs warm.
         </p>
         <p className="guide-lead">
           So the same prompt can carry more energy and water on a scorching
-          afternoon than on a mild one. When you share a rough location,
-          PromptFootprint looks up the current weather near the closest known cloud
-          region and shows a heat-adjusted figure when it’s warranted. One honest
-          caveat: we can’t see which data center actually served your request —
-          that routing isn’t public — so this always uses the <strong>nearest known
-          cloud region as a proxy</strong> and is clearly marked as an approximation.
+          afternoon than on a mild one. If you share a rough location, PromptFootprint
+          reads the current weather near the closest known cloud region and shows a
+          weather-adjusted figure when it’s warranted. One honest caveat: we can’t see
+          which data center actually served your request — that routing isn’t public —
+          so this always uses the <strong>nearest known cloud region as a proxy</strong>
+          and is clearly marked as an approximation. You can turn it on from the{' '}
+          <strong>Weather-aware estimate</strong> card on the Weekly Stats page.
         </p>
-
-        <HeatwaveCard />
       </section>
 
       {/* Token savings */}

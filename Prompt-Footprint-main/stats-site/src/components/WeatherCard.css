@@ -3,8 +3,17 @@
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   padding: 20px 22px;
-  margin: 18px 0;
+  margin: 0;
 }
+/* Warm accent when it's actually hot near the region. */
+.hw-card-hot {
+  border-color: color-mix(in srgb, var(--accent-red) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-amber) 4%, var(--bg-card));
+}
+.hw-btn:disabled { opacity: 0.55; cursor: default; }
+.hw-checking { display: inline-flex; align-items: center; gap: 7px; }
+.hw-spin { animation: hw-spin 0.9s linear infinite; }
+@keyframes hw-spin { to { transform: rotate(360deg); } }
 
 .hw-head {
   display: flex;

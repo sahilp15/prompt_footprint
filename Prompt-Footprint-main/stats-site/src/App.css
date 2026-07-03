@@ -15,33 +15,22 @@
 .nav-title { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; color: var(--text-primary); }
 .nav-links { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 
-/* Signed-in greeting in the header (logo stays top-left in .nav-brand). */
-.nav-greeting {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 11px 5px 6px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  text-decoration: none;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: var(--transition, 0.15s ease);
-}
-.nav-greeting:hover { border-color: var(--accent-green); color: var(--text-primary); }
-.nav-greeting-avatar {
+/* Account entry point in the header, next to Settings (logo stays top-left). */
+.nav-account {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 34px;
+  height: 34px;
+  margin-left: 4px;
   border-radius: 50%;
-  background: var(--accent-green);
-  color: #fff;
-  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: var(--transition, 0.15s ease);
 }
+.nav-account:hover { border-color: var(--accent-green); color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 8%, transparent); }
+.nav-account.active { border-color: var(--accent-green); color: var(--accent-green); }
 
 .demo-banner {
   background: rgba(193, 127, 36, 0.12);

@@ -84,6 +84,19 @@ export function isHeatwave(tempC) {
 const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search';
 
+// Never let a slow/blocked request hang the UI on "Checking the weather…".
+async function fetchJsonWithTimeout(url, ms = 9000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function buildForecastUrl(lat, lon) {
   const p = new URLSearchParams({
     latitude: String(lat), longitude: String(lon),
@@ -117,15 +130,11 @@ export function parseForecast(json) {
 }
 
 export async function fetchWeather(lat, lon) {
-  const res = await fetch(buildForecastUrl(lat, lon));
-  if (!res.ok) throw new Error(`weather ${res.status}`);
-  return parseForecast(await res.json());
+  return parseForecast(await fetchJsonWithTimeout(buildForecastUrl(lat, lon)));
 }
 
 export async function geocode(query) {
-  const res = await fetch(buildGeocodeUrl(query));
-  if (!res.ok) throw new Error(`geocode ${res.status}`);
-  const json = await res.json();
+  const json = await fetchJsonWithTimeout(buildGeocodeUrl(query));
   if (!json || !Array.isArray(json.results) || !json.results.length) return null;
   const r = json.results[0];
   if (typeof r.latitude !== 'number' || typeof r.longitude !== 'number') return null;

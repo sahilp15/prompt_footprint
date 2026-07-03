@@ -830,10 +830,13 @@
         <button id="pf-opt-acceptall" type="button" hidden>Accept all safe</button>
         <button id="pf-opt-apply" type="button" hidden>Apply</button>
       </div>
+      <div class="pf-opt-resize" id="pf-opt-resize" title="Drag to resize" aria-label="Resize"></div>
     `;
     document.body.appendChild(chip);
     restoreOptimizerPosition(chip);
+    restoreOptimizerSize(chip);
     makeOptimizerDraggable(chip);
+    makeOptimizerResizable(chip);
 
     document.getElementById('pf-opt-dismiss').addEventListener('click', hideOptimizerChip);
 
@@ -961,6 +964,67 @@
         }
       });
     } catch (_) {}
+  }
+
+  // ── Optimizer chip resizing (persisted) ──────────────────────────────────
+  const OPT_MIN = { w: 280, h: 130 };
+  function optMax() {
+    return { w: Math.min(600, window.innerWidth - 24), h: Math.min(Math.round(window.innerHeight * 0.75), window.innerHeight - 24) };
+  }
+  function clampOptSize(w, h) {
+    const max = optMax();
+    return {
+      w: Math.round(Math.min(Math.max(w, OPT_MIN.w), Math.max(OPT_MIN.w, max.w))),
+      h: Math.round(Math.min(Math.max(h, OPT_MIN.h), Math.max(OPT_MIN.h, max.h))),
+    };
+  }
+  function restoreOptimizerSize(chip) {
+    if (!extAlive()) return;
+    try {
+      chrome.storage.local.get(['pf_optimizer_size'], (res) => {
+        void chrome.runtime.lastError;
+        const s = res && res.pf_optimizer_size;
+        if (s && typeof s.w === 'number' && typeof s.h === 'number') {
+          const c = clampOptSize(s.w, s.h);
+          chip.style.width = c.w + 'px';
+          chip.style.height = c.h + 'px';
+        }
+      });
+    } catch (_) {}
+  }
+  function makeOptimizerResizable(chip) {
+    const handle = chip.querySelector('#pf-opt-resize');
+    if (!handle) return;
+    let startX = 0, startY = 0, startW = 0, startH = 0, resizing = false;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      resizing = true;
+      // Pin the chip at its current spot (it may still be bottom-centered by CSS)
+      // so a bottom-right grip grows predictably down-and-right.
+      const rect = chip.getBoundingClientRect();
+      applyOptimizerPosition(chip, rect.left, rect.top);
+      startX = e.clientX; startY = e.clientY;
+      startW = chip.offsetWidth; startH = chip.offsetHeight;
+      chip.classList.add('pf-opt-resizing');
+      handle.setPointerCapture?.(e.pointerId);
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      const c = clampOptSize(startW + (e.clientX - startX), startH + (e.clientY - startY));
+      chip.style.width = c.w + 'px';
+      chip.style.height = c.h + 'px';
+    });
+    const end = (e) => {
+      if (!resizing) return;
+      resizing = false;
+      chip.classList.remove('pf-opt-resizing');
+      handle.releasePointerCapture?.(e.pointerId);
+      if (!extAlive()) return;
+      try { chrome.storage.local.set({ pf_optimizer_size: { w: chip.offsetWidth, h: chip.offsetHeight } }); } catch (_) {}
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
   }
 
   function hideOptimizerChip() {

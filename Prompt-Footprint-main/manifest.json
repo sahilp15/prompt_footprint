@@ -3,7 +3,7 @@
   "version": "1.0",
   "manifest_version": 3,
   "description": "Visualize the environmental impact of every AI prompt — energy, water, and CO2",
-  "permissions": ["storage", "activeTab", "alarms"],
+  "permissions": ["storage", "activeTab", "alarms", "geolocation"],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
