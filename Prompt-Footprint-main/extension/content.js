@@ -534,6 +534,7 @@
     modal.classList.add('pf-modal-hidden');
     modal.innerHTML = `
       <div class="pf-modal-container">
+        <div class="pf-modal-resize" id="pf-modal-resize" title="Drag to resize" aria-label="Resize panel"></div>
         <div class="pf-modal-header">
           <span class="pf-modal-title">PromptFootprint</span>
           <button class="pf-modal-close" id="pf-modal-close-btn">
@@ -544,6 +545,7 @@
           </button>
         </div>
 
+        <div class="pf-modal-body">
         <div class="pf-modal-section">
           <div class="pf-modal-section-label">Session Totals</div>
           <div class="pf-modal-stats-grid">
@@ -586,12 +588,13 @@
             </div>
           </div>
         </div>
+        </div>
 
         <div class="pf-modal-footer">
           <div class="pf-modal-query-count" id="pf-query-count">0 queries this session</div>
           <button class="pf-modal-btn" id="pf-open-stats-btn">View Full Stats</button>
         </div>
-        <div class="pf-modal-hint">Tip: press <kbd>Alt</kbd>+<kbd>P</kbd> to open or close this panel · drag the capsule to move it</div>
+        <div class="pf-modal-hint">Tip: press <kbd>Alt</kbd>+<kbd>P</kbd> to open or close · drag the capsule to move it · drag the top-left corner to resize</div>
       </div>
     `;
 
@@ -602,6 +605,70 @@
       // Local-first: stats live in the extension's own dashboard page.
       chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
     });
+
+    restoreModalSize();
+    makeModalResizable();
+  }
+
+  // Persisted user resizing of the stats panel. Bounds keep it usable and out of
+  // the way of the page's composer even at max size.
+  const MODAL_MIN = { w: 240, h: 200 };
+  function modalMax() {
+    return { w: Math.min(460, window.innerWidth - 40), h: Math.min(560, window.innerHeight - 40) };
+  }
+  function clampModalSize(w, h) {
+    const max = modalMax();
+    return {
+      w: Math.round(Math.min(Math.max(w, MODAL_MIN.w), Math.max(MODAL_MIN.w, max.w))),
+      h: Math.round(Math.min(Math.max(h, MODAL_MIN.h), Math.max(MODAL_MIN.h, max.h))),
+    };
+  }
+  function saveModalSize(w, h) {
+    try { chrome.storage.local.set({ pf_modal_size: { w, h } }); } catch (_) {}
+  }
+  function restoreModalSize() {
+    const container = document.querySelector('#pf-modal-overlay .pf-modal-container');
+    if (!container || !chrome?.storage?.local) return;
+    chrome.storage.local.get(['pf_modal_size'], (res) => {
+      const s = res && res.pf_modal_size;
+      if (!s || typeof s.w !== 'number' || typeof s.h !== 'number') return;
+      const c = clampModalSize(s.w, s.h);
+      container.style.width = c.w + 'px';
+      container.style.height = c.h + 'px';
+    });
+  }
+  function makeModalResizable() {
+    const handle = document.getElementById('pf-modal-resize');
+    const container = document.querySelector('#pf-modal-overlay .pf-modal-container');
+    if (!handle || !container) return;
+    let startX = 0, startY = 0, startW = 0, startH = 0, resizing = false;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      resizing = true;
+      startX = e.clientX; startY = e.clientY;
+      startW = container.offsetWidth; startH = container.offsetHeight;
+      container.classList.add('pf-modal-resizing');
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      // Panel is anchored bottom-right, so dragging the top-left handle up/left
+      // (negative dx/dy) grows the panel.
+      const c = clampModalSize(startW - (e.clientX - startX), startH - (e.clientY - startY));
+      container.style.width = c.w + 'px';
+      container.style.height = c.h + 'px';
+    });
+    const end = (e) => {
+      if (!resizing) return;
+      resizing = false;
+      container.classList.remove('pf-modal-resizing');
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      saveModalSize(container.offsetWidth, container.offsetHeight);
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
   }
 
   function toggleModal(forceState) {

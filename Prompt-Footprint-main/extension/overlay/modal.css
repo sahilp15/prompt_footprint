@@ -16,13 +16,50 @@
 }
 
 .pf-modal-container {
+  position: relative;
   width: 300px;
+  /* Resizable within sane bounds; the panel stays out of the way of the
+     composer on ChatGPT/Claude/Gemini even at max size. Overridden inline when
+     the user has resized it (persisted in chrome.storage as pf_modal_size). */
+  min-width: 240px;
+  max-width: min(460px, calc(100vw - 40px));
+  min-height: 200px;
+  max-height: min(560px, calc(100vh - 40px));
+  box-sizing: border-box;
   background: rgba(250, 247, 240, 0.98);
   border: 1px solid #D4C5A9;
-  border-radius: 14px;
-  box-shadow: 0 8px 40px rgba(44, 24, 16, 0.18);
+  border-radius: 18px;
+  box-shadow: 0 10px 44px rgba(44, 24, 16, 0.20);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+
+/* The scrollable middle so content never spills when the panel is made small. */
+.pf-modal-body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+/* Custom resize grip. The panel is anchored bottom-right, so the grip lives at
+   the TOP-LEFT — the corner that grows freely, away from the screen edge. */
+.pf-modal-resize {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 2;
+  touch-action: none;
+  background:
+    linear-gradient(135deg, #B8A483 0 2px, transparent 2px) 3px 3px/6px 6px no-repeat,
+    linear-gradient(135deg, #B8A483 0 2px, transparent 2px) 7px 7px/6px 6px no-repeat;
+  opacity: 0.55;
+  border-top-left-radius: 18px;
+}
+.pf-modal-resize:hover { opacity: 0.9; }
+.pf-modal-container.pf-modal-resizing { transition: none; user-select: none; }
 
 /* ── Header ──────────────────── */
 .pf-modal-header {
