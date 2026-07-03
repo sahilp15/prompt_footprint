@@ -2,6 +2,8 @@
 // Numbers are realistic for the PromptFootprint model (energy ~1e-3 Wh/token,
 // scaled up slightly for Claude and for slower/longer responses).
 
+import { localDayKey } from './dates';
+
 const DAY = 24 * 60 * 60 * 1000;
 
 const PER_TOKEN = { energyWh: 0.00106, waterMl: 0.00354, co2G: 0.000375 };
@@ -93,7 +95,7 @@ export function demoSavings(now = Date.now()) {
   const daily = {};
   const totals = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
   for (let i = 6; i >= 0; i--) {
-    const key = new Date(now - i * DAY).toISOString().slice(0, 10);
+    const key = localDayKey(now - i * DAY);
     const spec = perDay[6 - i];
     const i2 = impact(spec.tokens);
     daily[key] = { count: spec.count, tokens: spec.tokens, energyWh: i2.energyWh, waterMl: i2.waterMl, co2G: i2.co2G };
@@ -111,12 +113,12 @@ export function demoWeekly() {
   const sessions = buildSessions(now);
   const dailyMap = new Map();
   for (let i = 6; i >= 0; i--) {
-    const key = new Date(now - i * DAY).toISOString().slice(0, 10);
+    const key = localDayKey(now - i * DAY);
     dailyMap.set(key, { date: key, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0, queries: 0 });
   }
   const totals = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0, sessionCount: 0 };
   for (const s of sessions) {
-    const key = new Date(s.startTime).toISOString().slice(0, 10);
+    const key = localDayKey(s.startTime);
     const b = dailyMap.get(key);
     if (b) {
       b.tokens += s.totalTokens;

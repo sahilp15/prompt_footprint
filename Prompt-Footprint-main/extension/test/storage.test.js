@@ -39,7 +39,7 @@ test('computeWeeklyStats: 7 daily buckets and 7-day cutoff', () => {
 
 test('computeWeeklyStats: tokens land in the correct daily bucket', () => {
   const wk = S.computeWeeklyStats([session(0, 'chatgpt', 100)], NOW);
-  const today = new Date(NOW).toISOString().slice(0, 10);
+  const today = S.localDayKey(NOW);
   const bucket = wk.daily.find((d) => d.date === today);
   assert.ok(bucket);
   assert.strictEqual(bucket.tokens, 100);

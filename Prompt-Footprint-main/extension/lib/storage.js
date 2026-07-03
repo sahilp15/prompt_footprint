@@ -65,6 +65,19 @@
     });
   }
 
+  // ── Dates ──────────────────────────────────────────────────────────────---
+  // Timestamps are stored as UTC ISO strings (correct — they are instants). But
+  // day grouping and reset windows must follow the user's LOCAL calendar day so
+  // "today" and the weekly buckets match the clock on the wall, not UTC. Build
+  // the key from local parts rather than slicing an ISO string (which is UTC).
+  function localDayKey(dateLike) {
+    const d = dateLike == null ? new Date() : (dateLike instanceof Date ? dateLike : new Date(dateLike));
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   // ── User id ──────────────────────────────────────────────────────────────
   async function getUserId() {
     const res = await getLocal([USER_ID_KEY]);
@@ -229,7 +242,7 @@
     s.totalWaterMl += waterMl;
     s.totalCo2G += co2G;
 
-    const key = day || new Date().toISOString().slice(0, 10);
+    const key = day || localDayKey();
     const bucket = s.daily[key] || { count: 0, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0 };
     bucket.count += 1;
     bucket.tokens += tokens;
@@ -282,13 +295,12 @@
 
     const dailyMap = new Map();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(ref.getTime() - i * 24 * 60 * 60 * 1000);
-      const key = d.toISOString().slice(0, 10);
+      const key = localDayKey(ref.getTime() - i * 24 * 60 * 60 * 1000);
       dailyMap.set(key, { date: key, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0, queries: 0 });
     }
 
     for (const s of recent) {
-      const key = new Date(s.startTime).toISOString().slice(0, 10);
+      const key = localDayKey(s.startTime);
       const bucket = dailyMap.get(key);
       if (!bucket) continue;
       bucket.tokens += s.totalTokens || 0;
@@ -346,6 +358,7 @@
     getSavings,
     addSavings,
     // pure helpers
+    localDayKey,
     emptySavings,
     mergeSavings,
     computeTotals,

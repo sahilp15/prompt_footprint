@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import { useWeeklyStats } from '../hooks/useStats'
+import { formatDayLabel } from '../lib/dates'
 import Globe from './ui/globe-cdn'
 import './WeeklyStats.css'
 
@@ -60,7 +61,7 @@ export default function WeeklyStats() {
   const { totals, daily } = data || { totals: {}, daily: [] }
   const fmt = (v, d = 4) => (v || 0).toFixed(d)
 
-  const fmtDate = d => new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  const fmtDate = d => formatDayLabel(d)
 
   const maxEnergy = Math.max(...(daily || []).map(d => d.energyWh || 0), 1e-9)
   const maxWater  = Math.max(...(daily || []).map(d => d.waterMl  || 0), 1e-9)

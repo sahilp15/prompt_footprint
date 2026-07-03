@@ -10,6 +10,7 @@
 // There is no remote backend anymore (the project is local-first).
 
 import { demoSessions, demoQueries, demoWeekly, demoSavings } from './demoData';
+import { localDayKey } from './dates';
 
 const SESSION_PREFIX = 'pf_session_';
 const SAVINGS_KEY = 'pf_savings';
@@ -53,12 +54,12 @@ function aggregateWeekly(sessions, now = Date.now()) {
   const recent = sessions.filter((s) => new Date(s.startTime).getTime() >= now - 7 * DAY);
   const dailyMap = new Map();
   for (let i = 6; i >= 0; i--) {
-    const key = new Date(now - i * DAY).toISOString().slice(0, 10);
+    const key = localDayKey(now - i * DAY);
     dailyMap.set(key, { date: key, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0, queries: 0 });
   }
   const totals = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0, sessionCount: 0 };
   for (const s of recent) {
-    const key = new Date(s.startTime).toISOString().slice(0, 10);
+    const key = localDayKey(s.startTime);
     const b = dailyMap.get(key);
     if (b) {
       b.tokens += s.totalTokens || 0;

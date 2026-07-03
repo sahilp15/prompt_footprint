@@ -7,6 +7,7 @@ import WaterTank from '../animations/WaterTank'
 import LightBulb from '../animations/LightBulb'
 import GasTank from '../animations/GasTank'
 import { Spotlight } from './ui/spotlight'
+import { formatDayLabel } from '../lib/dates'
 // Reuse the metric/chart styles (WeeklyStats.css is always bundled via the home
 // route) and the animation-grid layout from AnimationPage.css.
 import './AnimationPage.css'
@@ -60,7 +61,7 @@ export default function Savings() {
 
   const s = data || {}
   const fmt = (v, d = 4) => (v || 0).toFixed(d)
-  const fmtDate = d => new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  const fmtDate = d => formatDayLabel(d)
 
   const daily = s.daily || {}
   const chartData = Object.keys(daily).sort().map(k => ({
