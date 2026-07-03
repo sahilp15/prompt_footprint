@@ -99,6 +99,9 @@
     if (typeof patch.overlayEnabled === 'boolean') next.overlayEnabled = patch.overlayEnabled;
     if (typeof patch.debug === 'boolean') next.debug = patch.debug;
     if (typeof patch.writingChecksEnabled === 'boolean') next.writingChecksEnabled = patch.writingChecksEnabled;
+    // Cloud analysis is OPT-IN (default off). When false, draft text is never
+    // sent to Gemini/the proxy — only the offline checker runs.
+    if (typeof patch.cloudAnalysisEnabled === 'boolean') next.cloudAnalysisEnabled = patch.cloudAnalysisEnabled;
     // AI writing layer config (kept on-device; the Gemini key, if any, never
     // leaves chrome.storage.local — it is only read by the service worker).
     if (typeof patch.proxyUrl === 'string') next.proxyUrl = patch.proxyUrl.trim();

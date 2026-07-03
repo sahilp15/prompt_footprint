@@ -19,6 +19,7 @@ const CONFIG_KEY = 'pf_config';
 const DEFAULT_CONFIG = {
   overlayEnabled: true,
   writingChecksEnabled: true,
+  cloudAnalysisEnabled: false, // opt-in: draft text only leaves the device when on
   debug: false,
   proxyUrl: '',
   geminiApiKey: '',

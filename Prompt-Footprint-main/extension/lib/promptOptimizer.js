@@ -229,6 +229,58 @@
     return out;
   }
 
+  // Function words repeat naturally; never flag them as "over-repeated".
+  const REDUNDANCY_STOPWORDS = new Set((
+    'the and for that this with your you have has are was were will would could should ' +
+    'from they them their there here what which when where how why into over under about ' +
+    'then than also just some more most much many such very each every these those being'
+  ).split(' '));
+
+  // Local, non-network content checks the word-level lists miss: unnecessary
+  // repetition of a content word, and sentences long enough to be hard to parse
+  // (often a sign the prompt is padded / overly long for the task). Advisory
+  // only (safe: false) — never auto-applied. Conservative thresholds keep normal
+  // topic words from being flagged.
+  function detectRedundancy(text) {
+    const str = (text || '').toString();
+    const out = [];
+
+    // 1. A content word repeated a lot.
+    const counts = new Map();
+    const wordRe = /\b[a-z][a-z'-]{4,}\b/gi;
+    let m;
+    while ((m = wordRe.exec(str)) !== null) {
+      const w = m[0].toLowerCase();
+      if (REDUNDANCY_STOPWORDS.has(w)) continue;
+      counts.set(w, (counts.get(w) || 0) + 1);
+    }
+    Array.from(counts.entries())
+      .filter(([, n]) => n >= 5)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .forEach(([w, n]) => {
+        out.push({
+          type: 'clarity', original: w, suggestion: '',
+          reason: `Used ${n} times — consider varying the wording or trimming repeats`,
+          safe: false,
+        });
+      });
+
+    // 2. Very long sentences.
+    const sentences = str.split(/(?<=[.!?])\s+/);
+    for (const s of sentences) {
+      const words = s.trim().split(/\s+/).filter(Boolean);
+      if (words.length > 45) {
+        out.push({
+          type: 'clarity', original: words.slice(0, 6).join(' ') + '…', suggestion: '',
+          reason: `Long sentence (${words.length} words) — consider splitting it for clarity`,
+          safe: false,
+        });
+      }
+    }
+    return out;
+  }
+
   // Compute the savings of replacing `original` with `shortened`, using the
   // per-platform intensity profile. Shared by the local heuristic and the AI
   // rewrite path so both report identical math.
@@ -264,7 +316,7 @@
     return savings(original, shorten(original), platform);
   }
 
-  const PFPromptOptimizer = { shorten, analyze, savings, normalizeWhitespace, fixTypos, detectFiller };
+  const PFPromptOptimizer = { shorten, analyze, savings, normalizeWhitespace, fixTypos, detectFiller, detectRedundancy };
 
   if (root) root.PFPromptOptimizer = PFPromptOptimizer;
   if (typeof module !== 'undefined' && module.exports) module.exports = PFPromptOptimizer;

@@ -71,8 +71,19 @@ test('IMPROVE_WRITING with no proxy/key resolves to "" and never hits the networ
   assert.strictEqual(res.status, 'unconfigured');
 });
 
-test('IMPROVE_WRITING uses the configured Worker when available (provider selection)', async () => {
+test('a configured Worker is NOT called unless cloud analysis is opted in', async () => {
+  // Provider configured, but the user has not enabled cloud analysis.
   storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  let called = false;
+  global.fetch = async () => { called = true; return okResp('nope'); };
+  const res = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text: BAD_INPUT } });
+  assert.strictEqual(called, false, 'draft text must not be sent without opt-in');
+  assert.strictEqual(res.improved, '');
+  assert.strictEqual(res.status, 'unconfigured');
+});
+
+test('IMPROVE_WRITING uses the configured Worker when available (provider selection)', async () => {
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   let calledUrl = null;
   let calledBody = null;
   const improvedText = 'I received the files, but I do not know what to do next.';
@@ -90,7 +101,7 @@ test('IMPROVE_WRITING uses the configured Worker when available (provider select
 });
 
 test('a 429 falls back to "" (local-only) and does NOT retry-hammer the network', async () => {
-  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   let calls = 0;
   global.fetch = async () => { calls += 1; return { ok: false, status: 429, headers: { get: () => null }, json: async () => ({ error: 'Rate limit exceeded' }) }; };
   const res = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text: BAD_INPUT } });
@@ -100,7 +111,7 @@ test('a 429 falls back to "" (local-only) and does NOT retry-hammer the network'
 });
 
 test('after a 429, further requests cool down without touching the network', async () => {
-  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   let calls = 0;
   global.fetch = async () => { calls += 1; return { ok: false, status: 429, headers: { get: () => null }, json: async () => ({}) }; };
   await sendMessage({ type: 'IMPROVE_WRITING', payload: { text: BAD_INPUT } }); // triggers cooldown
@@ -110,7 +121,7 @@ test('after a 429, further requests cool down without touching the network', asy
 });
 
 test('a repeated identical draft is served from cache (no second network call)', async () => {
-  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   let calls = 0;
   global.fetch = async () => { calls += 1; return okResp('improved once'); };
   const a = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text: BAD_INPUT } });
@@ -122,7 +133,7 @@ test('a repeated identical draft is served from cache (no second network call)',
 });
 
 test('a Worker timeout (AbortError) is swallowed as a graceful "" error', async () => {
-  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   global.fetch = async (url, opts) => {
     assert.ok(opts.signal, 'fetch must be called with an AbortSignal so it can time out');
     const err = new Error('The operation was aborted');
@@ -135,7 +146,7 @@ test('a Worker timeout (AbortError) is swallowed as a graceful "" error', async 
 });
 
 test('a malformed JSON body degrades to "" (success status, empty text)', async () => {
-  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   global.fetch = async () => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => { throw new Error('bad json'); } });
   const res = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text: BAD_INPUT } });
   assert.strictEqual(res.improved, '');
@@ -143,7 +154,7 @@ test('a malformed JSON body degrades to "" (success status, empty text)', async 
 
 test('GET_AI_STATS reports a truthful success rate (unconfigured never counts as failure)', async () => {
   // One real success, then a bunch of unconfigured no-ops.
-  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   global.fetch = async () => okResp('ok');
   await sendMessage({ type: 'IMPROVE_WRITING', payload: { text: BAD_INPUT } });
   storedConfig = {}; // unconfigured
@@ -155,7 +166,7 @@ test('GET_AI_STATS reports a truthful success rate (unconfigured never counts as
 });
 
 test('unauthorized sender is rejected and the network is never called', async () => {
-  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev' };
+  storedConfig = { proxyUrl: 'https://promptfootprint-proxy.example.workers.dev', cloudAnalysisEnabled: true };
   let called = false;
   global.fetch = async () => { called = true; return okResp('x'); };
   const res = await sendMessage({ type: 'IMPROVE_WRITING', payload: { text: BAD_INPUT } }, 'some-other-extension');

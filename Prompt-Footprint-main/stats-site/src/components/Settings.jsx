@@ -22,6 +22,7 @@ export default function Settings() {
   if (!cfg) return <div className="settings-page"><div className="page-header"><h1 className="page-title">Settings</h1></div></div>
 
   const provider = resolveWritingProvider({ ...cfg, proxyUrl, geminiApiKey })
+  const cloudOn = cfg.cloudAnalysisEnabled === true && provider === 'gemini'
 
   async function update(patch) {
     const next = await saveConfig(patch)
@@ -51,17 +52,37 @@ export default function Settings() {
       <section className="settings-section">
         <div className="settings-section-head">
           <Sparkles size={18} /><h2>AI writing help</h2>
-          <span className={`settings-pill ${provider === 'gemini' ? 'on' : 'off'}`}>
-            {provider === 'gemini' ? 'Enabled' : 'Local only'}
+          <span className={`settings-pill ${cloudOn ? 'on' : 'off'}`}>
+            {cloudOn ? 'Cloud on' : 'Local only'}
           </span>
         </div>
         <p className="settings-desc">
-          PromptFootprint works fully offline using a local spell &amp; grammar
-          checker. For higher-quality suggestions (clarity, tone, sentence
-          cleanup) you can enable an optional <strong>Gemini</strong> layer. This
-          is <strong>proxy-first</strong>: your draft text is sent to a Cloudflare
-          Worker you control, which holds the Gemini key — the key is never stored
-          in the extension.
+          PromptFootprint checks your writing on-device by default — spelling,
+          grammar, filler, repetition, and overly long sentences, with nothing
+          leaving your browser. For deeper suggestions that read the whole prompt
+          for meaning and clarity, you can turn on an optional <strong>cloud
+          analysis</strong> layer powered by Gemini. It stays off until you enable
+          it below.
+        </p>
+
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={cfg.cloudAnalysisEnabled === true}
+            disabled={!extension}
+            onChange={(e) => update({ cloudAnalysisEnabled: e.target.checked })}
+          />
+          <span>
+            Enable cloud analysis — send the draft you’re typing to Gemini
+            <strong> when you pause</strong>, to get a meaning-aware rewrite.
+            Off by default; your text never leaves the device while this is off.
+          </span>
+        </label>
+        <p className="settings-help">
+          Requires a Worker URL (or an advanced key) below. When enabled, the
+          current draft is sent on a typing pause, rate-limited, and never stored.
+          If the service is unavailable or rate-limited, PromptFootprint silently
+          falls back to the on-device checker.
         </p>
 
         <label className="settings-field">

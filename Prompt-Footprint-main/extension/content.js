@@ -992,6 +992,8 @@
   // fails, rate-limits, or returns nothing — the UI never breaks.
   async function analyzeWritingAI(el) {
     if (config.writingChecksEnabled === false) return;
+    // Opt-in gate: never send draft text to the cloud unless the user enabled it.
+    if (config.cloudAnalysisEnabled !== true) return;
     const text = getInputText(el);
     if (text.length < WRITING_MIN_CHARS) return;
     if (text === lastAiText) return;
