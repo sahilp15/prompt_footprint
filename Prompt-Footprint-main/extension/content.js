@@ -588,6 +588,11 @@
             </div>
           </div>
         </div>
+
+        <div class="pf-modal-section pf-modal-weather" id="pf-modal-weather" hidden>
+          <div class="pf-modal-section-label">Weather adjustment <span class="pf-modal-approx">approx</span></div>
+          <div class="pf-modal-weather-body" id="pf-weather-body"></div>
+        </div>
         </div>
 
         <div class="pf-modal-footer">
@@ -680,6 +685,8 @@
     } else {
       modal.classList.toggle('pf-modal-hidden');
     }
+    // When the panel becomes visible, refresh the weather-adjusted figure.
+    if (!modal.classList.contains('pf-modal-hidden')) refreshWeatherAdjustment();
   }
 
   // Real-world conversion helpers — shared with popup.js via lib/formatters.js.
@@ -710,6 +717,61 @@
     // Query count
     const countEl = document.getElementById('pf-query-count');
     if (countEl) countEl.textContent = `${sessionStats.queryCount} ${sessionStats.queryCount === 1 ? 'query' : 'queries'} this session`;
+
+    // Keep the weather-adjusted figures in step with the growing session totals
+    // (re-render only — no network; the value is refreshed when the panel opens).
+    renderWeatherAdjustment();
+  }
+
+  // ── Weather-adjusted estimate (shown beneath the base numbers) ────────────
+  // The content script can't fetch Open-Meteo (the chat page's CSP blocks it),
+  // so the service worker fetches + computes the factor; here we just render it.
+  let _weatherAdj = null;
+  function escapeSafe(s) {
+    if (typeof PFWritingFormat !== 'undefined' && PFWritingFormat.escapeHtml) return PFWritingFormat.escapeHtml(s);
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  async function refreshWeatherAdjustment() {
+    try {
+      const resp = await sendMessage({ type: 'GET_WEATHER_ADJ' });
+      _weatherAdj = resp && typeof resp === 'object' ? resp : null;
+    } catch (_) {
+      _weatherAdj = null;
+    }
+    renderWeatherAdjustment();
+  }
+  function renderWeatherAdjustment() {
+    const section = document.getElementById('pf-modal-weather');
+    const body = document.getElementById('pf-weather-body');
+    if (!section || !body) return;
+    const adj = _weatherAdj;
+    if (!adj || !adj.available) {
+      if (adj && adj.reason === 'no_location') {
+        section.hidden = false;
+        body.innerHTML = '<div class="pf-weather-hint">Set a location on the dashboard (Weekly Stats → Weather-aware estimate) to see a weather-adjusted figure here.</div>';
+      } else {
+        section.hidden = true;
+      }
+      return;
+    }
+    section.hidden = false;
+    const region = escapeSafe(adj.regionLabel || 'nearest region');
+    const temp = adj.tempC != null ? `${adj.tempC}°C` : '—';
+    if (adj.isHot && adj.factor > 1.001) {
+      const e = PFFormat.energy(sessionStats.totalEnergyWh * adj.factor).compact;
+      const w = PFFormat.water(sessionStats.totalWaterMl * adj.factor).compact;
+      const c = PFFormat.co2(sessionStats.totalCo2G * adj.factor).compact;
+      body.innerHTML =
+        `<div class="pf-weather-note">It’s hot near <strong>${region}</strong> (${temp}). Cooling could add about <strong>+${adj.pct}%</strong>, so this session is closer to:</div>` +
+        '<div class="pf-weather-grid">' +
+          `<div class="pf-weather-cell"><span class="pf-weather-val">${e}</span><span class="pf-weather-lbl">Energy</span></div>` +
+          `<div class="pf-weather-cell"><span class="pf-weather-val">${w}</span><span class="pf-weather-lbl">Water</span></div>` +
+          `<div class="pf-weather-cell"><span class="pf-weather-val">${c}</span><span class="pf-weather-lbl">CO2</span></div>` +
+        '</div>' +
+        '<div class="pf-weather-fine">Approximate — live weather at the nearest known cloud region, not the exact data center.</div>';
+    } else {
+      body.innerHTML = `<div class="pf-weather-note">Mild near <strong>${region}</strong> (${temp}) right now — the standard estimate applies, no weather adjustment needed.</div>`;
+    }
   }
 
   // ── Prompt optimizer ───────────────────────────────────────────────────--

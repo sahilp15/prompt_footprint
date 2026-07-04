@@ -123,10 +123,22 @@
   }
 
   // ── Thin fetch wrappers (impure) ──────────────────────────────────────────
+  // The default fetch is wrapped with an abort timeout so a slow/blocked request
+  // never hangs a caller. A supplied fetchImpl (tests) is used as-is.
+  function timedFetch(f, isDefault) {
+    if (!isDefault || typeof AbortController === 'undefined') return (url) => f(url);
+    return (url) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 9000);
+      return f(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+    };
+  }
+
   async function fetchWeather(lat, lon, fetchImpl) {
+    const isDefault = !fetchImpl;
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) throw new Error('no fetch available');
-    const res = await f(buildForecastUrl(lat, lon));
+    const res = await timedFetch(f, isDefault)(buildForecastUrl(lat, lon));
     if (!res.ok) throw new Error(`weather ${res.status}`);
     return parseForecast(await res.json());
   }
