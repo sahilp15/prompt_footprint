@@ -1,6 +1,7 @@
-import { Link, NavLink } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Droplets, ArrowRight, Check } from 'lucide-react'
 import { SITE, hasChromeStoreLink } from '../config/site'
+import { useScrollToSection } from './useScrollToSection'
 import './marketing.css'
 
 // GitHub's mark isn't in this lucide version (brand icons were dropped), so we
@@ -15,7 +16,7 @@ export function Github({ size = 16 }) {
 
 // Primary download call-to-action. Until a real Chrome Web Store listing exists
 // (SITE.chromeStoreUrl), this renders as an intentional, styled "coming soon"
-// button — clearly not-yet-live, but not broken. Once the URL is set in
+// button: clearly not-yet-live, but not broken. Once the URL is set in
 // config/site.js it automatically becomes a real link that opens the listing.
 export function ChromeCTA({ size = 'lg', block = false }) {
   const live = hasChromeStoreLink()
@@ -24,7 +25,7 @@ export function ChromeCTA({ size = 'lg', block = false }) {
   if (live) {
     return (
       <a className={cls} href={SITE.chromeStoreUrl} target="_blank" rel="noopener noreferrer">
-        Add to Chrome — it's free <ArrowRight size={18} />
+        Add to Chrome, it&apos;s free <ArrowRight size={18} />
       </a>
     )
   }
@@ -37,12 +38,12 @@ export function ChromeCTA({ size = 'lg', block = false }) {
 }
 
 export function SiteNav() {
-  const links = [
-    { href: '/#features', label: 'Features' },
-    { href: '/#how', label: 'How it works' },
-    { href: '/#demo', label: 'Demo' },
-    { href: '/#privacy', label: 'Privacy' },
-    { to: '/support', label: 'Support' },
+  const scrollTo = useScrollToSection()
+  const sections = [
+    { id: 'features', label: 'Features' },
+    { id: 'how', label: 'How it works' },
+    { id: 'demo', label: 'Demo' },
+    { id: 'privacy', label: 'Privacy' },
   ]
   return (
     <header className="mk-nav">
@@ -52,16 +53,20 @@ export function SiteNav() {
           <span className="mk-brand-name">PromptFootprint</span>
         </Link>
         <nav className="mk-nav-links">
-          {links.map((l) =>
-            l.to ? (
-              <NavLink key={l.label} to={l.to} className="mk-nav-link">{l.label}</NavLink>
-            ) : (
-              <a key={l.label} href={l.href} className="mk-nav-link">{l.label}</a>
-            ),
-          )}
+          {sections.map((s) => (
+            <a
+              key={s.id}
+              href={`#${s.id}`}
+              className="mk-nav-link"
+              onClick={(e) => { e.preventDefault(); scrollTo(s.id) }}
+            >
+              {s.label}
+            </a>
+          ))}
+          <Link to="/support" className="mk-nav-link">Support</Link>
         </nav>
         <div className="mk-nav-cta">
-          <a className="mk-nav-demo" href="/#/app">Live demo</a>
+          <Link className="mk-nav-demo" to="/app">Live demo</Link>
           <ChromeCTA size="sm" />
         </div>
       </div>
@@ -71,6 +76,7 @@ export function SiteNav() {
 
 export function SiteFooter() {
   const year = 2026 // static: build runs without Date access; bump on release
+  const scrollTo = useScrollToSection()
   return (
     <footer className="mk-footer">
       <div className="mk-footer-inner">
@@ -86,15 +92,15 @@ export function SiteFooter() {
         <div className="mk-footer-cols">
           <div className="mk-footer-col">
             <h4>Product</h4>
-            <a href="/#features">Features</a>
-            <a href="/#how">How it works</a>
-            <a href="/#/app">Live demo</a>
+            <a href="#features" onClick={(e) => { e.preventDefault(); scrollTo('features') }}>Features</a>
+            <a href="#how" onClick={(e) => { e.preventDefault(); scrollTo('how') }}>How it works</a>
+            <Link to="/app">Live demo</Link>
           </div>
           <div className="mk-footer-col">
             <h4>Trust</h4>
             <Link to="/privacy">Privacy Policy</Link>
             <Link to="/terms">Terms of Use</Link>
-            <a href="/#privacy">Data & privacy</a>
+            <a href="#privacy" onClick={(e) => { e.preventDefault(); scrollTo('privacy') }}>Data &amp; privacy</a>
           </div>
           <div className="mk-footer-col">
             <h4>Support</h4>
