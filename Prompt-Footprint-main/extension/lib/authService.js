@@ -66,12 +66,20 @@
       const email = session && session.user ? session.user.email : null;
       let displayName = null;
       if (session && session.user && state === 'logged_in') {
-        // Best-effort: a missing profile row or a network hiccup must not break
-        // status — we just return no name.
+        // Best-effort: a missing profile row/column or a network hiccup must not
+        // break status — we just fall back to the locally saved name below.
         try {
           const { data: prof } = await client
             .from('profiles').select('display_name').eq('user_id', session.user.id).maybeSingle();
           displayName = prof && typeof prof.display_name === 'string' ? prof.display_name : null;
+        } catch (_) { /* ignore */ }
+      }
+      // Local fallback so the greeting works even before the Supabase
+      // display_name column is migrated (or while offline).
+      if (!displayName) {
+        try {
+          const cfg = await PFStorage.getConfig();
+          if (cfg && typeof cfg.displayName === 'string' && cfg.displayName.trim()) displayName = cfg.displayName.trim();
         } catch (_) { /* ignore */ }
       }
       return { state, configured: true, email, displayName };
@@ -80,23 +88,26 @@
     }
   }
 
-  // Set (or clear) the signed-in user's display name. Upserts the profile row so
-  // it works whether or not a row already exists; leaves anon_client_id intact.
+  // Set (or clear) the display name. LOCAL-FIRST: always save on-device so the
+  // greeting works immediately, then best-effort sync to Supabase. Never returns
+  // an error just because the Supabase display_name column isn't migrated yet —
+  // it reports { synced } so the UI can note cross-device sync is pending.
   async function setDisplayName(name) {
-    const client = PFSupabase.getClient();
-    if (!client) return { error: 'not_configured' };
     const trimmed = typeof name === 'string' ? name.trim().slice(0, 80) : '';
+    try { await PFStorage.setConfig({ displayName: trimmed }); } catch (_) { /* ignore */ }
+
+    const client = PFSupabase.getClient();
+    if (!client) return { status: 'ok', displayName: trimmed || null, synced: false };
     try {
       const { data } = await client.auth.getSession();
       const user = data && data.session ? data.session.user : null;
-      if (!user) return { error: 'not_signed_in' };
+      if (!user) return { status: 'ok', displayName: trimmed || null, synced: false };
       const { error } = await client
         .from('profiles')
         .upsert({ user_id: user.id, display_name: trimmed || null }, { onConflict: 'user_id' });
-      if (error) return { error: 'save_failed', message: error.message };
-      return { status: 'ok', displayName: trimmed || null };
+      return { status: 'ok', displayName: trimmed || null, synced: !error };
     } catch (_) {
-      return { error: 'save_failed' };
+      return { status: 'ok', displayName: trimmed || null, synced: false };
     }
   }
 

@@ -45,7 +45,12 @@ export default function Account() {
     setBusy(false)
     if (r.status === 'ok') {
       setEditingName(false)
-      setMsg({ kind: 'ok', text: 'Name saved.' })
+      setMsg({
+        kind: 'ok',
+        text: r.synced === false
+          ? 'Name saved on this device. It’ll sync to your account once the display_name column is added.'
+          : 'Name saved.',
+      })
       await refresh()
     } else {
       setMsg({ kind: 'err', text: r.message || 'Couldn’t save your name right now. Try again later.' })

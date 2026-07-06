@@ -11,6 +11,13 @@
 importScripts(
   'lib/proxyConfig.js',
   'lib/aiClient.js',
+  // Loaded (in dependency order) so the worker can compute the weather-adjusted
+  // estimate: the content script can't fetch Open-Meteo (blocked by the chat
+  // page's CSP), so the worker does it here under the extension's own CSP.
+  'lib/constants.js',
+  'lib/tokenEstimator.js',
+  'lib/environmentalModel.js',
+  'lib/weatherService.js',
   'lib/storage.js',
   'lib/vendor/supabase.js',
   'lib/supabaseClient.js',
@@ -125,6 +132,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Weather-adjusted estimate for the in-page panel. Reads the user's chosen
+  // location, fetches nearby weather (cached), and returns the multiplier so the
+  // overlay can show a heat-adjusted figure beneath the base numbers.
+  if (message.type === 'GET_WEATHER_ADJ') {
+    getWeatherAdjustment().then(sendResponse);
+    return true;
+  }
+
   // ── Optional accounts & sync (Phase 2) ─────────────────────────────────
   // Driven by the dashboard. Every handler degrades gracefully: if Supabase is
   // not configured, auth returns {error:'not_configured'} and sync returns
@@ -174,6 +189,49 @@ try {
     if (a.name === 'pf_sync' && typeof PFSync !== 'undefined') PFSync.syncNow().catch(() => {});
   });
 } catch (_) { /* alarms unavailable: skip periodic sync, on-demand still works */ }
+
+// ── Weather-adjusted estimate ──────────────────────────────────────────────
+// Returns { available, factor, pct, tempC, regionLabel, isHot } using the user's
+// stored (coarse) location and live weather at the nearest known cloud region.
+// Cached for 30 min so opening the panel repeatedly doesn't re-hit the network.
+const WEATHER_ADJ_TTL_MS = 30 * 60 * 1000;
+let _weatherAdjCache = null; // { at, lat, lon, value }
+
+async function getWeatherAdjustment() {
+  let config = {};
+  try { config = await PFStorage.getConfig(); } catch (_) {}
+  const mode = config.heatwaveLocationMode;
+  if (mode === 'general') return { available: false, reason: 'general' };
+  const lat = config.heatwaveLat;
+  const lon = config.heatwaveLon;
+  if (typeof lat !== 'number' || typeof lon !== 'number') return { available: false, reason: 'no_location' };
+
+  const now = Date.now();
+  if (_weatherAdjCache && _weatherAdjCache.lat === lat && _weatherAdjCache.lon === lon &&
+      (now - _weatherAdjCache.at) < WEATHER_ADJ_TTL_MS) {
+    return _weatherAdjCache.value;
+  }
+
+  const reg = PFWeather.nearestCloudRegion(lat, lon);
+  try {
+    const w = await PFWeather.fetchWeather(reg ? reg.lat : lat, reg ? reg.lon : lon);
+    const feels = w ? w.feelsLikeC : null;
+    const factor = feels != null ? heatwaveFactor(feels) : 1;
+    const value = {
+      available: true,
+      factor,
+      pct: Math.round((factor - 1) * 100),
+      tempC: feels != null ? Math.round(feels) : null,
+      regionLabel: reg ? reg.label : (config.heatwavePlaceLabel || 'nearest region'),
+      // Heatwave threshold mirrors constants.js HEATWAVE_MODEL.HEATWAVE_TEMP_C (32°C).
+      isHot: feels != null && feels >= 32 && factor > 1.001,
+    };
+    _weatherAdjCache = { at: now, lat, lon, value };
+    return value;
+  } catch (_) {
+    return { available: false, reason: 'error' };
+  }
+}
 
 // ── AI writing layer (proxy-first, rate-limited, graceful) ─────────────────--
 // Resolves the provider from user config each call: a configured Worker URL
