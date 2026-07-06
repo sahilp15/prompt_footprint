@@ -23,7 +23,7 @@ function Placeholder({ children }) {
 
 // ── Privacy ───────────────────────────────────────────────────────────────
 // Mirrors the plain-language summary in docs/PRIVACY.md (the canonical, fuller
-// version). Kept in sync manually — update both if data practices change.
+// version). Kept in sync manually; update both if data practices change.
 export function Privacy() {
   return (
     <MarketingPage>
@@ -31,7 +31,7 @@ export function Privacy() {
         <p className="mk-doc-intro">
           The short version: <strong>everything works on your device by default, and
           your prompts and the models’ replies are never stored or uploaded.</strong> A
-          few features can send data off the device — but only ones you turn on
+          few features can send data off the device, but only ones you turn on
           yourself, and this page spells out each one.
         </p>
       </DocHeader>
@@ -71,7 +71,7 @@ export function Privacy() {
           </li>
           <li>
             <strong>Accounts &amp; sync (Supabase).</strong> Optional. Syncs numbers-only
-            summaries and settings — never prompt or reply text — protected by
+            summaries and settings (never prompt or reply text), protected by
             row-level security so only your account can read them.
           </li>
           <li>
@@ -83,7 +83,7 @@ export function Privacy() {
 
         <h2>No analytics or telemetry</h2>
         <p>
-          There are no analytics or telemetry SDKs — no Google Analytics, Mixpanel,
+          There are no analytics or telemetry SDKs: no Google Analytics, Mixpanel,
           Sentry, or similar. The extension does not phone home.
         </p>
 
@@ -96,7 +96,7 @@ export function Privacy() {
         <h2>Contact</h2>
         <p>
           Privacy questions: <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a>{' '}
-          (placeholder — activate this alias before launch), or open an issue on{' '}
+          (placeholder, activate this alias before launch), or open an issue on{' '}
           <a href={SITE.issuesUrl} target="_blank" rel="noopener noreferrer">GitHub</a>.
         </p>
       </section>
@@ -129,7 +129,7 @@ export function Terms() {
         <h2>2. The estimates are estimates</h2>
         <p>
           The energy, water, and CO₂ figures are <strong>approximations</strong> derived
-          from public disclosures and published research — not direct measurements of
+          from public disclosures and published research, not direct measurements of
           your specific requests. They’re meant to build intuition, not to be treated as
           audited or authoritative.
         </p>
@@ -151,14 +151,14 @@ export function Terms() {
         <Placeholder>
           Sections a lawyer will likely want to add or tighten for a commercial launch:
           limitation of liability, governing law/jurisdiction, dispute resolution, and
-          changes-to-terms notice. Placeholders only — do not treat as final.
+          changes-to-terms notice. Placeholders only; do not treat as final.
         </Placeholder>
 
         <h2>Contact</h2>
         <p>
           Legal questions:{' '}
           <a href={`mailto:${SITE.legalEmail}`}>{SITE.legalEmail}</a>{' '}
-          (placeholder — activate this alias before launch).
+          (placeholder, activate this alias before launch).
         </p>
       </section>
     </MarketingPage>
@@ -194,7 +194,7 @@ export function Support() {
     <MarketingPage>
       <DocHeader kicker="Support" title="Help & FAQ">
         <p className="mk-doc-intro">
-          Questions, bugs, or ideas — here’s how to reach us and the answers to the
+          Questions, bugs, or ideas: here’s how to reach us and the answers to the
           things people ask most.
         </p>
       </DocHeader>
@@ -203,13 +203,13 @@ export function Support() {
         <a className="mk-support-card" href={SITE.issuesUrl} target="_blank" rel="noopener noreferrer">
           <span className="mk-card-icon"><Github size={20} /></span>
           <h3>Report a bug or request a feature</h3>
-          <p>Open an issue on GitHub — the fastest way to get something looked at.</p>
+          <p>Open an issue on GitHub, the fastest way to get something looked at.</p>
         </a>
         <a className="mk-support-card" href={`mailto:${SITE.supportEmail}`}>
           <span className="mk-card-icon"><Mail size={20} /></span>
           <h3>Email support</h3>
           <p>{SITE.supportEmail}</p>
-          <span className="mk-inline-placeholder">Placeholder — alias not yet active</span>
+          <span className="mk-inline-placeholder">Placeholder: alias not yet active</span>
         </a>
         <Link className="mk-support-card" to="/privacy">
           <span className="mk-card-icon"><ShieldCheck size={20} /></span>
@@ -249,13 +249,13 @@ export function Contact() {
             <span className="mk-card-icon"><LifeBuoy size={20} /></span>
             <h3>Support &amp; general questions</h3>
             <p><a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a></p>
-            <span className="mk-inline-placeholder">Placeholder — activate before launch</span>
+            <span className="mk-inline-placeholder">Placeholder: activate before launch</span>
           </div>
           <div className="mk-contact-item">
             <span className="mk-card-icon"><ShieldCheck size={20} /></span>
             <h3>Legal &amp; privacy</h3>
             <p><a href={`mailto:${SITE.legalEmail}`}>{SITE.legalEmail}</a></p>
-            <span className="mk-inline-placeholder">Placeholder — activate before launch</span>
+            <span className="mk-inline-placeholder">Placeholder: activate before launch</span>
           </div>
           <div className="mk-contact-item">
             <span className="mk-card-icon"><Github size={20} /></span>

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { SITE, demoUrl } from '../config/site'
 import { SiteNav, SiteFooter, ChromeCTA, Github } from './MarketingChrome'
+import { useScrollToSection } from './useScrollToSection'
 import './marketing.css'
 
 const fadeUp = {
@@ -32,7 +33,7 @@ const FEATURES = [
   {
     icon: Gauge,
     title: 'Per-prompt impact, live',
-    body: 'A small overlay on ChatGPT and Claude shows the estimated energy, water, and CO₂ behind each message as you send it — no tab-switching, no setup.',
+    body: 'A small overlay on ChatGPT and Claude shows the estimated energy, water, and CO₂ behind each message as you send it. No tab-switching, no setup.',
   },
   {
     icon: LineChart,
@@ -42,12 +43,12 @@ const FEATURES = [
   {
     icon: PenLine,
     title: 'Shorter prompts, fewer tokens',
-    body: 'An offline writing checker cleans up drafts, and the optimizer suggests tighter phrasings — then totals the tokens you actually saved.',
+    body: 'An offline writing checker cleans up drafts, and the optimizer suggests tighter phrasings, then totals the tokens you actually saved.',
   },
   {
     icon: Thermometer,
     title: 'Heatwave-aware estimates',
-    body: 'Cooling a data center costs more in hot weather. Opt in to a rough location and the estimate adjusts for local conditions — or stays a general figure.',
+    body: 'Cooling a data center costs more in hot weather. Opt in to a rough location and the estimate adjusts for local conditions, or stays a general figure.',
   },
   {
     icon: Lock,
@@ -57,7 +58,7 @@ const FEATURES = [
   {
     icon: Leaf,
     title: 'Built to be understood',
-    body: 'Every number traces back to public disclosures and published research. The method — and its limits — are documented, not hidden.',
+    body: 'Every number traces back to public disclosures and published research. The method, and its limits, are documented, not hidden.',
   },
 ]
 
@@ -80,6 +81,7 @@ const STEPS = [
 ]
 
 export default function LandingPage() {
+  const scrollTo = useScrollToSection()
   return (
     <div className="mk mk-landing">
       <SiteNav />
@@ -97,14 +99,18 @@ export default function LandingPage() {
             </h1>
             <p className="mk-lede">
               PromptFootprint is a Chrome extension that estimates the environmental
-              cost of your AI chats — live, on your device, and without ever storing
+              cost of your AI chats: live, on your device, and without ever storing
               what you type. Understand your footprint, then shrink it.
             </p>
             <div className="mk-hero-cta">
               <ChromeCTA size="lg" />
-              <a className="btn btn-ghost btn-lg" href="#demo">
+              <button
+                type="button"
+                className="btn btn-ghost btn-lg"
+                onClick={() => scrollTo('demo')}
+              >
                 See the dashboard <ArrowRight size={18} />
-              </a>
+              </button>
             </div>
             <ul className="mk-hero-trust">
               <li><Check size={15} /> Works without an account</li>
@@ -150,7 +156,7 @@ export default function LandingPage() {
           <Reveal>
             <p className="mk-band-lead">
               A single prompt looks weightless. Thousands of them aren’t. PromptFootprint
-              turns an invisible cost into a number you can actually see — so efficiency
+              turns an invisible cost into a number you can actually see, so efficiency
               stops being abstract.
             </p>
           </Reveal>
@@ -162,7 +168,7 @@ export default function LandingPage() {
         <div className="mk-section-inner">
           <Reveal className="mk-section-head">
             <span className="mk-kicker">What it does</span>
-            <h2 className="mk-h2">Everything runs where your data already is — in your browser.</h2>
+            <h2 className="mk-h2">Everything runs where your data already is: in your browser.</h2>
           </Reveal>
           <div className="mk-grid">
             {FEATURES.map((f, i) => (
@@ -207,8 +213,8 @@ export default function LandingPage() {
             <span className="mk-kicker">See it in action</span>
             <h2 className="mk-h2">The dashboard, running on sample data.</h2>
             <p className="mk-section-sub">
-              This is the real PromptFootprint dashboard — the same one that opens from
-              the extension — loaded with example data so you can click around before you install.
+              This is the real PromptFootprint dashboard, the same one that opens from
+              the extension, loaded with example data so you can click around before you install.
             </p>
           </Reveal>
           <Reveal delay={0.05}>
@@ -228,7 +234,7 @@ export default function LandingPage() {
             </div>
             <p className="mk-demo-note">
               Prefer full screen?{' '}
-              <a href="/#/app">Open the demo in its own tab <ArrowRight size={14} /></a>
+              <Link to="/app">Open the demo in its own tab <ArrowRight size={14} /></Link>
             </p>
           </Reveal>
         </div>
@@ -242,14 +248,14 @@ export default function LandingPage() {
             <h2 className="mk-h2">The honest default is on-device.</h2>
             <p>
               PromptFootprint was built local-first on purpose. The text of your prompts
-              and the models’ answers is read only to count its length — it is never
+              and the models’ answers is read only to count its length. It is never
               written to storage and never leaves your browser.
             </p>
             <ul className="mk-check-list">
               <li><ShieldCheck size={17} /> No prompts or replies stored or uploaded</li>
               <li><Eye size={17} /> No analytics, no telemetry, no third-party trackers</li>
               <li><Lock size={17} /> Optional features (AI writing help, sync, location) are off until you turn them on</li>
-              <li><Check size={17} /> Accounts are optional — the extension works fully signed out</li>
+              <li><Check size={17} /> Accounts are optional: the extension works fully signed out</li>
             </ul>
             <div className="mk-trust-links">
               <Link to="/privacy" className="btn btn-ghost btn-sm">Read the Privacy Policy</Link>
@@ -262,7 +268,7 @@ export default function LandingPage() {
                 “Everything works on your device by default, and your prompts and the
                 models’ replies are never stored or uploaded.”
               </p>
-              <p className="mk-quote-src">— from the PromptFootprint Privacy Policy</p>
+              <p className="mk-quote-src">From the PromptFootprint Privacy Policy</p>
             </div>
           </Reveal>
         </div>
@@ -282,7 +288,7 @@ export default function LandingPage() {
                 </a>
               </div>
               <p className="mk-final-note">
-                The Chrome Web Store listing is on the way — the button goes live the
+                The Chrome Web Store listing is on the way. The button goes live the
                 moment the extension is approved.
               </p>
             </div>
