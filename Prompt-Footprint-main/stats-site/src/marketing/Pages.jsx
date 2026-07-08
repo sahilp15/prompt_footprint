@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Mail, ShieldCheck, ArrowLeft, LifeBuoy } from 'lucide-react'
+import { Mail, ShieldCheck, ArrowLeft, LifeBuoy, CheckCircle2 } from 'lucide-react'
 import { SITE } from '../config/site'
 import { MarketingPage, Github } from './MarketingChrome'
 import './marketing.css'
@@ -268,6 +268,25 @@ export function Contact() {
           </div>
         </div>
       </section>
+    </MarketingPage>
+  )
+}
+
+// Where the email-confirmation link lands. It opens in a normal browser tab,
+// not the extension, so this just points the user back rather than dropping
+// them on the full marketing homepage.
+export function Confirmed() {
+  return (
+    <MarketingPage>
+      <div className="mk-confirmed">
+        <span className="mk-confirmed-icon"><CheckCircle2 size={40} /></span>
+        <h1 className="mk-h1 mk-doc-h1">Email confirmed</h1>
+        <p className="mk-doc-intro">
+          Your account is ready. Open the PromptFootprint extension and log in with the
+          email and password you just used.
+        </p>
+        <p className="mk-confirmed-hint">You can close this tab.</p>
+      </div>
     </MarketingPage>
   )
 }
