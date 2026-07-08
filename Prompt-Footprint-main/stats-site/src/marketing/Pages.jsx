@@ -108,57 +108,61 @@ export function Privacy() {
 export function Terms() {
   return (
     <MarketingPage>
-      <DocHeader kicker="Trust" title="Terms of Use" updated="2026-07-01" />
-
-      <div className="mk-note">
-        This is a plain-language first draft written by the project, not formal legal advice.
-      </div>
-      <Placeholder>
-        Have a lawyer review these terms before relying on them for a commercial launch.
-        The canonical text lives in <code>docs/TERMS.md</code>.
-      </Placeholder>
+      <DocHeader kicker="Trust" title="Terms of Use" updated="2026-07-01">
+        <p className="mk-doc-intro">
+          Short and plain, on purpose. By installing or using PromptFootprint, you agree
+          to the following.
+        </p>
+      </DocHeader>
 
       <section className="mk-doc-body">
         <h2>1. What PromptFootprint is</h2>
         <p>
           A free browser extension that estimates the environmental impact of your AI
-          chat usage, checks your writing, and suggests shorter prompts. By installing
-          or using it, you agree to these terms.
+          chat usage, checks your writing, and suggests shorter prompts.
         </p>
 
         <h2>2. The estimates are estimates</h2>
         <p>
-          The energy, water, and CO₂ figures are <strong>approximations</strong> derived
-          from public disclosures and published research, not direct measurements of
-          your specific requests. They’re meant to build intuition, not to be treated as
-          audited or authoritative.
+          The energy, water, and CO₂ figures are approximations derived from public
+          disclosures and published research, not direct measurements of your specific
+          requests. They’re meant to build intuition, not to be treated as audited or
+          authoritative.
         </p>
 
-        <h2>3. Accounts (optional)</h2>
+        <h2>3. Accounts are optional</h2>
         <p>
           You can use PromptFootprint without an account. If you create one, provide a
           valid email, keep your password secure, and you’re responsible for activity
-          under it. You may delete your account at any time. We may suspend accounts
+          under it. You can delete your account at any time. We may suspend accounts
           that abuse the service.
         </p>
 
         <h2>4. No warranty</h2>
         <p>
-          PromptFootprint is provided “as is,” without warranties of any kind. It’s a
-          tool for awareness, not a compliance or reporting instrument.
+          PromptFootprint is provided “as is.” It’s a tool for awareness, not a
+          compliance or reporting instrument, and we don’t guarantee it’s error-free or
+          available at all times.
         </p>
 
-        <Placeholder>
-          Sections a lawyer will likely want to add or tighten for a commercial launch:
-          limitation of liability, governing law/jurisdiction, dispute resolution, and
-          changes-to-terms notice. Placeholders only; do not treat as final.
-        </Placeholder>
+        <h2>5. Limitation of liability</h2>
+        <p>
+          To the extent allowed by law, PromptFootprint isn’t liable for indirect,
+          incidental, or consequential damages arising from your use of the extension.
+          Use your own judgment, especially for anything beyond casual, personal use.
+        </p>
+
+        <h2>6. Changes to these terms</h2>
+        <p>
+          We may update these terms as the product changes. We’ll update the date above
+          when we do. Continuing to use PromptFootprint after a change means you accept
+          the updated terms.
+        </p>
 
         <h2>Contact</h2>
         <p>
-          Legal questions:{' '}
-          <a href={`mailto:${SITE.legalEmail}`}>{SITE.legalEmail}</a>{' '}
-          (placeholder, activate this alias before launch).
+          Questions about these terms:{' '}
+          <a href={`mailto:${SITE.legalEmail}`}>{SITE.legalEmail}</a>.
         </p>
       </section>
     </MarketingPage>
