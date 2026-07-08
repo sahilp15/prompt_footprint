@@ -352,7 +352,6 @@
 .mk-support-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--border); }
 .mk-support-card h3 { font-family: var(--font-serif); font-size: 1.05rem; font-weight: 700; color: var(--text-primary); }
 .mk-support-card p { font-size: 0.92rem; color: var(--text-secondary); line-height: 1.5; }
-.mk-inline-placeholder { font-size: 11.5px; color: var(--accent-amber); font-weight: 600; }
 .mk-faq { display: grid; gap: 10px; margin-top: 8px; }
 .mk-faq-item {
   background: var(--bg-card); border: 1px solid var(--border-subtle);

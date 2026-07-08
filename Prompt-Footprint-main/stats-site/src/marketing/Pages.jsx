@@ -199,7 +199,6 @@ export function Support() {
           <span className="mk-card-icon"><Mail size={20} /></span>
           <h3>Email support</h3>
           <p>{SITE.supportEmail}</p>
-          <span className="mk-inline-placeholder">Placeholder: alias not yet active</span>
         </a>
         <Link className="mk-support-card" to="/privacy">
           <span className="mk-card-icon"><ShieldCheck size={20} /></span>
@@ -239,13 +238,11 @@ export function Contact() {
             <span className="mk-card-icon"><LifeBuoy size={20} /></span>
             <h3>Support &amp; general questions</h3>
             <p><a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a></p>
-            <span className="mk-inline-placeholder">Placeholder: activate before launch</span>
           </div>
           <div className="mk-contact-item">
             <span className="mk-card-icon"><ShieldCheck size={20} /></span>
             <h3>Legal &amp; privacy</h3>
             <p><a href={`mailto:${SITE.legalEmail}`}>{SITE.legalEmail}</a></p>
-            <span className="mk-inline-placeholder">Placeholder: activate before launch</span>
           </div>
           <div className="mk-contact-item">
             <span className="mk-card-icon"><Github size={20} /></span>
