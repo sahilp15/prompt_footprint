@@ -16,11 +16,6 @@ function DocHeader({ kicker, title, updated, children }) {
   )
 }
 
-// A small, clearly-marked banner for content that still needs finalizing.
-function Placeholder({ children }) {
-  return <div className="mk-placeholder"><strong>TODO before launch:</strong> {children}</div>
-}
-
 // ── Privacy ───────────────────────────────────────────────────────────────
 // Mirrors the plain-language summary in docs/PRIVACY.md (the canonical, fuller
 // version). Kept in sync manually; update both if data practices change.
@@ -35,15 +30,6 @@ export function Privacy() {
           yourself, and this page spells out each one.
         </p>
       </DocHeader>
-
-      <div className="mk-note">
-        This is a plain-language policy written by the project, not formal legal advice.
-      </div>
-      <Placeholder>
-        Have a lawyer review this before relying on it commercially, and confirm the
-        contact address below is a live inbox. The authoritative, always-current text
-        lives in <code>docs/PRIVACY.md</code> in the repository.
-      </Placeholder>
 
       <section className="mk-doc-body">
         <h2>What PromptFootprint does with data</h2>
@@ -95,8 +81,8 @@ export function Privacy() {
 
         <h2>Contact</h2>
         <p>
-          Privacy questions: <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a>{' '}
-          (placeholder, activate this alias before launch), or open an issue on{' '}
+          Privacy questions: <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a>,
+          or open an issue on{' '}
           <a href={SITE.issuesUrl} target="_blank" rel="noopener noreferrer">GitHub</a>.
         </p>
       </section>
