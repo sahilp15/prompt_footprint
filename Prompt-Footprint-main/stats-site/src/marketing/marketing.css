@@ -298,6 +298,15 @@
 
 /* ── Doc / legal / support pages ───────────────────────────── */
 .mk-doc { flex: 1; max-width: 760px; width: 100%; margin: 0 auto; padding: 56px 28px 72px; }
+
+.mk-confirmed { text-align: center; padding: 60px 0; max-width: 30rem; margin: 0 auto; }
+.mk-confirmed-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 72px; height: 72px; border-radius: 50%; margin-bottom: 24px;
+  background: rgba(91, 124, 58, 0.12); color: var(--accent-green);
+}
+.mk-confirmed .mk-doc-intro { margin-top: 4px; }
+.mk-confirmed-hint { margin-top: 20px; font-size: 13.5px; color: var(--text-muted); }
 .mk-doc-head { margin-bottom: 30px; }
 .mk-doc-back {
   display: flex; width: fit-content; align-items: center; gap: 6px;

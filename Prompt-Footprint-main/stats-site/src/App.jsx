@@ -7,7 +7,7 @@ import Guide from './components/Guide'
 import Awards from './components/Awards'
 import Settings from './components/Settings'
 import LandingPage from './marketing/LandingPage'
-import { Privacy, Terms, Support, Contact } from './marketing/Pages'
+import { Privacy, Terms, Support, Contact, Confirmed } from './marketing/Pages'
 import { isDemoMode } from './lib/api'
 import './App.css'
 
@@ -102,6 +102,7 @@ function App() {
       <Route path="/terms" element={<Terms />} />
       <Route path="/support" element={<Support />} />
       <Route path="/contact" element={<Contact />} />
+      <Route path="/confirmed" element={<Confirmed />} />
       <Route path="/app/*" element={<Dashboard base="/app" />} />
     </Routes>
   )
