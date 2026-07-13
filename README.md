@@ -172,18 +172,6 @@ data only when opened as the extension's dashboard.
 - [`docs/BACKEND_DEPLOYMENT.md`](docs/BACKEND_DEPLOYMENT.md) — provision Supabase and wire keys.
 - [`docs/TESTING.md`](docs/TESTING.md) — manual test steps.
 
-## Publishing to the Chrome Web Store
-
-1. Rebuild the dashboard (`stats-site` → `extension/dashboard`, see above) so the
-   packaged options page is current.
-2. Confirm the manifest permissions and `connect-src` list only what's needed (see
-   [`docs/SECURITY.md`](docs/SECURITY.md)); if you enable optional accounts, set the
-   real Supabase project origin (no wildcard).
-3. Host [`docs/PRIVACY.md`](docs/PRIVACY.md) at a public URL (GitHub Pages works) and
-   put that URL in the listing.
-4. Fill in the store listing and data-use disclosures from
-   [`docs/CHROME_STORE_LISTING.md`](docs/CHROME_STORE_LISTING.md).
-5. Zip the repo root (the folder containing `manifest.json`) and upload it.
 
 ## Adding a platform
 

@@ -15,11 +15,22 @@
     catch (_) { return true; }
   }
 
+  // The confirmation email link opens in a normal browser tab (not the
+  // extension), so it needs somewhere useful to land. Point it at a small
+  // dedicated page instead of the marketing homepage, telling the user to go
+  // back to the extension to log in. Must also be added to Supabase's
+  // Authentication → URL Configuration → Redirect URLs allowlist.
+  const EMAIL_CONFIRM_REDIRECT = 'https://promptfootprint.app/#/confirmed';
+
   async function signUp(email, password) {
     const client = PFSupabase.getClient();
     if (!client) return { error: 'not_configured' };
     try {
-      const { data, error } = await client.auth.signUp({ email, password });
+      const { data, error } = await client.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: EMAIL_CONFIRM_REDIRECT },
+      });
       // Supabase's own error messages (weak password, rate-limited, etc.) are
       // already written to be shown to the user — pass them through rather than
       // guessing a reason, which risks showing a WRONG explanation.
