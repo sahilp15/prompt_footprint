@@ -288,8 +288,7 @@ export default function LandingPage() {
                 </a>
               </div>
               <p className="mk-final-note">
-                The Chrome Web Store listing is on the way. The button goes live the
-                moment the extension is approved.
+                Download now and take your first steps to a cleaner future!
               </p>
             </div>
           </Reveal>
