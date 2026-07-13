@@ -8,12 +8,9 @@
 //
 // ─────────────────────────────────────────────────────────────────────────
 //  TODO BEFORE PUBLIC LAUNCH — replace / activate the PLACEHOLDER values:
-//   1. CHROME_STORE_URL   — empty until the extension is approved. While empty,
-//                           the "Add to Chrome" button renders as an intentional
-//                           "coming soon" state (not a broken link).
-//   2. SUPPORT_EMAIL      — inbox not created yet. Set up mail routing for the
+//   1. SUPPORT_EMAIL      — inbox not created yet. Set up mail routing for the
 //                           domain, then confirm this address delivers.
-//   3. LEGAL_EMAIL        — same: create the alias before relying on it.
+//   2. LEGAL_EMAIL        — same: create the alias before relying on it.
 //  None of these are secrets. Do NOT put private keys or personal email here.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -26,9 +23,7 @@ export const SITE = {
   // Production domain (already registered).
   url: env.VITE_SITE_URL || 'https://promptfootprint.app',
 
-  // PLACEHOLDER — the extension is not on the Chrome Web Store yet. Leave this
-  // empty and the download CTA shows "Coming soon"; fill it once the listing is
-  // live and the button becomes a real link automatically.
+  // Live extension link
   chromeStoreUrl: env.VITE_CHROME_STORE_URL || 'https://chromewebstore.google.com/detail/promptfootprint/mlnchdecieopfkpijgoecfglbpdmemdp',
 
   // PLACEHOLDER emails — aliases on promptfootprint.app that still need to be
