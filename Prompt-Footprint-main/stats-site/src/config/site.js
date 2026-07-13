@@ -29,7 +29,7 @@ export const SITE = {
   // PLACEHOLDER — the extension is not on the Chrome Web Store yet. Leave this
   // empty and the download CTA shows "Coming soon"; fill it once the listing is
   // live and the button becomes a real link automatically.
-  chromeStoreUrl: env.VITE_CHROME_STORE_URL || '',
+  chromeStoreUrl: env.VITE_CHROME_STORE_URL || 'https://chromewebstore.google.com/detail/promptfootprint/mlnchdecieopfkpijgoecfglbpdmemdp',
 
   // PLACEHOLDER emails — aliases on promptfootprint.app that still need to be
   // created and routed to a real inbox. Never a personal address.
