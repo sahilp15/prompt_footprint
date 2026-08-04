@@ -8,8 +8,13 @@ A Chrome extension that passively tracks your AI chat usage (**ChatGPT** and
 `chrome.storage.local` and nothing leaves your browser. No backend is required to
 run it. Optional accounts (Supabase) can sync your settings and stats *summaries*
 across devices — never your prompt text and never your Gemini key; see
-[`docs/ACCOUNTS.md`](docs/ACCOUNTS.md). 🏆 *3rd Place — Climate ChangeMakers
-Challenge 2026* · [Devpost](https://devpost.com/software/prompt-footprint)
+[`docs/ACCOUNTS.md`](docs/ACCOUNTS.md).
+
+🏆 **3rd Place** — The Climate Change-Makers Challenge 2026 (nearly 300
+participants, 40+ countries) ·
+[Devpost](https://devpost.com/software/prompt-footprint)
+🏆 **4th Place** — Hoobit Hacks 2026 (570+ participants, international) ·
+[Devpost](https://devpost.com/software/promptfootprint)
 
 ## Architecture
 
@@ -38,6 +43,9 @@ Prompt-Footprint/
 │   ├── test/              Unit tests (node:test)
 │   └── styles/            Shared design system CSS
 ├── stats-site/            React + Vite dashboard; build output is copied to extension/dashboard
+│   ├── src/lib/tokenCutter/   Token Cutter engine (local-first prompt optimizer)
+│   ├── src/components/cutter/ Token Cutter UI
+│   └── test/                  node:test suite for the engine
 ├── supabase/              Optional accounts/sync: schema + RLS migration, config, RLS test
 └── server/                Legacy Express/Postgres backend (dormant; not used)
 ```
@@ -83,6 +91,26 @@ No server or configuration is needed — the extension is fully local.
    floating **PF** capsule anywhere (its position is remembered across reloads)
 5. Click the extension icon for the popup, or **View Full Stats** for the
    dashboard (which now includes a **Settings & Privacy** page)
+
+### Token Cutter
+
+A full prompt optimizer lives in the dashboard at **Token Cutter**. Paste a
+prompt and it shows what can be removed and why, with per-suggestion accept and
+reject controls, a side-by-side comparison, and the tokens, energy, water, and
+CO₂ you avoid by sending the shorter version.
+
+It runs **entirely on your device** — no API key, no account, no network. It
+protects code, JSON, links, quotes, placeholders, numbers, dates, and names;
+detects repeated instructions and restated constraints; and re-checks the result
+against your original before offering it, reporting anything that went missing.
+
+Three levels (Light / Balanced / Maximum), transparent local memory for
+preferences you shouldn't have to restate, and an optional Gemini pass that
+falls back to the local result whenever it is unavailable or produces something
+that fails the same local validation.
+
+See [`docs/TOKEN_CUTTER.md`](docs/TOKEN_CUTTER.md) for the
+full design.
 
 ### Writing assistant
 
@@ -135,7 +163,11 @@ the **repo root** directory containing `manifest.json`).
 
 ```bash
 cd extension
-npm test         # node:test unit suite
+npm test         # node:test unit suite (extension libs)
+
+cd ../stats-site
+npm run check    # typecheck + lint + tests + production build
+npm run eval     # Token Cutter quality metrics
 ```
 
 ## Hosting / deployment

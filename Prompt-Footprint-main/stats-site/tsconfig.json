@@ -1,0 +1,27 @@
+{
+  // Type checking is scoped to the Token Cutter engine and its tests. The rest
+  // of the app is plain JSX with no type annotations, so pointing `tsc` at it
+  // would produce hundreds of findings unrelated to any change — a signal that
+  // nobody would read. Run with `npm run typecheck`.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/lib/tokenCutter/**/*.ts", "test/**/*.ts"]
+}

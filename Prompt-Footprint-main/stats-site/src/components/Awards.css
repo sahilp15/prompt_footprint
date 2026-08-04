@@ -1,79 +1,637 @@
-.awards-page { max-width: 900px; margin: 0 auto; }
+/* Awards / Recognition
+   ---------------------------------------------------------------------------
+   Structure: hero with animated headline stats → featured award → timeline of
+   every recognition → outro.
 
-.awards-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
-  margin-top: 8px;
+   Motion contract: content is visible by default and the entrance is layered
+   on top via `.is-visible`, so a failed observer or a reduced-motion
+   preference can never leave content hidden. Entrance animation is scoped to
+   `prefers-reduced-motion: no-preference`; the `.motion-reduced` class the
+   page sets from JS additionally stops the ambient loops. */
+
+/* The shared `--text-muted` token measures 4.19:1 against the page background,
+   which is under the WCAG AA threshold of 4.5:1 — and this page leans on small
+   captions and metadata lines. Darkening the token *within this page only*
+   clears the bar without changing any other surface's palette. */
+.awards-page {
+  --text-muted: color-mix(in srgb, #8b7355 72%, #2c1810);
+  /* The accent colours are tuned for fills and large type. At small sizes,
+     and especially on their own tinted backgrounds, they fall under 4.5:1.
+     These darker "ink" variants keep the same hue for small text. */
+  --accent-amber-ink: color-mix(in srgb, #c17f24 62%, #2c1810);
+  --accent-green-ink: color-mix(in srgb, #5b7c3a 70%, #2c1810);
+  --accent-red-ink: color-mix(in srgb, #a0522d 78%, #2c1810);
+  max-width: 940px;
+  margin: 0 auto;
 }
 
-.award-card {
-  display: flex;
-  gap: 18px;
-  padding: 24px;
-  background: var(--bg-secondary, #f5f0e8);
-  border: 1px solid var(--border-subtle, rgba(0,0,0,0.08));
-  border-radius: var(--radius-lg, 16px);
-}
+/* ── Shared bits ────────────────────────────────────────────────────────── */
 
-.award-card.highlight {
-  background: linear-gradient(135deg, rgba(91,124,58,0.10), rgba(193,127,36,0.08));
-  border-color: rgba(91,124,58,0.35);
-}
-
-.award-icon {
-  flex-shrink: 0;
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  background: rgba(193,127,36,0.15);
-  color: var(--accent-amber, #c17f24);
-}
-
-.award-card.highlight .award-icon {
-  background: rgba(91,124,58,0.18);
-  color: var(--accent-green, #5b7c3a);
-}
-
-.award-rank {
-  font-size: 22px;
-  font-weight: 800;
-  color: var(--accent-green, #5b7c3a);
-  line-height: 1.1;
-}
-
-.award-event {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary, #2c1810);
-  margin: 4px 0 8px;
-}
-
-.award-desc {
-  color: var(--text-secondary, #5c4a3a);
-  font-size: 14px;
-  line-height: 1.55;
-  margin: 0 0 12px;
-}
-
-.award-link {
+.aw-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-weight: 600;
-  font-size: 14px;
-  color: #fff;
-  background: var(--accent-green, #5b7c3a);
-  padding: 8px 16px;
-  border-radius: 10px;
-  text-decoration: none;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(193, 127, 36, 0.12);
+  border: 1px solid rgba(193, 127, 36, 0.28);
+  color: var(--accent-amber-ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
 }
-.award-link:hover { background: #4d6a31; }
 
-@media (min-width: 720px) {
-  .awards-grid { grid-template-columns: 1fr 1fr; }
-  .award-card.highlight { grid-column: 1 / -1; }
+.aw-dot { opacity: 0.5; }
+
+.aw-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 22px;
+}
+
+/* Placement medallion. The ring is drawn with layered box-shadows so it reads
+   as a struck medal rather than a coloured pill. */
+.aw-medal {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 34%, #fffdf7 0%, var(--bg-card) 62%, #f2e9d6 100%);
+  box-shadow:
+    0 0 0 1.5px rgba(193, 127, 36, 0.45),
+    0 0 0 5px rgba(193, 127, 36, 0.10),
+    0 6px 16px rgba(44, 24, 16, 0.10);
+  line-height: 1;
+}
+
+.aw-medal-rank {
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--accent-amber-ink);
+}
+
+.aw-medal-word {
+  margin-top: 2px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.aw-medal-lg {
+  width: 96px;
+  height: 96px;
+  box-shadow:
+    0 0 0 2px rgba(91, 124, 58, 0.45),
+    0 0 0 8px rgba(91, 124, 58, 0.10),
+    0 10px 28px rgba(44, 24, 16, 0.14);
+}
+.aw-medal-lg .aw-medal-rank { font-size: 30px; color: var(--accent-green); }
+.aw-medal-lg .aw-medal-word { font-size: 10px; margin-top: 4px; }
+
+/* Highlight chips */
+.aw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+}
+
+.aw-chip {
+  display: inline-block;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.aw-chips-sm { margin-bottom: 14px; }
+.aw-chips-sm .aw-chip { font-size: 11.5px; padding: 3px 9px; }
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+
+.aw-hero {
+  position: relative;
+  isolation: isolate;
+  padding: 30px 0 6px;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* Ambient concentric rings behind the hero. Very low contrast, drifts slowly. */
+.aw-hero-rings {
+  position: absolute;
+  top: -170px;
+  left: 50%;
+  width: 620px;
+  height: 620px;
+  margin-left: -310px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(91, 124, 58, 0.09) 0 30%, transparent 30.6%),
+    radial-gradient(circle, rgba(193, 127, 36, 0.07) 0 46%, transparent 46.6%),
+    radial-gradient(circle, rgba(91, 124, 58, 0.05) 0 62%, transparent 62.6%);
+  animation: aw-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes aw-drift {
+  from { transform: translateY(0) scale(1); }
+  to   { transform: translateY(16px) scale(1.05); }
+}
+
+.aw-eyebrow-hero { margin-bottom: 16px; }
+
+.aw-hero-title {
+  font-size: clamp(28px, 5vw, 40px);
+  font-weight: 700;
+  line-height: 1.14;
+  letter-spacing: -0.9px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  text-wrap: balance;
+}
+
+.aw-hero-sub {
+  max-width: 560px;
+  margin: 0 auto;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* Headline statistics */
+.aw-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 34px 0 8px;
+}
+
+.aw-stat {
+  padding: 18px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 2px rgba(44, 24, 16, 0.04);
+}
+
+.aw-stat-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1px;
+  font-family: var(--font-mono);
+  color: var(--accent-green);
+}
+
+.aw-stat-number {
+  font-size: clamp(26px, 4.4vw, 34px);
+  font-weight: 700;
+  letter-spacing: -1px;
+  /* Constant digit width so the counter doesn't jitter as it ticks. */
+  font-variant-numeric: tabular-nums;
+}
+
+.aw-stat-suffix {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent-amber-ink);
+}
+
+.aw-stat-label {
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.aw-stat-caption {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* ── Featured award ─────────────────────────────────────────────────────── */
+
+.aw-featured {
+  position: relative;
+  isolation: isolate;
+  margin-top: 40px;
+  padding: 30px;
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(135deg, rgba(91, 124, 58, 0.10), rgba(193, 127, 36, 0.07) 58%, transparent),
+    var(--bg-card);
+  border: 1px solid rgba(91, 124, 58, 0.30);
+  box-shadow: 0 10px 34px rgba(44, 24, 16, 0.08);
+  overflow: hidden;
+}
+
+/* A soft light source in the top-left corner; pure decoration. */
+.aw-featured-glow {
+  position: absolute;
+  top: -140px;
+  left: -110px;
+  width: 380px;
+  height: 380px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(91, 124, 58, 0.20), transparent 68%);
+  filter: blur(14px);
+  animation: aw-pulse 9s ease-in-out infinite alternate;
+}
+
+@keyframes aw-pulse {
+  from { opacity: 0.55; transform: scale(1); }
+  to   { opacity: 1;    transform: scale(1.12); }
+}
+
+.aw-featured-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  text-align: center;
+}
+
+.aw-featured-medal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.aw-featured-trophy {
+  color: var(--accent-amber);
+  margin-bottom: 12px;
+}
+
+.aw-featured-title {
+  font-size: clamp(21px, 3.4vw, 27px);
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  margin: 8px 0;
+  text-wrap: balance;
+}
+
+.aw-featured-scope {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.aw-featured-desc {
+  font-size: 14.5px;
+  line-height: 1.72;
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+  text-wrap: pretty;
+}
+
+.aw-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-green);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+.aw-cta:hover { background: #4d6a31; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(91, 124, 58, 0.28); }
+.aw-cta:active { transform: translateY(0); }
+.aw-cta:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 3px; }
+
+/* ── Timeline ───────────────────────────────────────────────────────────── */
+
+.aw-timeline-section { margin-top: 52px; }
+
+.aw-timeline {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 34px;
+}
+
+/* The rail. Gradient fades at both ends keep it from looking clipped. */
+.aw-timeline::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(to bottom, transparent, var(--border) 12%, var(--border) 88%, transparent);
+}
+
+.aw-node {
+  position: relative;
+  margin-bottom: 20px;
+}
+.aw-node:last-child { margin-bottom: 0; }
+
+.aw-node-marker {
+  position: absolute;
+  top: 26px;
+  left: -34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 2px solid var(--border);
+  color: var(--accent-amber);
+  transition: border-color var(--transition), color var(--transition), transform var(--transition);
+}
+.aw-node:hover .aw-node-marker,
+.aw-node:focus-within .aw-node-marker {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+  transform: scale(1.12);
+}
+
+/* ── Award card ─────────────────────────────────────────────────────────── */
+
+.aw-card {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  padding: 22px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+.aw-card:hover,
+.aw-card:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(91, 124, 58, 0.42);
+  box-shadow: 0 12px 30px rgba(44, 24, 16, 0.10);
+}
+
+.aw-card:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 3px;
+}
+
+/* A slow diagonal sheen that only sweeps on hover/focus. */
+.aw-card-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 38%, rgba(91, 124, 58, 0.10) 50%, transparent 62%);
+  background-size: 260% 100%;
+  background-position: 130% 0;
+  opacity: 0;
+  transition: opacity var(--transition), background-position 800ms ease-out;
+}
+.aw-card:hover .aw-card-sheen,
+.aw-card:focus-visible .aw-card-sheen {
+  opacity: 1;
+  background-position: -30% 0;
+}
+
+.aw-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.aw-card-heading {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.aw-card-award {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--accent-green-ink);
+  margin-bottom: 3px;
+}
+
+.aw-card-event {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.28;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.aw-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.aw-card-arrow {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--transition), color var(--transition);
+}
+.aw-card:hover .aw-card-arrow,
+.aw-card:focus-visible .aw-card-arrow {
+  color: var(--accent-green);
+  transform: translate(2px, -2px);
+}
+
+.aw-card-desc {
+  display: block;
+  font-size: 14px;
+  line-height: 1.68;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  text-wrap: pretty;
+}
+
+.aw-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-green-ink);
+}
+.aw-card-link::after {
+  content: '';
+  display: block;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  transition: width var(--transition);
+}
+.aw-card:hover .aw-card-link::after,
+.aw-card:focus-visible .aw-card-link::after { width: 10px; }
+
+/* ── Outro ──────────────────────────────────────────────────────────────── */
+
+.aw-outro {
+  margin-top: 48px;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border);
+  text-align: center;
+}
+
+.aw-outro-text {
+  max-width: 520px;
+  margin: 0 auto 14px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+.aw-outro-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+.aw-outro-link:hover {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+  background: rgba(91, 124, 58, 0.06);
+}
+.aw-outro-link:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 2px; }
+
+/* ── Entrance animation ─────────────────────────────────────────────────--
+   Only applied when the browser reports no motion preference. `.is-visible`
+   (set by the observer, and immediately under reduced motion) is the resting
+   state, so content is never left hidden. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .aw-stat,
+  .aw-node,
+  .aw-featured {
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 620ms cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0ms),
+      transform 620ms cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0ms);
+  }
+
+  .aw-stat.is-visible,
+  .aw-node.is-visible,
+  .aw-featured.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Printing has no scroll, so nothing would ever "intersect". */
+@media print {
+  .aw-stat,
+  .aw-node,
+  .aw-featured { opacity: 1 !important; transform: none !important; }
+  .aw-hero-rings,
+  .aw-featured-glow { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aw-hero-rings,
+  .aw-featured-glow { animation: none; }
+  .aw-card:hover,
+  .aw-card:focus-visible,
+  .aw-cta:hover { transform: none; }
+}
+
+/* Belt and braces: the page also sets `.motion-reduced` from JS. */
+.motion-reduced .aw-hero-rings,
+.motion-reduced .aw-featured-glow { animation: none; }
+.motion-reduced .aw-card-sheen { transition: none; }
+.motion-reduced .aw-card:hover,
+.motion-reduced .aw-card:focus-visible,
+.motion-reduced .aw-cta:hover { transform: none; }
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (min-width: 640px) {
+  .aw-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (min-width: 860px) {
+  .aw-featured { padding: 40px 44px; }
+  .aw-featured-inner {
+    flex-direction: row;
+    align-items: flex-start;
+    text-align: left;
+    gap: 34px;
+  }
+  .aw-featured-medal { padding-top: 4px; }
+  .aw-featured-trophy { margin-bottom: 14px; }
+  .aw-featured-scope { justify-content: flex-start; }
+}
+
+@media (max-width: 560px) {
+  .aw-timeline { padding-left: 26px; }
+  .aw-timeline::before { left: 7px; }
+  .aw-node-marker { left: -26px; width: 18px; height: 18px; top: 24px; }
+  .aw-node-marker svg { width: 12px; height: 12px; }
+  .aw-card { padding: 18px 16px; }
+  .aw-card-head { gap: 12px; }
+  .aw-card-event { font-size: 16.5px; }
+  .aw-medal { width: 54px; height: 54px; }
+  .aw-medal-rank { font-size: 16px; }
+  .aw-medal-word { font-size: 7.5px; }
+  .aw-featured { padding: 24px 18px; }
+  .aw-hero { padding-top: 18px; }
+  .aw-hero-rings { width: 420px; height: 420px; margin-left: -210px; top: -130px; }
 }
