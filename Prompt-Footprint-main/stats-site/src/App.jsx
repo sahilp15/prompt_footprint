@@ -1,9 +1,10 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Settings as SettingsIcon, CircleUserRound } from 'lucide-react'
+import { Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Scissors, Settings as SettingsIcon, CircleUserRound } from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
 import SessionList from './components/SessionList'
 import Savings from './components/Savings'
 import Guide from './components/Guide'
+import TokenCutter from './components/cutter/TokenCutter'
 import Awards from './components/Awards'
 import Settings from './components/Settings'
 import LandingPage from './marketing/LandingPage'
@@ -39,6 +40,9 @@ function Dashboard({ base = '' }) {
             <NavLink to={to('savings')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <Leaf size={16} /><span>Savings</span>
             </NavLink>
+            <NavLink to={to('cutter')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              <Scissors size={16} /><span>Token Cutter</span>
+            </NavLink>
             <NavLink to={to('learn')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <GraduationCap size={16} /><span>How it Works</span>
             </NavLink>
@@ -72,6 +76,7 @@ function Dashboard({ base = '' }) {
           <Route index element={<WeeklyStats />} />
           <Route path="sessions" element={<SessionList />} />
           <Route path="savings" element={<Savings />} />
+          <Route path="cutter" element={<TokenCutter />} />
           <Route path="learn" element={<Guide />} />
           <Route path="awards" element={<Awards />} />
           <Route path="settings" element={<Settings />} />
