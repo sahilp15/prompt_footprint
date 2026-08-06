@@ -142,6 +142,25 @@
   color: var(--pf-accent-green);
 }
 
+/* Compression level for the in-page assistant. Styled to sit at the same weight
+   as the toggles beside it rather than looking like a stray browser control. */
+.pf-select {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pf-text-primary);
+  background: var(--pf-bg-secondary);
+  border: 1px solid var(--pf-border);
+  border-radius: 7px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.pf-select:focus-visible {
+  outline: 2px solid var(--pf-accent-green);
+  outline-offset: 1px;
+}
+
 .pf-hint {
   padding: 11px 16px;
   font-size: 11px;

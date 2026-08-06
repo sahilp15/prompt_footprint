@@ -29,20 +29,19 @@
         "extension/lib/constants.js",
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",
-        "extension/lib/promptSize.js",
-        "extension/lib/promptOptimizer.js",
-        "extension/lib/vendor/typo.js",
-        "extension/lib/spellChecker.js",
         "extension/lib/writingFormat.js",
         "extension/lib/uiHelpers.js",
         "extension/lib/formatters.js",
+        "extension/lib/tokenCutter.bundle.js",
+        "extension/lib/composer.js",
+        "extension/lib/assistantState.js",
+        "extension/overlay/assistant.js",
         "extension/content.js"
       ],
       "css": [
         "extension/styles/fonts.css",
         "extension/overlay/floating.css",
-        "extension/overlay/modal.css",
-        "extension/overlay/optimizer.css"
+        "extension/overlay/modal.css"
       ],
       "run_at": "document_idle"
     }
@@ -56,7 +55,13 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["extension/lib/dict/en_US.aff", "extension/lib/dict/en_US.dic"],
+      "resources": [
+        "extension/overlay/assistant.css",
+        "extension/fonts/SourceSerif4-400.woff2",
+        "extension/fonts/SourceSerif4-600.woff2",
+        "extension/fonts/JetBrainsMono-500.woff2",
+        "extension/fonts/JetBrainsMono-600.woff2"
+      ],
       "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*"]
     }
   ],

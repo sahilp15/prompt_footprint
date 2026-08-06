@@ -23,9 +23,9 @@ Prompt-Footprint/
 ├── manifest.json          Chrome extension manifest (MV3)
 ├── extension/             Chrome extension source (vanilla JS)
 │   ├── background.js      Service worker (user id, session lifecycle)
-│   ├── content.js         Platform-agnostic DOM observer + overlays + writing UI
+│   ├── content.js         Platform-agnostic DOM observer + overlays + assistant wiring
 │   ├── popup/             Extension popup UI
-│   ├── overlay/           Floating + modal overlays, writing-suggestion chip
+│   ├── overlay/           Floating + modal overlays, in-page assistant (UI + shadow-DOM CSS)
 │   ├── dashboard/         Options page = built stats-site (Settings + Privacy live here)
 │   ├── lib/
 │   │   ├── platforms.js          Platform adapters (ChatGPT, Claude, …)
@@ -33,8 +33,11 @@ Prompt-Footprint/
 │   │   ├── constants.js          Per-platform intensities + response-time model
 │   │   ├── tokenEstimator.js     Token estimation
 │   │   ├── environmentalModel.js Impact calculation (tokens × time)
+│   │   ├── tokenCutter.bundle.js Token Cutter engine, built from stats-site (npm run build:cutter)
+│   │   ├── composer.js           Evidence-based composer detection + safe read/write
+│   │   ├── assistantState.js     Assistant states, debounce, stale-request guard, settings
 │   │   ├── promptOptimizer.js    Local prompt shortener + curated typo map
-│   │   ├── spellChecker.js       Offline spell/grammar/punct/cap checker
+│   │   ├── spellChecker.js       Offline spell/grammar/punct/cap checker (unused in-page; see below)
 │   │   ├── writingFormat.js      Diff renderer (bolds changed words, HTML-safe)
 │   │   ├── proxyConfig.js        Proxy-first Gemini resolution helpers
 │   │   ├── uiHelpers.js          Keybind + viewport-clamp helpers
@@ -84,9 +87,10 @@ No server or configuration is needed — the extension is fully local.
 
 1. Navigate to [chatgpt.com](https://chatgpt.com) or [claude.ai](https://claude.ai)
 2. Send a message — prompts and responses are auto-detected
-3. As you type, the **writing assistant** flags spelling, grammar, capitalization
-   and punctuation issues, with the changed words **bolded**. Use **Accept**,
-   **Ignore**, or **Accept all safe fixes** (see below)
+3. As you type, the **in-page assistant** appears beside the composer with your
+   live token count and, when there is a real saving to be had, how much a
+   shorter version would avoid. Click it to compare the two prompts, then
+   **Replace prompt** — or **Undo** (see below)
 4. Press <kbd>Alt</kbd>+<kbd>P</kbd> to open/close the main panel; **drag** the
    floating **PF** capsule anywhere (its position is remembered across reloads)
 5. Click the extension icon for the popup, or **View Full Stats** for the
@@ -112,20 +116,53 @@ that fails the same local validation.
 See [`docs/TOKEN_CUTTER.md`](docs/TOKEN_CUTTER.md) for the
 full design.
 
-### Writing assistant
+### In-page assistant
 
-Two tiers, both optional and safe:
+The same Token Cutter, in the composer. `extension/lib/tokenCutter.bundle.js` is
+built from `stats-site/src/lib/tokenCutter/` (`npm run build:cutter`), so the
+dashboard and the in-page assistant run **one engine** — the same suggestions,
+the same figures, the same validation.
 
-- **Local (offline, always available)** — a real spell checker
-  ([Typo.js](extension/lib/vendor/typo.js) + a compact English dictionary, see
-  [`extension/lib/dict/README.md`](extension/lib/dict/README.md)) plus a curated
-  typo map and lightweight rules for capitalization, punctuation, repeated words,
-  and a/an. Nothing leaves your device.
-- **AI writing help (optional, Gemini)** — clarity, tone and sentence cleanup.
-  **Proxy-first:** your draft is sent to a **Cloudflare Worker** you control,
-  which holds the Gemini key. The key is **never** shipped in the extension. If
-  no proxy is configured — or it fails or is rate-limited — the editor silently
-  uses the offline tier.
+- **Collapsed** — a small indicator anchored above the composer: token count,
+  tokens saved, percent reduction, a quiet water estimate, and **Optimize**. It
+  sits outside the composer surface, so it never covers the text box, the
+  attachment row, the dictation button, or send.
+- **Expanded** — both prompts side by side with token counts, what changed and
+  why, and the preservation report. **Replace prompt**, **Copy optimized**,
+  **Try again** (next compression level), **Keep original**, **Undo**.
+- **Analysis is debounced** to a pause in typing, and a result whose prompt has
+  since changed is discarded rather than shown.
+- **Nothing is ever rewritten without a click**, and **Undo** restores your
+  original text exactly.
+- Short or already-tight prompts report **"Already concise"** rather than being
+  changed for the sake of it.
+
+Composer detection is evidence-based rather than selector-based — editability,
+role, placeholder wording, a nearby send control, geometry, and the platform
+adapter's own selector are scored together, so no single ChatGPT or Claude
+redesign can break it. The UI lives in a shadow root, so page CSS cannot reach
+it and it cannot leak onto the page.
+
+Settings live in the extension popup and in the panel's own gear menu: on/off,
+default compression level, analyze-while-typing, environmental estimates,
+animations, local vs enhanced mode, and reset. All of them are keys in the
+existing `pf_config`.
+
+**Enhanced (Gemini) mode is optional and doubly gated** — you must both enable
+cloud analysis and select enhanced mode, or nothing leaves the device. When it
+is on, the remote rewrite must return every protected span byte-identical and
+pass the *same local validator* as a local suggestion; otherwise the local result
+is kept and the panel says why. **Proxy-first:** the draft goes to a
+**Cloudflare Worker** you control, which holds the Gemini key. The key is
+**never** shipped in the extension.
+
+> The dictionary-backed spell checker that the old suggestion chip used
+> (`lib/spellChecker.js`, `lib/vendor/typo.js`, `lib/dict/`) is **no longer
+> loaded in the page**. The Token Cutter's own grammar detector covers
+> misspellings, apostrophes, doubled words, a/an, and spacing with a curated map
+> — a deliberate choice documented in `docs/TOKEN_CUTTER.md` ("a confidently
+> wrong correction of a name or an API is worse than an uncorrected typo"). The
+> files and their tests remain in the repo.
 
 ### Configuring Gemini (optional)
 
@@ -136,8 +173,8 @@ Two tiers, both optional and safe:
    may instead enter their own Gemini key, stored only in `chrome.storage.local`
    on their device — the Worker proxy is recommended.
 
-Turn the whole feature off anytime from the popup ("Writing & spell-check
-suggestions") or the dashboard Settings page.
+Turn the whole feature off anytime from the popup ("In-page prompt assistant")
+or the panel's gear menu.
 
 ### Stats site / dashboard (build → reload)
 
@@ -154,6 +191,20 @@ npm run build -- --outDir ../extension/dashboard --emptyOutDir
 Then reload the extension (below). The vanilla `extension/lib/*` and `content.js`
 are loaded raw — **no build step** — so only dashboard changes need a rebuild.
 
+### Token Cutter engine bundle (build → reload)
+
+The in-page assistant runs the Token Cutter as a content-script global. After
+changing anything under `stats-site/src/lib/tokenCutter/`, rebuild the bundle:
+
+```bash
+cd extension
+npm install          # esbuild
+npm run build:cutter # -> extension/lib/tokenCutter.bundle.js
+```
+
+The output is committed, the same way `extension/dashboard/` and
+`extension/lib/vendor/supabase.js` are.
+
 ### Reloading after changes
 
 `chrome://extensions` → **reload** the unpacked extension (or **Load unpacked** →
@@ -164,6 +215,14 @@ the **repo root** directory containing `manifest.json`).
 ```bash
 cd extension
 npm test         # node:test unit suite (extension libs)
+                 # DOM-backed cases (composer detection, prompt replacement,
+                 # undo, duplicate mounting) need jsdom — they skip themselves
+                 # until you `npm install`, and run after it.
+
+# In-page assistant, end to end in a real Chromium with the extension loaded,
+# against pages shaped like ChatGPT and Claude. Not part of `npm test`.
+npm install --no-save playwright && npx playwright install chromium
+npm run test:e2e                 # add --shots ./shots to capture screenshots
 
 cd ../stats-site
 npm run check    # typecheck + lint + tests + production build

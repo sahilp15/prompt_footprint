@@ -27,6 +27,11 @@ function fmtTokens(n) {
 document.addEventListener('DOMContentLoaded', async () => {
   const overlayToggle = document.getElementById('pf-overlay-toggle');
   const writingToggle = document.getElementById('pf-writing-toggle');
+  const levelSelect   = document.getElementById('pf-level-select');
+  const autoToggle    = document.getElementById('pf-auto-toggle');
+  const impactToggle  = document.getElementById('pf-impact-toggle');
+  const motionToggle  = document.getElementById('pf-motion-toggle');
+  const resetLink     = document.getElementById('pf-reset-assistant');
   const debugToggle   = document.getElementById('pf-debug-toggle');
   const aiStatusEl    = document.getElementById('pf-ai-status');
   const statsBtn      = document.getElementById('pf-open-stats');
@@ -73,23 +78,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (name) { nameEl.textContent = name; greetEl.hidden = false; }
   })();
   overlayToggle.checked = cfg.overlayEnabled !== false;
-  if (writingToggle) writingToggle.checked = cfg.writingChecksEnabled !== false;
   if (debugToggle) debugToggle.checked = cfg.debug === true;
 
-  // AI writing status: reflect the real state — cloud is opt-in, and if the
-  // service is cooling down after a rate-limit we say so instead of looking on.
+  // In-page assistant preferences, read through the same helper the content
+  // script uses so the popup can never disagree with what the assistant does.
+  const assistant = PFAssistantState.readSettings(cfg);
+  if (writingToggle) writingToggle.checked = assistant.enabled;
+  if (levelSelect)   levelSelect.value     = assistant.level;
+  if (autoToggle)    autoToggle.checked    = assistant.autoAnalyze;
+  if (impactToggle)  impactToggle.checked  = assistant.showImpact;
+  if (motionToggle)  motionToggle.checked  = assistant.animations;
+
+  // Optimization mode: local is the default and needs nothing configured.
+  // Enhanced is only real when cloud analysis is on AND a provider is resolved,
+  // and we say so plainly rather than implying the cloud is involved when it is not.
   if (aiStatusEl) {
     const provider = (typeof PFProxyConfig !== 'undefined')
       ? PFProxyConfig.resolveWritingProvider(cfg) : 'local';
-    if (cfg.cloudAnalysisEnabled === true && provider === 'gemini') {
-      aiStatusEl.textContent = 'Cloud on';
+    if (assistant.mode === 'enhanced' && provider === 'gemini') {
+      aiStatusEl.textContent = 'Enhanced (API)';
       chrome.runtime.sendMessage({ type: 'GET_AI_STATS' }, (resp) => {
         if (chrome.runtime.lastError || !resp) return;
-        if (resp.cooling) aiStatusEl.textContent = 'Paused (rate-limited)';
-        else if (resp.successRate != null) aiStatusEl.textContent = `Cloud on (${Math.round(resp.successRate * 100)}% ok)`;
+        if (resp.cooling) aiStatusEl.textContent = 'Enhanced — paused (rate-limited)';
+        else if (resp.successRate != null) aiStatusEl.textContent = `Enhanced (${Math.round(resp.successRate * 100)}% ok)`;
       });
     } else {
-      aiStatusEl.textContent = 'Local only';
+      aiStatusEl.textContent = 'Processed locally';
     }
   }
 
@@ -152,13 +166,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Writing & spell-check suggestions toggle
+  // ── In-page assistant preferences ───────────────────────────────────────
+  // Every one of these writes through PFStorage.setConfig (which validates) and
+  // then tells the open tab to re-read its config — the same CONFIG_UPDATED path
+  // the overlay toggle has always used, rather than a second settings channel.
+  async function saveAssistant(partial) {
+    const patch = PFAssistantState.settingsPatch(partial);
+    await PFStorage.setConfig(patch);
+    if (tab?.id) {
+      chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: patch }).catch(() => {});
+    }
+  }
+
   if (writingToggle) {
-    writingToggle.addEventListener('change', async () => {
-      const writingChecksEnabled = writingToggle.checked;
-      await PFStorage.setConfig({ writingChecksEnabled });
+    writingToggle.addEventListener('change', () => saveAssistant({ enabled: writingToggle.checked }));
+  }
+  if (levelSelect) {
+    levelSelect.addEventListener('change', () => saveAssistant({ level: levelSelect.value }));
+  }
+  if (autoToggle) {
+    autoToggle.addEventListener('change', () => saveAssistant({ autoAnalyze: autoToggle.checked }));
+  }
+  if (impactToggle) {
+    impactToggle.addEventListener('change', () => saveAssistant({ showImpact: impactToggle.checked }));
+  }
+  if (motionToggle) {
+    motionToggle.addEventListener('change', () => saveAssistant({ animations: motionToggle.checked }));
+  }
+
+  // Reset: assistant preferences back to defaults and any saved panel position
+  // cleared. Tracking data and account settings are untouched.
+  if (resetLink) {
+    resetLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const patch = PFAssistantState.resetPatch();
+      await PFStorage.setConfig(patch);
+      // Also drops layout the previous suggestion chip saved; the assistant
+      // anchors itself to the composer and never restores a stored position.
+      await new Promise((resolve) => chrome.storage.local.remove(
+        ['pf_assistant_pos', 'pf_optimizer_pos', 'pf_optimizer_size'], resolve));
+      const next = PFAssistantState.readSettings(patch);
+      if (writingToggle) writingToggle.checked = next.enabled;
+      if (levelSelect)   levelSelect.value     = next.level;
+      if (autoToggle)    autoToggle.checked    = next.autoAnalyze;
+      if (impactToggle)  impactToggle.checked  = next.showImpact;
+      if (motionToggle)  motionToggle.checked  = next.animations;
+      resetLink.textContent = 'preferences reset';
+      setTimeout(() => { resetLink.textContent = 'reset assistant preferences'; }, 1800);
       if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: { writingChecksEnabled } }).catch(() => {});
+        chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: patch }).catch(() => {});
       }
     });
   }

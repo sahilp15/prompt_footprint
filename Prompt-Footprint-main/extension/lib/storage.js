@@ -31,6 +31,11 @@
 
   const DEFAULT_CONFIG = { overlayEnabled: true, energyPerTokenMultiplier: 1.0 };
 
+  // Accepted values for the in-page assistant's preferences. Kept here (not just
+  // in the assistant) so an out-of-range value can never reach storage.
+  const ASSISTANT_LEVELS = ['light', 'balanced', 'maximum'];
+  const ASSISTANT_MODES = ['local', 'enhanced'];
+
   // ── chrome.storage promise wrappers ──────────────────────────────────────
   function hasChrome() {
     return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
@@ -98,7 +103,18 @@
     const next = { ...current };
     if (typeof patch.overlayEnabled === 'boolean') next.overlayEnabled = patch.overlayEnabled;
     if (typeof patch.debug === 'boolean') next.debug = patch.debug;
+    // Master switch for the in-page writing assistant. The key predates the
+    // assistant rebuild and is kept so existing users' choice carries over —
+    // one switch, not two.
     if (typeof patch.writingChecksEnabled === 'boolean') next.writingChecksEnabled = patch.writingChecksEnabled;
+    // In-page assistant preferences. All on-device; none affect tracking.
+    if (ASSISTANT_LEVELS.includes(patch.assistantLevel)) next.assistantLevel = patch.assistantLevel;
+    if (typeof patch.assistantAutoAnalyze === 'boolean') next.assistantAutoAnalyze = patch.assistantAutoAnalyze;
+    if (typeof patch.assistantShowImpact === 'boolean') next.assistantShowImpact = patch.assistantShowImpact;
+    if (typeof patch.assistantAnimations === 'boolean') next.assistantAnimations = patch.assistantAnimations;
+    // 'enhanced' only takes effect when cloudAnalysisEnabled is also true; the
+    // assistant enforces that too, so neither layer can leak a prompt alone.
+    if (ASSISTANT_MODES.includes(patch.assistantMode)) next.assistantMode = patch.assistantMode;
     // Cloud analysis is OPT-IN (default off). When false, draft text is never
     // sent to Gemini/the proxy — only the offline checker runs.
     if (typeof patch.cloudAnalysisEnabled === 'boolean') next.cloudAnalysisEnabled = patch.cloudAnalysisEnabled;
@@ -372,6 +388,8 @@
     SESSION_PREFIX,
     SAVINGS_KEY,
     DEFAULT_CONFIG,
+    ASSISTANT_LEVELS,
+    ASSISTANT_MODES,
     hasChrome,
     getUserId,
     getConfig,

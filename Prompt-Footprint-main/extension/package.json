@@ -4,11 +4,14 @@
   "private": true,
   "description": "PromptFootprint browser extension (local-first, multi-platform)",
   "scripts": {
-    "test": "node --test",
-    "build:vendor": "esbuild lib/vendor/_supabase-entry.js --bundle --format=iife --global-name=supabase --minify --outfile=lib/vendor/supabase.js --legal-comments=none"
+    "test": "node --test \"test/*.test.js\"",
+    "build:vendor": "esbuild lib/vendor/_supabase-entry.js --bundle --format=iife --global-name=supabase --minify --outfile=lib/vendor/supabase.js --legal-comments=none",
+    "build:cutter": "esbuild ../stats-site/src/lib/tokenCutter/extensionEntry.ts --bundle --format=iife --global-name=PFTokenCutter --target=chrome111 --minify --legal-comments=none --footer:js=\"if(typeof self!=='undefined')self.PFTokenCutter=PFTokenCutter;if(typeof module!=='undefined'&&module.exports)module.exports=PFTokenCutter;\" --outfile=lib/tokenCutter.bundle.js",
+    "test:e2e": "node e2e/run.js"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.24.0",
+    "jsdom": "^30.0.1"
   }
 }

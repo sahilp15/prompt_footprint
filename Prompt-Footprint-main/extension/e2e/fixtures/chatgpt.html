@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<title>ChatGPT (simulated)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:#212121; color:#ececec; height:100vh; display:flex; }
+  html.light body { background:#fff; color:#0d0d0d; }
+  #sidebar { width:260px; background:#171717; flex:none; padding:12px; transition:width .2s; overflow:hidden; }
+  html.light #sidebar { background:#f9f9f9; }
+  #sidebar.collapsed { width:0; padding:0; }
+  #app { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #thread { flex:1; overflow:auto; padding:24px 16px 8px; }
+  .msg { max-width:760px; margin:0 auto 20px; line-height:1.6; }
+  #composer-wrap { padding:12px 16px 24px; }
+  form[data-type="unified-composer"] { max-width:760px; margin:0 auto; }
+  #composer-background { background:#303030; border:1px solid #4a4a4a; border-radius:26px; padding:12px 14px; }
+  html.light #composer-background { background:#fff; border-color:#e3e3e3; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+  #prompt-textarea { min-height:26px; max-height:200px; overflow:auto; outline:none; font-size:16px; line-height:1.5; }
+  #prompt-textarea p { margin:0 0 .4em; }
+  #prompt-textarea:empty::before { content: attr(data-placeholder); opacity:.5; }
+  .row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .row button { width:34px; height:34px; border-radius:50%; border:0; background:#4a4a4a; color:#fff; cursor:pointer; }
+  html.light .row button { background:#f0f0f0; color:#111; }
+  .spacer { flex:1 }
+  button[data-testid="send-button"] { background:#fff; color:#000; }
+  html.light button[data-testid="send-button"] { background:#000; color:#fff; }
+  #attachments { display:none; gap:8px; margin-bottom:8px; }
+  #attachments.on { display:flex; }
+  .att { background:#4a4a4a; border-radius:10px; padding:8px 12px; font-size:13px; }
+  #devbar { position:fixed; top:8px; right:8px; display:flex; gap:6px; z-index:9 }
+  #devbar button { font-size:12px; padding:4px 8px; }
+</style>
+</head>
+<body>
+  <div id="devbar">
+    <button onclick="document.documentElement.classList.toggle('dark');document.documentElement.classList.toggle('light')">theme</button>
+    <button onclick="document.getElementById('sidebar').classList.toggle('collapsed')">sidebar</button>
+    <button onclick="document.getElementById('attachments').classList.toggle('on')">attach</button>
+    <button onclick="swapComposer()">new chat</button>
+  </div>
+  <div id="sidebar"><div>Chats</div></div>
+  <div id="app">
+    <div id="thread">
+      <div class="msg" data-message-author-role="user" data-message-id="m1">What is a token?</div>
+      <div class="msg" data-message-author-role="assistant" data-message-id="m2">A token is a chunk of text a model processes.</div>
+    </div>
+    <div id="composer-wrap">
+      <form data-type="unified-composer">
+        <div id="composer-background">
+          <div id="attachments"><div class="att">q3-report.pdf</div></div>
+          <div id="prompt-textarea" contenteditable="true" data-lexical-editor="true"
+               role="textbox" data-placeholder="Ask anything"></div>
+          <div class="row">
+            <button aria-label="Attach files">+</button>
+            <button aria-label="Dictate">🎙</button>
+            <span class="spacer"></span>
+            <button data-testid="send-button" aria-label="Send prompt">↑</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+<script>
+  // Mimic ChatGPT swapping the composer node when you open a new conversation.
+  function swapComposer() {
+    const bg = document.getElementById('composer-background');
+    const old = document.getElementById('prompt-textarea');
+    const next = old.cloneNode(false);
+    next.innerHTML = '';
+    old.replaceWith(next);
+    history.pushState({}, '', '/c/' + Math.random().toString(36).slice(2, 8));
+  }
+</script>
+</body>
+</html>
