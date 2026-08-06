@@ -27,6 +27,33 @@
     <!-- Personalized greeting (shown when a name is known) -->
     <div class="pf-greeting" id="pf-greeting" hidden>Hello, <span id="pf-greeting-name"></span></div>
 
+    <!-- Live model detection + projected impact for the prompt being written -->
+    <div class="pf-section pf-model-section" id="pf-model-section" hidden>
+      <div class="pf-section-label">Current model</div>
+      <div class="pf-model-head">
+        <span class="pf-model-provider" id="pf-model-provider">—</span>
+        <span class="pf-model-badge" id="pf-model-evidence"></span>
+      </div>
+      <div class="pf-model-name" id="pf-model-name">Detecting…</div>
+      <div class="pf-model-metrics">
+        <div class="pf-model-metric">
+          <span class="pf-model-val" id="pf-model-tokens">—</span>
+          <span class="pf-model-lbl">Input tokens</span>
+        </div>
+        <div class="pf-model-metric">
+          <span class="pf-model-val" id="pf-model-avoided">—</span>
+          <span class="pf-model-lbl">Potential input tokens avoided</span>
+        </div>
+        <div class="pf-model-metric pf-model-metric-wide">
+          <span class="pf-model-val" id="pf-model-energy">—</span>
+          <span class="pf-model-lbl" id="pf-model-energy-lbl">Projected interaction range</span>
+        </div>
+      </div>
+      <div class="pf-model-note" id="pf-model-change" hidden></div>
+      <button class="pf-model-toggle" id="pf-model-toggle" aria-expanded="false">Details</button>
+      <div class="pf-model-details" id="pf-model-details" hidden></div>
+    </div>
+
     <!-- This Week -->
     <div class="pf-section">
       <div class="pf-section-label">This Week's Impact</div>
@@ -195,6 +222,13 @@
   <script src="../lib/promptSize.js"></script>
   <script src="../lib/formatters.js"></script>
   <script src="../lib/assistantState.js"></script>
+  <script src="../lib/env/sources.js"></script>
+  <script src="../lib/env/profiles.js"></script>
+  <script src="../lib/env/factors.js"></script>
+  <script src="../lib/env/copy.js"></script>
+  <script src="../lib/estimator.js"></script>
+  <script src="../lib/models/catalog.js"></script>
+  <script src="../lib/models/present.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

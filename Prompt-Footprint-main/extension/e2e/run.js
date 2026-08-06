@@ -416,10 +416,118 @@ async function runModelEditor() {
   }
 }
 
+/**
+ * Live model detection, in a real browser.
+ *
+ * jsdom can prove the scoring and the observation shape; only a real engine can
+ * prove that the content script wires the detector to the panel, that a picker
+ * change repaints without a reload, and that the estimate on screen carries its
+ * evidence badge. The panel is queried through the page's own DOM because the
+ * modal is injected as plain elements, not into a shadow root.
+ */
+async function runModelDetection() {
+  console.log('\nLive model detection');
+  const { page, errors, cleanup } = await open('chatgpt.html', 'chatgpt.com', 'https://chatgpt.com/c/e2e');
+  const panelText = (sel) => page.locator(`#pf-modal-overlay ${sel}`).textContent();
+  try {
+    // Open the panel (Alt+P is the documented shortcut).
+    await page.keyboard.press('Alt+KeyP');
+    await page.waitForTimeout(700);
+    check('panel opens with a model section', await page.locator('#pf-modal-model').isVisible());
+    check('names the detected model', (await panelText('#pf-model-name')).includes('GPT-5.6 Sol'),
+      await panelText('#pf-model-name'));
+    check('names the provider', (await panelText('#pf-model-provider')).includes('ChatGPT'));
+
+    const badge = await panelText('#pf-model-evidence');
+    check('shows an evidence badge, never a bare number', /Assumption|Modelled|Reported|Measured/.test(badge), badge);
+    const energy = await panelText('#pf-model-energy');
+    check('shows a range, not a single figure', /–/.test(energy) && /Wh/.test(energy), energy);
+
+    // Typing updates the projection without a reload.
+    await typeInto(page, '#prompt-textarea', 'Summarize the Q3 report for Northwind Logistics in under 200 words.');
+    await page.waitForTimeout(900);
+    const tokens = await panelText('#pf-model-tokens');
+    check('counts the draft prompt live', Number(tokens) > 0, tokens);
+
+    // Switch the model in the picker: no reload, no navigation.
+    await page.click('#devbar button:nth-child(5)');
+    await page.waitForTimeout(1200);
+    check('reacts to a model switch without reloading',
+      (await panelText('#pf-model-name')).includes('GPT-5.6 Luna'), await panelText('#pf-model-name'));
+    const changed = await page.locator('#pf-model-change').textContent();
+    check('explains why the estimate moved', /Model changed from/.test(changed), changed);
+    const lunaEnergy = await panelText('#pf-model-energy');
+    check('the projected range actually changed', lunaEnergy !== energy, `${energy} -> ${lunaEnergy}`);
+    await shot(page, '20-model-detected');
+
+    // Auto routing must not resolve to a named model.
+    await page.click('#devbar button:nth-child(6)');
+    await page.waitForTimeout(1200);
+    const autoName = await panelText('#pf-model-name');
+    check('Auto is reported as Auto, not as a model', /Auto/.test(autoName) && !/GPT-5\.6 (Sol|Luna)/.test(autoName), autoName);
+
+    // The expanded detail view carries the disclosures.
+    await page.click('#pf-model-toggle');
+    await page.waitForTimeout(300);
+    const details = await panelText('#pf-model-details');
+    check('details name the detection source and confidence', /Detected via/.test(details) && /Detection confidence/.test(details));
+    check('details separate cooling from full-operational water',
+      /Water — full operational/.test(details) || /Water — cooling/.test(details), details.slice(0, 200));
+    check('details carry the routing disclosure',
+      /may route this request dynamically/i.test(details));
+    check('details carry the savings caveat',
+      /do not imply the same percentage reduction/i.test(details));
+    await shot(page, '21-model-details');
+
+    check('no uncaught errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+  } finally {
+    await cleanup();
+  }
+}
+
+/** The same wiring on Claude, where effort is a separate control from the model. */
+async function runClaudeModelDetection() {
+  console.log('\nLive model detection — Claude');
+  const { page, errors, cleanup } = await open('claude.html', 'claude.ai', 'https://claude.ai/chat/e2e');
+  const panelText = (sel) => page.locator(`#pf-modal-overlay ${sel}`).textContent();
+  try {
+    await page.keyboard.press('Alt+KeyP');
+    await page.waitForTimeout(700);
+    check('detects the Claude model', (await panelText('#pf-model-name')).includes('Claude Opus 5'),
+      await panelText('#pf-model-name'));
+
+    await page.click('#pf-model-toggle');
+    await page.waitForTimeout(300);
+    const details = await panelText('#pf-model-details');
+    check('reads effort separately from the model', /high/i.test(details), details.slice(0, 240));
+    check('says Anthropic has published no per-query footprint',
+      /Anthropic has not published a per-query footprint/i.test(details));
+    // Opus at "high" has no model-specific reasoning band published for that
+    // effort level, so it correctly falls back to the generic test-time-scaling
+    // distribution — modelled, not measured. Either label is honest here; the
+    // one that must never appear is "Measured".
+    const claudeBadge = await panelText('#pf-model-evidence');
+    check('labels the estimate as an assumption or a model, never as telemetry',
+      /Assumption|Modelled/.test(claudeBadge) && !/Measured/.test(claudeBadge), claudeBadge);
+
+    await page.click('#dev button:nth-child(2)');
+    await page.waitForTimeout(1200);
+    check('switching Opus -> Sonnet is picked up live',
+      (await panelText('#pf-model-name')).includes('Claude Sonnet 5'), await panelText('#pf-model-name'));
+    await shot(page, '22-claude-model');
+
+    check('no uncaught errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+  } finally {
+    await cleanup();
+  }
+}
+
 (async () => {
   await runChatGPT();
   await runClaude();
   await runModelEditor();
+  await runModelDetection();
+  await runClaudeModelDetection();
   const passed = results.filter((r) => r.ok).length;
   console.log(`\n${passed}/${results.length} checks passed`);
   process.exit(passed === results.length ? 0 : 1);

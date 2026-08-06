@@ -137,13 +137,6 @@ function applyHeatwaveContext(base, opts) {
   };
 }
 
-function getMultiplierForLevel(reasoningLevel) {
-  const r = (typeof REASONING_MULTIPLIERS !== 'undefined')
-    ? REASONING_MULTIPLIERS
-    : require('./constants.js').REASONING_MULTIPLIERS;
-  return r[reasoningLevel] || r.none;
-}
-
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { calculateImpact, calculateQueryImpact, getMultiplierForLevel, computeTimeFactor, resolveProfile, heatwavePeakPue, heatwaveFactor, applyHeatwaveContext };
+  module.exports = { calculateImpact, calculateQueryImpact, computeTimeFactor, resolveProfile, heatwavePeakPue, heatwaveFactor, applyHeatwaveContext };
 }

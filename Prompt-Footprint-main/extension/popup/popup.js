@@ -1,4 +1,96 @@
-const SUPPORTED_HOSTS = ['chatgpt.com', 'chat.openai.com', 'claude.ai'];
+const SUPPORTED_HOSTS = ['chatgpt.com', 'chat.openai.com', 'claude.ai', 'gemini.google.com'];
+
+// ── Current model card ────────────────────────────────────────────────────
+// The popup does not detect anything itself: it asks the content script what it
+// is currently observing. That keeps one detector per tab and means the popup
+// can never disagree with the in-page panel. Only detection metadata crosses
+// the boundary — the composer's text never leaves the page.
+
+function askModelState(tabId) {
+  return new Promise((resolve) => {
+    if (!tabId) { resolve(null); return; }
+    try {
+      chrome.tabs.sendMessage(tabId, { type: 'PF_MODEL_STATE' }, (resp) => {
+        // No content script on this tab (unsupported page, or not injected yet).
+        void chrome.runtime.lastError;
+        resolve(resp || null);
+      });
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+function renderModelCard(state) {
+  const section = document.getElementById('pf-model-section');
+  if (!section || typeof PFModelPresent === 'undefined') return;
+  if (!state || !state.supported) { section.hidden = true; return; }
+  section.hidden = false;
+
+  const summary = PFModelPresent.collapsedSummary(state.observation, state.estimate, {
+    inputTokens: state.inputTokens,
+    tokensAvoided: state.savings ? state.savings.tokensAvoided : null,
+  });
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+
+  set('pf-model-provider', summary.surface && summary.surface !== summary.provider
+    ? `${summary.provider} · ${summary.surface}` : summary.provider);
+  set('pf-model-name', summary.model);
+  set('pf-model-tokens', summary.inputTokens != null ? String(summary.inputTokens) : '—');
+  set('pf-model-avoided', summary.tokensAvoided != null ? String(summary.tokensAvoided) : '—');
+  set('pf-model-energy', summary.energyRange);
+  set('pf-model-energy-lbl', summary.energyLabel + (summary.lowerBound ? ' (lower bound)' : ''));
+
+  const badge = document.getElementById('pf-model-evidence');
+  if (badge) {
+    badge.textContent = summary.evidenceLabel || '—';
+    badge.className = `pf-model-badge pf-evidence-${(summary.evidence || 'unknown').toLowerCase()}`;
+    badge.title = summary.evidence
+      ? `${summary.evidenceLabel}: ${PFEnvCopy.EVIDENCE_EXPLANATION[summary.evidence]} Confidence: ${summary.confidence}.`
+      : '';
+  }
+
+  const change = document.getElementById('pf-model-change');
+  if (change) {
+    change.hidden = !state.changeExplanation;
+    change.textContent = state.changeExplanation || '';
+  }
+
+  const details = document.getElementById('pf-model-details');
+  const toggle = document.getElementById('pf-model-toggle');
+  if (details && toggle && !toggle.dataset.bound) {
+    toggle.dataset.bound = '1';
+    toggle.addEventListener('click', () => {
+      const open = details.hidden;
+      details.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? 'Hide details' : 'Details';
+      if (open) renderModelDetails(details, state);
+    });
+  }
+  if (details && !details.hidden) renderModelDetails(details, state);
+}
+
+function renderModelDetails(container, state) {
+  const esc = PFModelPresent.escapeHtml;
+  const rows = PFModelPresent.expandedRows(state.observation, state.estimate);
+  const disclosures = state.estimate ? state.estimate.disclosures : [];
+  const savings = state.savings;
+  container.innerHTML =
+    rows.map((r) => (
+      `<div class="pf-model-row"><span class="pf-model-row-k">${esc(r.label)}</span>` +
+      `<span class="pf-model-row-v">${esc(r.value)}</span>` +
+      (r.hint ? `<span class="pf-model-row-h">${esc(r.hint)}</span>` : '') +
+      '</div>'
+    )).join('') +
+    (savings ? (
+      `<div class="pf-model-row"><span class="pf-model-row-k">${esc(savings.label)}</span>` +
+      `<span class="pf-model-row-v">${esc(PFEstimator.formatPercentRange(savings.totalReductionPct))} of the whole interaction</span>` +
+      `<span class="pf-model-row-h">${esc(savings.warnings.join(' '))}</span></div>`
+    ) : '') +
+    `<div class="pf-model-disclosures">${disclosures.map((d) => `<p>${esc(d)}</p>`).join('')}` +
+    `<p>${esc(PFEnvCopy.SAVINGS)}</p></div>`;
+}
 
 // ── Real-world impact conversions ─────────────────────────────────────────
 // These are shown in the popup instead of raw numbers (raw numbers live on the
@@ -48,6 +140,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusDot.classList.add('active');
     statusText.textContent = 'Tracking';
   }
+
+  // Ask the page what model it is on. Never blocks the rest of the popup: a tab
+  // without a content script simply leaves the card hidden.
+  askModelState(tab?.id).then(renderModelCard).catch(() => {});
 
   // Load config (overlay + writing + debug toggle state)
   const cfg = await PFStorage.getConfig();

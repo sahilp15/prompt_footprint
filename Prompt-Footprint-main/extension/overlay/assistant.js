@@ -180,6 +180,11 @@
     const format = d.format;
     const log = d.log || function () {};
     const platform = d.platform || 'chatgpt';
+    // Projects avoided INPUT tokens onto the whole interaction. Without it the
+    // panel can only speak in tokens: the engine's own impact figure is a
+    // token-linear number, and showing it as "energy saved" would claim that
+    // cutting half the input halves the interaction, which it does not.
+    const projectSavings = typeof d.projectSavings === 'function' ? d.projectSavings : null;
 
     // ── Instance state ──────────────────────────────────────────────────────
     let host = null;
@@ -943,13 +948,29 @@
 
     function ecoLine(tokens) {
       const parts = [`<span class="num">${tokens}</span> tok`];
-      if (settings.showImpact && analytics && analytics.saved && format) {
-        // The same real-world wording the popup and the stats panel use, via the
-        // shared formatter — one vocabulary for impact across the product.
-        const water = format.water(analytics.saved.waterMl).compact;
-        parts.push(`<span class="dot">·</span><span class="eco">${ICONS.drop}${esc(water)}</span>`);
+      const projection = currentProjection();
+      if (settings.showImpact && projection) {
+        // A percentage of the WHOLE interaction, not a percentage of the input.
+        // On a short prompt those differ by roughly an order of magnitude.
+        const pct = projection.formatted;
+        parts.push(`<span class="dot">·</span><span class="eco">${ICONS.drop}~${esc(pct)} of interaction</span>`);
       }
       return parts.join(' ');
+    }
+
+    /**
+     * The conservative projection for the current analysis, or null.
+     *
+     * Returns null rather than falling back to the engine's token-linear figure:
+     * no number at all is better than one that overstates the saving.
+     */
+    function currentProjection() {
+      if (!projectSavings || !analytics || !(analytics.tokensSaved > 0)) return null;
+      try {
+        return projectSavings(analytics.originalTokens, analytics.optimizedTokens);
+      } catch (_) {
+        return null;
+      }
     }
 
     /**
@@ -1014,12 +1035,19 @@
       const cells = [
         { label: 'Original', value: `${analytics.originalTokens}`, gain: false },
         { label: 'Optimized', value: `${analytics.optimizedTokens}`, gain: false },
-        { label: 'Saved', value: `${analytics.tokensSaved}`, gain: analytics.tokensSaved > 0 },
-        { label: 'Reduction', value: `${Math.round(analytics.percentReduction)}%`, gain: analytics.tokensSaved > 0 },
+        { label: 'Input tokens avoided', value: `${analytics.tokensSaved}`, gain: analytics.tokensSaved > 0 },
+        { label: 'Input reduction', value: `${Math.round(analytics.percentReduction)}%`, gain: analytics.tokensSaved > 0 },
       ];
-      if (settings.showImpact && analytics.saved && format) {
-        cells.push({ label: 'Water saved', value: format.water(analytics.saved.waterMl).compact, gain: true });
-        cells.push({ label: 'Energy saved', value: format.energy(analytics.saved.energyWh).compact, gain: true });
+      // Two separate claims, deliberately labelled differently: how much of the
+      // INPUT went away, and how much of the whole INTERACTION that is likely to
+      // be. Output length, hidden reasoning, tools, and retries do not shrink
+      // because the prompt got shorter.
+      const projection = settings.showImpact ? currentProjection() : null;
+      if (projection) {
+        cells.push({ label: 'Est. interaction reduction', value: projection.formatted, gain: true });
+        if (projection.energy && format) {
+          cells.push({ label: 'Projected energy avoided', value: format.energy(Math.max(0, projection.energy.central)).compact, gain: true });
+        }
       }
       // Column count that divides evenly, so the grid never ends on a blank cell.
       const cols = cells.length % 3 === 0 ? 3 : Math.min(cells.length, 4);

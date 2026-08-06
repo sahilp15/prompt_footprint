@@ -27,13 +27,11 @@ const ENERGY_PER_1K_TOKENS_WH = ENERGY_PER_TOKEN_WH * 1000;    // ~1.065 Wh
 const WATER_PER_1K_TOKENS_ML = WATER_PER_TOKEN_ML * 1000;       // ~3.536 mL
 const CO2_PER_1K_TOKENS_G = CO2_PER_TOKEN_G * 1000;             // ~0.3753 g
 
-// GPT-5 reasoning multipliers (Jegham et al. hardware benchmarks)
-const REASONING_MULTIPLIERS = {
-  none: 1.0,       // GPT-4o baseline
-  minimal: 1.9,    // GPT-5 minimal reasoning
-  moderate: 6.0,   // GPT-5 moderate reasoning
-  high: 14.0       // GPT-5 high reasoning
-};
+// REASONING_MULTIPLIERS lived here: flat multipliers (1.0 / 1.9 / 6.0 / 14.0)
+// applied on top of the per-token baseline. They are gone, not moved. Reasoning
+// cost is now expressed as evidence-classed RANGES per model and mode in
+// lib/env/profiles.js, because a single multiplier cannot represent a regime
+// whose published spread is 2.38-7.38 Wh at the median alone.
 
 // ─────────────────────────────────────────────────────────────────────────--
 // Per-platform environmental profiles
@@ -135,7 +133,6 @@ if (typeof module !== 'undefined' && module.exports) {
     ANNUAL_ENERGY_WH, ANNUAL_WATER_ML, ANNUAL_CO2_G, ANNUAL_TOKENS,
     ENERGY_PER_TOKEN_WH, WATER_PER_TOKEN_ML, CO2_PER_TOKEN_G,
     ENERGY_PER_1K_TOKENS_WH, WATER_PER_1K_TOKENS_ML, CO2_PER_1K_TOKENS_G,
-    REASONING_MULTIPLIERS,
     AVG_PROMPT_WORDS, AVG_RESPONSE_WORDS, AVG_TOKENS_PER_INTERACTION,
     DAILY_MESSAGES,
     CLAUDE_RELATIVE_INTENSITY, PLATFORM_PROFILES, RESPONSE_TIME_MODEL,

@@ -8,6 +8,7 @@
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://claude.ai/*",
+    "https://gemini.google.com/*",
     "https://*.workers.dev/*",
     "https://cpwbtulpufhqexrrzjzt.supabase.co/*",
     "https://api.open-meteo.com/*",
@@ -21,7 +22,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
       "js": [
         "extension/lib/storage.js",
         "extension/lib/proxyConfig.js",
@@ -29,6 +35,21 @@
         "extension/lib/constants.js",
         "extension/lib/tokenEstimator.js",
         "extension/lib/environmentalModel.js",
+        "extension/lib/env/sources.js",
+        "extension/lib/env/profiles.js",
+        "extension/lib/env/factors.js",
+        "extension/lib/env/copy.js",
+        "extension/lib/estimator.js",
+        "extension/lib/models/catalog.js",
+        "extension/lib/models/observation.js",
+        "extension/lib/models/adapters/shared.js",
+        "extension/lib/models/adapters/openai.js",
+        "extension/lib/models/adapters/anthropic.js",
+        "extension/lib/models/adapters/google.js",
+        "extension/lib/models/adapters/index.js",
+        "extension/lib/models/detector.js",
+        "extension/lib/models/snapshots.js",
+        "extension/lib/models/present.js",
         "extension/lib/writingFormat.js",
         "extension/lib/uiHelpers.js",
         "extension/lib/formatters.js",
@@ -62,7 +83,12 @@
         "extension/fonts/JetBrainsMono-500.woff2",
         "extension/fonts/JetBrainsMono-600.woff2"
       ],
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*"]
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ]
     }
   ],
   "options_page": "extension/dashboard/index.html",
