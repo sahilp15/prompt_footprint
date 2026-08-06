@@ -267,6 +267,151 @@ test('undo restores the original prompt byte for byte', { skip: !dom.available }
   }
 });
 
+test('replacement reaches an editor that owns its own model', { skip: !dom.available }, async () => {
+  const { page, instance, composerEl } = await boot();
+  try {
+    const editor = dom.attachModelEditor(composerEl);
+    editor.state = VERBOSE_PROMPT;
+    composerEl.dispatchEvent(new page.window.Event('input', { bubbles: true }));
+    await page.tick(900);
+    assert.strictEqual(instance.state, 'available');
+
+    composerEl.focus();
+    instance.replacePrompt();
+
+    // The model is what gets sent. Checking the DOM alone would have passed even
+    // when this was broken.
+    assert.strictEqual(editor.state, instance.optimized);
+    assert.strictEqual(editor.inSync, true);
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('a prompt edited after analysis is never overwritten with the stale result',
+  { skip: !dom.available }, async () => {
+    const { page, instance, composerEl, composerLib, replaced } = await boot();
+    try {
+      type(page, composerEl, VERBOSE_PROMPT);
+      await page.tick(900);
+      assert.strictEqual(instance.state, 'available');
+
+      // The user adds something crucial and hits Replace before re-analysis.
+      const edited = `${VERBOSE_PROMPT} IMPORTANT: reply in French.`;
+      type(page, composerEl, edited);
+      const applied = instance.replacePrompt();
+
+      assert.strictEqual(applied, false, 'the stale optimization must be refused');
+      assert.strictEqual(composerLib.readText(composerEl), edited,
+        'the sentence typed after analysis survives');
+      assert.strictEqual(replaced.length, 0, 'nothing was recorded as replaced');
+    } finally {
+      instance.destroy();
+      page.restore();
+    }
+  });
+
+test('Replace is disabled while the prompt differs from what was analyzed',
+  { skip: !dom.available }, async () => {
+    const { page, instance, composerEl } = await boot();
+    try {
+      type(page, composerEl, VERBOSE_PROMPT);
+      await page.tick(900);
+      instance.setExpanded(true);
+      const button = instance.shadow.getElementById('act-replace');
+      assert.strictEqual(button.disabled, false);
+
+      type(page, composerEl, `${VERBOSE_PROMPT} One more requirement here.`);
+      assert.strictEqual(button.disabled, true,
+        'the button must go dead the moment the text drifts');
+    } finally {
+      instance.destroy();
+      page.restore();
+    }
+  });
+
+test('rapid consecutive Replace clicks apply exactly once', { skip: !dom.available }, async () => {
+  const { page, instance, composerEl, composerLib, replaced } = await boot();
+  try {
+    type(page, composerEl, VERBOSE_PROMPT);
+    await page.tick(900);
+    const optimized = instance.optimized;
+
+    composerEl.focus();
+    const outcomes = [instance.replacePrompt(), instance.replacePrompt(), instance.replacePrompt()];
+
+    assert.deepStrictEqual(outcomes, [true, false, false], 'only the first click does work');
+    assert.strictEqual(composerLib.readText(composerEl), optimized);
+    assert.strictEqual(replaced.length, 1, 'savings are recorded once, not three times');
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('undo survives an editor that normalizes whitespace on the way in',
+  { skip: !dom.available }, async () => {
+    const { page, instance, composerEl, composerLib } = await boot();
+    try {
+      type(page, composerEl, VERBOSE_PROMPT);
+      await page.tick(900);
+      composerEl.focus();
+      instance.replacePrompt();
+
+      // The host editor settles a moment later with its own spacing and tells us
+      // via a normal input event. That is our echo, not the user typing.
+      const settled = `  ${instance.optimized.replace(/ /g, '  ')}  `;
+      composerEl.innerHTML = `<p>${settled}</p>`;
+      composerEl.dispatchEvent(new page.window.Event('input', { bubbles: true }));
+      await page.tick(50);
+
+      assert.strictEqual(instance.canUndo, true, 'undo must not be retired by our own write');
+      instance.undo();
+      assert.strictEqual(composerLib.readText(composerEl), VERBOSE_PROMPT);
+    } finally {
+      instance.destroy();
+      page.restore();
+    }
+  });
+
+test('Keep original cancels without touching the prompt', { skip: !dom.available }, async () => {
+  const { page, instance, composerEl, composerLib, replaced } = await boot();
+  try {
+    type(page, composerEl, VERBOSE_PROMPT);
+    await page.tick(900);
+    instance.setExpanded(true);
+    instance.shadow.getElementById('act-keep').click();
+    await page.tick(50);
+
+    assert.strictEqual(composerLib.readText(composerEl), VERBOSE_PROMPT);
+    assert.strictEqual(replaced.length, 0);
+    assert.strictEqual(instance.canUndo, false);
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('a long prompt is replaced in full', { skip: !dom.available }, async () => {
+  const { page, instance, composerEl, composerLib } = await boot();
+  try {
+    const long = Array.from({ length: 60 }, (_, i) =>
+      `Please could you kindly review section ${i + 1} of the report in detail.`).join(' ');
+    type(page, composerEl, long);
+    await page.tick(1200);
+    assert.strictEqual(instance.state, 'available');
+
+    composerEl.focus();
+    assert.strictEqual(instance.replacePrompt(), true);
+    assert.strictEqual(composerLib.readText(composerEl), instance.optimized);
+    assert.ok(instance.optimized.length < long.length);
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
 test('editing after a replacement retires undo rather than restoring the wrong text',
   { skip: !dom.available }, async () => {
     const { page, instance, composerEl } = await boot();

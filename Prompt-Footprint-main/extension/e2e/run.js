@@ -293,9 +293,133 @@ async function runClaude() {
   }
 }
 
+/**
+ * The regression suite for the replacement bug.
+ *
+ * `lexical.html` is a composer that keeps its OWN document model and renders the
+ * DOM from it — the shape ChatGPT and Claude actually have. Every assertion here
+ * reads `window.getState()` (the model, i.e. what would be sent) rather than the
+ * markup, because the failure being guarded against is precisely "the box shows
+ * the new prompt and the model still holds the old one".
+ */
+async function runModelEditor() {
+  console.log('\nModel-owning editor (replacement regression)');
+  const { page, errors, cleanup } = await open('lexical.html', 'chatgpt.com', 'https://chatgpt.com/');
+  const editor = '#prompt-textarea';
+  const bar = page.locator('#pf-assistant-root #bar');
+  const replaceBtn = page.locator('#pf-assistant-root #act-replace');
+  const state = () => page.evaluate(() => window.getState());
+  const setState = (t) => page.evaluate((x) => window.setState(x), t);
+  const expand = async () => {
+    const open2 = await page.locator('#pf-assistant-root #panel').isVisible().catch(() => false);
+    if (!open2) { await bar.click(); await page.waitForTimeout(400); }
+  };
+
+  try {
+    // 1. The core case: the editor's model must carry the new prompt.
+    await setState(CHATGPT_PROMPT);
+    await page.waitForTimeout(1300);
+    await expand();
+    const optimized = await page.locator('#pf-assistant-root #pane-optimized').textContent();
+    await replaceBtn.click();
+    await page.waitForTimeout(400);
+    check('editor model holds the optimized prompt', (await state()).trim() === optimized.trim(),
+      JSON.stringify((await state()).slice(0, 60)));
+    check('DOM and editor model agree', await page.evaluate(() => window.inSync()));
+
+    // 2. Multi-paragraph.
+    const multi = [
+      'Hi there! I was wondering if you could please help me with the following task.',
+      '',
+      'Basically, I would really like you to review the Q3 2024 report for Northwind Logistics.',
+      'Please do not include any financial projections. Use a professional tone.',
+      '',
+      'Thank you so much in advance!',
+    ].join('\n');
+    await setState(multi);
+    await page.waitForTimeout(1300);
+    await expand();
+    const multiOpt = await page.locator('#pf-assistant-root #pane-optimized').textContent();
+    await replaceBtn.click();
+    await page.waitForTimeout(500);
+    const multiState = await state();
+    check('multi-paragraph model matches the optimized prompt', multiState.trim() === multiOpt.trim());
+    check('paragraph structure survives', multiState.split('\n').length > 1);
+
+    // 3. Editing after analysis must not be overwritten by the stale result.
+    await setState(CHATGPT_PROMPT);
+    await page.waitForTimeout(1300);
+    await expand();
+    await setState(`${CHATGPT_PROMPT} IMPORTANT: reply in French.`);
+    await page.waitForTimeout(150);                 // still inside the debounce
+    const disabled = await replaceBtn.isDisabled();
+    await replaceBtn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(400);
+    check('Replace is disabled once the prompt drifts', disabled);
+    check('text typed after analysis is not discarded',
+      (await state()).includes('IMPORTANT: reply in French.'));
+
+    // 4. Rapid consecutive clicks.
+    await setState(CHATGPT_PROMPT);
+    await page.waitForTimeout(1300);
+    await expand();
+    const rapidOpt = await page.locator('#pf-assistant-root #pane-optimized').textContent();
+    await page.evaluate(() => {
+      const b = document.getElementById('pf-assistant-root').shadowRoot.getElementById('act-replace');
+      b.click(); b.click(); b.click();
+    });
+    await page.waitForTimeout(500);
+    check('three clicks in a tick replace once', (await state()).trim() === rapidOpt.trim());
+
+    // 5. Repeated identical sentences.
+    const repeated = 'Please summarize the report. Keep it under 100 words. '
+      + 'Please summarize the report. Do not add any commentary whatsoever. '
+      + 'Please summarize the report. Use a professional tone throughout the answer.';
+    await setState(repeated);
+    await page.waitForTimeout(1300);
+    await expand();
+    const repeatedOpt = await page.locator('#pf-assistant-root #pane-optimized').textContent();
+    await replaceBtn.click();
+    await page.waitForTimeout(400);
+    const repeatedState = await state();
+    check('repeated text: model matches the optimized result exactly',
+      repeatedState.trim() === repeatedOpt.trim());
+    check('repeated text: every requirement survives',
+      /100 words/.test(repeatedState) && /Do not add/i.test(repeatedState));
+
+    // 6. Caret and focus.
+    await setState(CHATGPT_PROMPT);
+    await page.waitForTimeout(1300);
+    await expand();
+    await replaceBtn.click();
+    await page.waitForTimeout(400);
+    const caret = await page.evaluate(() => ({
+      caret: window.getCaret(),
+      focused: document.activeElement && document.activeElement.id,
+      paras: document.querySelectorAll('#prompt-textarea p').length,
+    }));
+    check('composer keeps focus after replacing', caret.focused === 'prompt-textarea');
+    check('caret is collapsed at the end of the new text',
+      !!caret.caret && caret.caret.collapsed && caret.caret.p === caret.paras - 1,
+      JSON.stringify(caret.caret));
+
+    // 7. Undo.
+    await page.locator('#pf-assistant-root #toast-undo').click();
+    await page.waitForTimeout(400);
+    check('undo restores the exact original in the model',
+      (await state()).trim() === CHATGPT_PROMPT.trim());
+    check('undo leaves DOM and model in sync', await page.evaluate(() => window.inSync()));
+
+    check('no uncaught errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+  } finally {
+    await cleanup();
+  }
+}
+
 (async () => {
   await runChatGPT();
   await runClaude();
+  await runModelEditor();
   const passed = results.filter((r) => r.ok).length;
   console.log(`\n${passed}/${results.length} checks passed`);
   process.exit(passed === results.length ? 0 : 1);

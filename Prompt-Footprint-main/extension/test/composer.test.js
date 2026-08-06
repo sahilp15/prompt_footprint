@@ -203,18 +203,217 @@ test('writeText drives a textarea through the native setter and fires input',
     }
   });
 
-test('writeText uses execCommand on a contenteditable so the editor sees a real edit',
+test('writeText falls back to execCommand for a plain contenteditable',
   { skip: !dom.available }, () => {
+    // Nothing here owns a model, so nobody cancels our beforeinput and the
+    // native command is the correct tool. It is the LAST resort, not the first.
     const page = dom.createPage(dom.CHATGPT_HTML);
     try {
       const el = page.document.getElementById('prompt-textarea');
       el.innerHTML = '<p>old text</p>';
       el.focus();
       assert.strictEqual(C.writeText(el, 'new text'), true);
-      // The primary path ran — no innerHTML surgery, which is what would leave
-      // Lexical's model out of step with what the user can see.
       assert.deepStrictEqual(page.commands, [{ command: 'insertText', value: 'new text' }]);
       assert.strictEqual(C.readText(el), 'new text');
+    } finally {
+      page.restore();
+    }
+  });
+
+// ── Editors that own their document model ──────────────────────────────────
+// The regression tests for the reported bug: the composer showed the new prompt
+// while the editor's model — the thing that actually gets sent — still held the
+// old one.
+
+test('writeText updates the editor MODEL, not just the DOM', { skip: !dom.available }, () => {
+  const page = dom.createPage(dom.CHATGPT_HTML);
+  try {
+    const el = page.document.getElementById('prompt-textarea');
+    const editor = dom.attachModelEditor(el);
+    editor.state = 'Please could you kindly summarize this report for me.';
+
+    assert.strictEqual(C.writeText(el, 'Summarize this report.'), true);
+    assert.strictEqual(editor.state, 'Summarize this report.',
+      'the model must carry the new prompt — this is what gets sent');
+    assert.strictEqual(editor.inSync, true, 'nobody wrote behind the editor’s back');
+    assert.strictEqual(C.readText(el), 'Summarize this report.');
+    // execCommand is never reached: the editor claimed the edit first.
+    assert.deepStrictEqual(page.commands, []);
+  } finally {
+    page.restore();
+  }
+});
+
+test('writeText replaces the whole document, not the first matching text',
+  { skip: !dom.available }, () => {
+    const page = dom.createPage(dom.CHATGPT_HTML);
+    try {
+      const el = page.document.getElementById('prompt-textarea');
+      const editor = dom.attachModelEditor(el);
+      // Three identical paragraphs: a naive find-and-replace would change one
+      // and leave the other two behind.
+      editor.state = 'Summarize the report.\nSummarize the report.\nSummarize the report.';
+
+      assert.strictEqual(C.writeText(el, 'Summarize the report once.'), true);
+      assert.strictEqual(editor.state, 'Summarize the report once.');
+      assert.strictEqual(editor.inSync, true);
+    } finally {
+      page.restore();
+    }
+  });
+
+test('writeText handles changes at the start, middle, and end identically',
+  { skip: !dom.available }, () => {
+    const page = dom.createPage(dom.CHATGPT_HTML);
+    try {
+      const el = page.document.getElementById('prompt-textarea');
+      const editor = dom.attachModelEditor(el);
+      const original = 'Please review the plan. Keep it under 200 words. Thank you so much.';
+      const cases = {
+        start: 'Review the plan. Keep it under 200 words. Thank you so much.',
+        middle: 'Please review the plan. Under 200 words. Thank you so much.',
+        end: 'Please review the plan. Keep it under 200 words.',
+      };
+      for (const [where, next] of Object.entries(cases)) {
+        editor.state = original;
+        assert.strictEqual(C.writeText(el, next), true, where);
+        assert.strictEqual(editor.state, next, `change at the ${where}`);
+        assert.strictEqual(editor.inSync, true, where);
+      }
+    } finally {
+      page.restore();
+    }
+  });
+
+test('writeText preserves multi-line structure in the model', { skip: !dom.available }, () => {
+  const page = dom.createPage(dom.CHATGPT_HTML);
+  try {
+    const el = page.document.getElementById('prompt-textarea');
+    const editor = dom.attachModelEditor(el);
+    editor.state = 'Intro line.\n\nBody line one.\nBody line two.';
+    const next = 'Intro.\n\nBody one.\nBody two.';
+
+    assert.strictEqual(C.writeText(el, next), true);
+    assert.strictEqual(editor.state, next);
+    assert.strictEqual(C.readText(el), next, 'and it reads back the same way');
+  } finally {
+    page.restore();
+  }
+});
+
+test('writeText round-trips long content', { skip: !dom.available }, () => {
+  const page = dom.createPage(dom.CHATGPT_HTML);
+  try {
+    const el = page.document.getElementById('prompt-textarea');
+    const editor = dom.attachModelEditor(el);
+    editor.state = 'short';
+    const long = Array.from({ length: 400 }, (_, i) => `Paragraph ${i} with some content.`).join('\n');
+
+    assert.strictEqual(C.writeText(el, long), true);
+    assert.strictEqual(editor.state, long);
+    assert.strictEqual(editor.state.length, long.length);
+  } finally {
+    page.restore();
+  }
+});
+
+test('writeText clears the composer for an empty replacement', { skip: !dom.available }, () => {
+  const page = dom.createPage(dom.CHATGPT_HTML);
+  try {
+    const el = page.document.getElementById('prompt-textarea');
+    const editor = dom.attachModelEditor(el);
+    editor.state = 'Something to remove.';
+
+    assert.strictEqual(C.writeText(el, ''), true);
+    assert.strictEqual(editor.state, '');
+    assert.strictEqual(C.readText(el), '');
+  } finally {
+    page.restore();
+  }
+});
+
+test('writeText fails honestly rather than corrupting the editor',
+  { skip: !dom.available }, () => {
+    const page = dom.createPage(dom.CHATGPT_HTML);
+    try {
+      const el = page.document.getElementById('prompt-textarea');
+      const editor = dom.attachModelEditor(el);
+      editor.detach();                        // nothing claims the edit…
+      el.innerHTML = '<p>untouchable</p>';
+      page.document.execCommand = () => false;  // …and the native path fails too
+
+      assert.strictEqual(C.writeText(el, 'new text'), false);
+      // Crucially it did NOT write the DOM directly. A composer that shows text
+      // the editor does not know about is worse than one that did not change.
+      assert.strictEqual(C.readText(el), 'untouchable');
+    } finally {
+      page.restore();
+    }
+  });
+
+// ── Selection and caret ────────────────────────────────────────────────────
+
+test('writeText leaves a collapsed caret at the end, not a full selection',
+  { skip: !dom.available }, () => {
+    const page = dom.createPage(dom.CHATGPT_HTML);
+    try {
+      const el = page.document.getElementById('prompt-textarea');
+      el.innerHTML = '<p>old text here</p>';
+      el.focus();
+      C.writeText(el, 'brand new text');
+
+      const sel = page.window.getSelection();
+      assert.strictEqual(sel.isCollapsed, true,
+        'a lingering selection would mean the next keystroke wipes the new text');
+      // Anchored in a text node at its end — not on the editable root, which
+      // rich editors resolve inconsistently.
+      assert.strictEqual(sel.anchorNode.nodeType, 3);
+      assert.strictEqual(sel.anchorOffset, (sel.anchorNode.nodeValue || '').length);
+    } finally {
+      page.restore();
+    }
+  });
+
+test('selectAllContents anchors on text nodes rather than the editable root',
+  { skip: !dom.available }, () => {
+    const page = dom.createPage(dom.CHATGPT_HTML);
+    try {
+      const el = page.document.getElementById('prompt-textarea');
+      el.innerHTML = '<p>first line</p><p>second line</p>';
+      const range = C.selectAllContents(el);
+      assert.strictEqual(range.startContainer.nodeType, 3, 'start is a text node');
+      assert.strictEqual(range.endContainer.nodeType, 3, 'end is a text node');
+      assert.strictEqual(range.startOffset, 0);
+      assert.strictEqual(range.endContainer.nodeValue, 'second line');
+      assert.strictEqual(range.endOffset, 'second line'.length);
+    } finally {
+      page.restore();
+    }
+  });
+
+test('writeText puts the textarea caret at the end of the new value',
+  { skip: !dom.available }, () => {
+    const page = dom.createPage(dom.TEXTAREA_HTML);
+    try {
+      const el = page.document.getElementById('prompt-textarea');
+      el.value = 'the old and much longer value';
+      el.setSelectionRange(4, 12);            // user had a selection
+      C.writeText(el, 'short new');
+      assert.strictEqual(el.selectionStart, 'short new'.length);
+      assert.strictEqual(el.selectionEnd, 'short new'.length);
+    } finally {
+      page.restore();
+    }
+  });
+
+test('writeText replaces every occurrence in a textarea with repeated text',
+  { skip: !dom.available }, () => {
+    const page = dom.createPage(dom.TEXTAREA_HTML);
+    try {
+      const el = page.document.getElementById('prompt-textarea');
+      el.value = 'Do it. Do it. Do it.';
+      C.writeText(el, 'Do it once.');
+      assert.strictEqual(el.value, 'Do it once.');
     } finally {
       page.restore();
     }

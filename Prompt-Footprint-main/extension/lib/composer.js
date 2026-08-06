@@ -19,9 +19,12 @@
 //     descriptors.
 //
 // Reading and writing text is also here, because "how do I get text out of this
-// element" and "how do I put text back so React notices" are properties of the
-// same detection: a textarea needs the native value setter, a contenteditable
-// needs execCommand so Lexical/ProseMirror see a real user edit.
+// element" and "how do I put text back so the app notices" are properties of the
+// same detection. A textarea needs the native value setter; a contenteditable
+// belonging to Lexical or ProseMirror needs the edit OFFERED to the editor as a
+// cancelable event, because those editors send their own document model rather
+// than the markup. See `writeText` — that distinction is the whole reason this
+// file exists rather than a one-line `el.textContent = …`.
 
 (function (root) {
   'use strict';
@@ -343,14 +346,116 @@
   }
 
   /**
-   * Replace the composer's contents with `text` in a way the host editor
-   * actually notices. Returns true on success.
+   * Select an editable's entire contents and return the Range.
    *
-   * contenteditable goes through `execCommand('insertText')` rather than direct
-   * DOM surgery: it emits the same beforeinput/input sequence a paste does, so
-   * Lexical and ProseMirror update their own document model. Writing innerHTML
-   * instead is the classic way to end up with a composer that LOOKS right and
-   * sends the old text.
+   * The range is anchored on the first and last TEXT NODES rather than on the
+   * editable root. A range whose container is the root is ambiguous — it points
+   * at a child index, not a text position — and rich editors that map DOM
+   * selections onto their own model handle it inconsistently. Anchoring on text
+   * nodes produces exactly the selection a user's Ctrl+A does.
+   */
+  function selectAllContents(el) {
+    const doc = el.ownerDocument || document;
+    const view = doc.defaultView || window;
+    const selection = view.getSelection();
+    if (!selection) return null;
+    const range = doc.createRange();
+    let first = null;
+    let last = null;
+    try {
+      const walker = doc.createTreeWalker(el, 4 /* SHOW_TEXT */);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (!first) first = node;
+        last = node;
+      }
+    } catch (_) { /* no TreeWalker — fall back below */ }
+    if (first && last) {
+      range.setStart(first, 0);
+      range.setEnd(last, (last.nodeValue || '').length);
+    } else {
+      range.selectNodeContents(el);          // genuinely empty editor
+    }
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return range;
+  }
+
+  /**
+   * Put the caret at the end of the editable's text.
+   *
+   * Anchored on the last text node for the same reason `selectAllContents` is:
+   * a position expressed against the root element is a child index, and editors
+   * that own their selection model resolve it inconsistently — which is how a
+   * caret ends up somewhere other than where the user just watched text appear.
+   */
+  function collapseToEnd(el) {
+    const doc = el.ownerDocument || document;
+    const view = doc.defaultView || window;
+    const selection = view.getSelection();
+    if (!selection) return;
+    try {
+      const range = doc.createRange();
+      let last = null;
+      try {
+        const walker = doc.createTreeWalker(el, 4 /* SHOW_TEXT */);
+        let node;
+        while ((node = walker.nextNode())) last = node;
+      } catch (_) { /* fall back to the element below */ }
+      if (last) {
+        range.setStart(last, (last.nodeValue || '').length);
+        range.collapse(true);
+      } else {
+        range.selectNodeContents(el);
+        range.collapse(false);
+      }
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch (_) { /* selection is a nicety, never a failure */ }
+  }
+
+  /**
+   * Leave a usable caret behind after a write.
+   *
+   * An editor that applied the change itself has already placed its caret, and
+   * it knows better than we do — so we only step in when the selection is still
+   * spanning content, which would mean the user's next keystroke wipes the text
+   * we just inserted.
+   */
+  function ensureCaret(el) {
+    const view = (el.ownerDocument || document).defaultView || window;
+    const selection = view.getSelection && view.getSelection();
+    if (selection && selection.isCollapsed) return;
+    collapseToEnd(el);
+  }
+
+  /**
+   * Replace the composer's contents with `text` in a way the host editor
+   * actually notices. Returns true on success, false without having damaged
+   * anything.
+   *
+   * THE IMPORTANT PART. ChatGPT (Lexical) and Claude (ProseMirror) do not treat
+   * the DOM as the source of truth: they keep their own document model, and the
+   * message that gets sent comes from that model, not from the markup. So a
+   * write is only real if the editor itself performs it.
+   *
+   * `execCommand('insertText')` cannot be trusted to do that. In Chromium it
+   * edits the DOM and fires `input`, but it does NOT fire a cancelable
+   * `beforeinput` — which is the event those editors build their model from. The
+   * result is the exact failure this is written to prevent: the box shows the
+   * new prompt, the model still holds the old one, and pressing send transmits
+   * the old text. Worse, `execCommand` returns `true` in that case, so its
+   * return value proves nothing.
+   *
+   * Instead we offer the edit to the editor and let it tell us whether it took
+   * it. `dispatchEvent` returns false when a listener called `preventDefault()`,
+   * which for these editors means "I own this change and I have applied it to my
+   * model". Only if nothing claims the edit do we fall back to the native path,
+   * and only then is reading the DOM back a meaningful check.
+   *
+   * Direct DOM writing (`textContent`/`innerHTML`) is deliberately NOT a
+   * fallback. It is the one approach guaranteed to desynchronize the editor.
+   * Failing honestly lets the UI offer "copy instead".
    */
   function writeText(el, text) {
     if (!el) return false;
@@ -360,48 +465,80 @@
       setNativeValue(el, value);
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      // Caret to the end of the new text: the whole field was replaced, so an
+      // old offset no longer refers to anything, and end-of-text is where the
+      // user continues typing or presses send.
       try { el.setSelectionRange(value.length, value.length); } catch (_) { /* not selectable */ }
       return true;
     }
 
+    const doc = el.ownerDocument || document;
+    const matches = () => readText(el).trim() === value.trim();
+
+    let selected = false;
     try {
       el.focus();
-      const doc = el.ownerDocument || document;
-      const view = doc.defaultView || window;
-      const selection = view.getSelection();
-      const range = doc.createRange();
-      range.selectNodeContents(el);
-      selection.removeAllRanges();
-      selection.addRange(range);
-
-      // Empty text: deleting the selection is the correct primitive; insertText
-      // with '' is a no-op in some engines.
-      const ok = value
-        ? doc.execCommand('insertText', false, value)
-        : doc.execCommand('delete', false);
-      if (ok && readText(el).trim() === value.trim()) return true;
-    } catch (_) { /* fall through to the paste path */ }
-
-    // Fallback: synthesize a paste. Some builds of ProseMirror ignore
-    // execCommand but handle a real ClipboardEvent with data attached.
-    try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', value);
-      const pasted = el.dispatchEvent(new ClipboardEvent('paste', {
-        bubbles: true, cancelable: true, clipboardData: dt,
-      }));
-      if (!pasted || readText(el).trim() === value.trim()) return true;
-    } catch (_) { /* fall through */ }
-
-    // Last resort. Only reached when both event-based paths failed, and it is
-    // still followed by an input event so a listening framework can resync.
-    try {
-      el.textContent = value;
-      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
-      return readText(el).trim() === value.trim();
+      selected = !!selectAllContents(el);
     } catch (_) {
       return false;
     }
+    if (!selected) return false;
+
+    // 1. Offer it as a replacement of the current selection. This is the most
+    //    precise statement of intent — "these characters become that text" —
+    //    and it carries no clipboard semantics, so editors that transform
+    //    pasted content (markdown, smart quotes) leave ours alone.
+    const dataTransfer = () => {
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', value);
+        return dt;
+      } catch (_) { return null; }
+    };
+
+    for (const inputType of ['insertText', 'insertReplacementText']) {
+      try {
+        const claimed = !el.dispatchEvent(new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          inputType,
+          data: value,
+          dataTransfer: dataTransfer(),
+        }));
+        // Claimed means the editor is applying it to its own model; it may do so
+        // in a microtask, so a DOM read here can legitimately lag.
+        if (claimed) { ensureCaret(el); return true; }
+        if (matches()) { ensureCaret(el); return true; }
+      } catch (_) { /* try the next mechanism */ }
+    }
+
+    // 2. Offer it as a paste. ProseMirror-family editors handle `paste`
+    //    explicitly even where they ignore synthetic beforeinput.
+    try {
+      const dt = dataTransfer();
+      if (dt) {
+        const claimed = !el.dispatchEvent(new ClipboardEvent('paste', {
+          bubbles: true, cancelable: true, composed: true, clipboardData: dt,
+        }));
+        if (claimed) { ensureCaret(el); return true; }
+        if (matches()) { ensureCaret(el); return true; }
+      }
+    } catch (_) { /* try the native path */ }
+
+    // 3. Nothing claimed it, so this is a plain contenteditable with no model of
+    //    its own. Here the native command IS the right tool, and reading the DOM
+    //    back genuinely verifies the result.
+    try {
+      selectAllContents(el);
+      if (value) doc.execCommand('insertText', false, value);
+      else doc.execCommand('delete', false);
+      // This edit was ours, not an editor's, so we own the caret outright rather
+      // than deferring to whatever the command happened to leave behind.
+      if (matches()) { collapseToEnd(el); return true; }
+    } catch (_) { /* fall through to the honest failure */ }
+
+    return false;
   }
 
   const PFComposer = {
@@ -415,6 +552,9 @@
     composerBox,
     readText,
     writeText,
+    selectAllContents,
+    collapseToEnd,
+    ensureCaret,
     setNativeValue,
   };
 
