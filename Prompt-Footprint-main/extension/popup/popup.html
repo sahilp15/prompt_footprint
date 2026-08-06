@@ -92,9 +92,9 @@
       </label>
     </div>
 
-    <!-- Writing suggestions toggle -->
+    <!-- In-page assistant master switch -->
     <div class="pf-setting">
-      <span class="pf-setting-label">Writing &amp; spell-check suggestions</span>
+      <span class="pf-setting-label">In-page prompt assistant</span>
       <label class="pf-toggle">
         <input type="checkbox" id="pf-writing-toggle" checked>
         <span class="pf-toggle-track">
@@ -103,10 +103,53 @@
       </label>
     </div>
 
-    <!-- AI writing status (read-only; configured on the dashboard) -->
+    <!-- Default compression level for the in-page assistant -->
     <div class="pf-setting">
-      <span class="pf-setting-label">AI writing help</span>
-      <span class="pf-setting-value" id="pf-ai-status">Local only</span>
+      <span class="pf-setting-label">Default compression</span>
+      <select class="pf-select" id="pf-level-select" aria-label="Default compression level">
+        <option value="light">Light</option>
+        <option value="balanced">Balanced</option>
+        <option value="maximum">Maximum</option>
+      </select>
+    </div>
+
+    <!-- Analyze automatically while typing -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">Analyze while typing</span>
+      <label class="pf-toggle">
+        <input type="checkbox" id="pf-auto-toggle" checked>
+        <span class="pf-toggle-track">
+          <span class="pf-toggle-thumb"></span>
+        </span>
+      </label>
+    </div>
+
+    <!-- Environmental estimates in the in-page assistant -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">Show environmental estimates</span>
+      <label class="pf-toggle">
+        <input type="checkbox" id="pf-impact-toggle" checked>
+        <span class="pf-toggle-track">
+          <span class="pf-toggle-thumb"></span>
+        </span>
+      </label>
+    </div>
+
+    <!-- Animations (independent of, and additional to, the OS reduced-motion setting) -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">Assistant animations</span>
+      <label class="pf-toggle">
+        <input type="checkbox" id="pf-motion-toggle" checked>
+        <span class="pf-toggle-track">
+          <span class="pf-toggle-thumb"></span>
+        </span>
+      </label>
+    </div>
+
+    <!-- Optimization mode: local by default, enhanced only when cloud analysis is on -->
+    <div class="pf-setting">
+      <span class="pf-setting-label">Optimization</span>
+      <span class="pf-setting-value" id="pf-ai-status">Processed locally</span>
     </div>
 
     <!-- Debug logging toggle (dev) -->
@@ -123,7 +166,8 @@
     <!-- Keyboard shortcut help -->
     <div class="pf-hint">
       Press <kbd>Alt</kbd>+<kbd>P</kbd> on a chat page to open the panel · drag the
-      capsule to move it. Configure AI writing help &amp; privacy in
+      capsule to move it · <a href="#" id="pf-reset-assistant">reset assistant preferences</a>.
+      Configure enhanced mode &amp; privacy in
       <a href="#" id="pf-open-settings">dashboard settings</a>.
     </div>
 
@@ -137,11 +181,11 @@
       </button>
     </div>
 
-    <!-- AI optimizer disclosure -->
+    <!-- Privacy disclosure -->
     <div class="pf-disclosure">
-      Everything is tracked locally on your device. Writing checks run offline;
-      draft text is only sent for AI suggestions if you turn on cloud analysis in
-      Settings. See the
+      Everything is tracked locally on your device. The in-page assistant optimizes
+      prompts offline with the Token Cutter; draft text is only sent anywhere if you
+      turn on cloud analysis in Settings <em>and</em> choose enhanced mode. See the
       <a href="https://github.com/sahilp15/prompt_footprint/blob/main/Prompt-Footprint-main/docs/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.
     </div>
 
@@ -150,6 +194,7 @@
   <script src="../lib/proxyConfig.js"></script>
   <script src="../lib/promptSize.js"></script>
   <script src="../lib/formatters.js"></script>
+  <script src="../lib/assistantState.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

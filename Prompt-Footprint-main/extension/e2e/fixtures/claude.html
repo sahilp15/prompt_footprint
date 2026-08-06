@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Claude (simulated)</title>
+<style>
+  body { margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:#262624; color:#f5f4ef; height:100vh; display:flex; }
+  html.lightmode body { background:#faf9f5; color:#1f1e1d; }
+  #side { width:240px; background:#1f1e1d; flex:none; padding:12px; }
+  html.lightmode #side { background:#f0eee6; }
+  #main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #chat { flex:1; overflow:auto; padding:24px; }
+  #wrap { padding:16px 24px 28px; }
+  fieldset { border:0; margin:0 auto; padding:0; max-width:720px; }
+  .box { background:#30302e; border:1px solid #4a4a47; border-radius:16px; padding:12px 14px; }
+  html.lightmode .box { background:#fff; border-color:#e5e2d9; }
+  .ProseMirror { outline:none; min-height:24px; font-size:16px; line-height:1.5; }
+  .ProseMirror p { margin:0 0 .4em; }
+  .bar { display:flex; align-items:center; gap:8px; margin-top:10px; }
+  .bar button { width:32px; height:32px; border-radius:8px; border:0; background:#4a4a47; color:#fff; }
+  .grow { flex:1 }
+  button[aria-label="Send message"] { background:#c96442; }
+  #dev { position:fixed; top:8px; right:8px; }
+</style>
+</head>
+<body>
+  <div id="dev"><button onclick="document.documentElement.classList.toggle('lightmode')">theme</button></div>
+  <div id="side">Recents</div>
+  <div id="main">
+    <div id="chat">
+      <div data-testid="user-message">What is a token?</div>
+      <p class="font-claude-response-body">A token is a chunk of text.</p>
+    </div>
+    <div id="wrap">
+      <fieldset>
+        <div class="box">
+          <div contenteditable="true" class="ProseMirror" aria-label="Write your prompt to Claude"><p><br></p></div>
+          <div class="bar">
+            <button aria-label="Upload files">+</button>
+            <span class="grow"></span>
+            <button aria-label="Send message">↑</button>
+          </div>
+        </div>
+      </fieldset>
+    </div>
+  </div>
+</body>
+</html>

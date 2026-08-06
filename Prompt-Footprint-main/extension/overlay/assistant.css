@@ -1,0 +1,763 @@
+/* PromptFootprint — in-page writing assistant.
+   ---------------------------------------------------------------------------
+   Loaded INTO A SHADOW ROOT (see overlay/assistant.js), not into the page. That
+   is why the selectors are short and unqualified: nothing here can reach the
+   host page, and nothing the host page ships — ChatGPT and Claude both apply
+   broad resets — can reach in here. It also means `:host` is the mount point.
+
+   The palette is the PromptFootprint site's: warm parchment, deep cocoa text,
+   a single restrained green used for emphasis rather than decoration. Both
+   themes are defined; assistant.js sets `data-theme` from the page's own theme,
+   so the panel matches ChatGPT/Claude rather than guessing. */
+
+/* Fonts are declared HERE rather than relied on from the page.
+   `styles/fonts.css` is injected into the host document by the manifest, and in
+   Chrome its relative `url()`s resolve against the PAGE, not the extension — so
+   on chatgpt.com those requests 404 and the faces never register. This
+   stylesheet is loaded into the shadow root from a chrome-extension:// URL, so
+   the same relative paths resolve against the extension and actually load.
+   (The font files are listed in web_accessible_resources for this reason.) */
+@font-face {
+  font-family: 'PF Source Serif 4';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/SourceSerif4-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'PF Source Serif 4';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/SourceSerif4-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'PF JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../fonts/JetBrainsMono-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'PF JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/JetBrainsMono-600.woff2') format('woff2');
+}
+
+:host {
+  /* Light — the site's parchment identity. */
+  --surface: rgba(252, 250, 245, 0.97);
+  --surface-raised: #FFFFFF;
+  --surface-sunken: #F4F0E7;
+  --surface-hover: #EDE8DC;
+  --text: #2C1810;
+  --text-soft: #5C4A3A;
+  --text-muted: #8B7355;
+  --accent: #5B7C3A;
+  --accent-strong: #4A6830;
+  --accent-wash: rgba(91, 124, 58, 0.10);
+  --accent-line: rgba(91, 124, 58, 0.28);
+  --amber: #B0731F;
+  --danger: #A0522D;
+  --border: #DFD3BC;
+  --border-soft: #EBE3D3;
+  --shadow-sm: 0 1px 2px rgba(44, 24, 16, 0.06), 0 4px 14px rgba(44, 24, 16, 0.09);
+  --shadow-lg: 0 2px 6px rgba(44, 24, 16, 0.07), 0 16px 44px rgba(44, 24, 16, 0.16);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur: 220ms;
+
+  --font-sans: 'PF Source Serif 4', 'Source Serif 4', ui-serif, Georgia, serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'PF JetBrains Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483646;
+  display: block;
+  /* The host box is only ever as big as its content, and never intercepts a
+     click meant for the page underneath. */
+  width: max-content;
+  max-width: 100vw;
+  pointer-events: none;
+  color-scheme: light;
+  contain: layout style;
+}
+
+:host([data-theme='dark']) {
+  /* Dark — warm rather than blue-black, so it sits naturally on ChatGPT's and
+     Claude's dark canvases without looking like a foreign window. */
+  --surface: rgba(31, 28, 25, 0.97);
+  --surface-raised: #262220;
+  --surface-sunken: #1B1917;
+  --surface-hover: #2E2A26;
+  --text: #F2EDE4;
+  --text-soft: #CFC5B6;
+  --text-muted: #9C9184;
+  --accent: #A3C173;
+  --accent-strong: #B7D189;
+  --accent-wash: rgba(163, 193, 115, 0.13);
+  --accent-line: rgba(163, 193, 115, 0.30);
+  --amber: #D9A34E;
+  --danger: #D08A61;
+  --border: #3B342D;
+  --border-soft: #2F2A25;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 2px 8px rgba(0, 0, 0, 0.4), 0 18px 48px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+:host([hidden]) { display: none; }
+
+* { box-sizing: border-box; }
+
+/* `hidden` must win. The UA stylesheet's `[hidden] { display: none }` loses to
+   any author rule that sets a display value, so every flex/grid element in here
+   would silently ignore the attribute the JS uses to show and hide it. */
+[hidden] { display: none !important; }
+
+/* ── Shell ──────────────────────────────────────────────────────────────────
+   One rounded surface holds both states. Collapsing and expanding is a height
+   change on this element, so there is a single continuous object on screen
+   rather than two things swapping places. */
+
+.shell {
+  pointer-events: auto;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(14px) saturate(1.05);
+  -webkit-backdrop-filter: blur(14px) saturate(1.05);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: left;
+  transition: height var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+              opacity 180ms var(--ease), transform 180ms var(--ease);
+  /* Entrance: a short rise into place, played once on mount. */
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.shell.is-in { opacity: 1; transform: none; }
+.shell.is-expanded { box-shadow: var(--shadow-lg); }
+.shell.is-measuring { transition: none; }
+
+/* ── Collapsed indicator ───────────────────────────────────────────────────
+   Minimal by contract: a mark, one headline figure, one supporting figure, and
+   the action. Everything else waits until the user asks for it. */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 11px;
+  height: 38px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+
+.mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.mark svg { display: block; }
+
+/* The mark breathes only while analysis is actually running. */
+.is-analyzing .mark { animation: breathe 1.6s var(--ease) infinite; }
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.headline {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text);
+}
+
+.headline .num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* The secondary figures are the only part of the bar allowed to shrink, so a
+   narrow composer costs detail rather than pushing the action button out of the
+   shell (which `overflow: hidden` would then clip). */
+.sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub .dot { opacity: 0.45; }
+.headline, .pct, .mark, .bar-action, .bar-chevron { flex: none; }
+
+/* Percentage chip — the one place the green is allowed to be loud. */
+.pct {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Environmental cue: a small drop whose fill tracks the saving. Deliberately
+   understated — a hint, not a scoreboard. */
+.eco {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+.eco svg { color: var(--accent); opacity: 0.75; }
+
+.bar-spacer { flex: 1 1 auto; min-width: 4px; }
+
+.bar-action {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: background 160ms var(--ease), transform 160ms var(--ease);
+}
+:host([data-theme='dark']) .bar-action { color: #17150F; }
+.bar-action:hover { background: var(--accent-strong); }
+.bar-action:active { transform: scale(0.97); }
+
+.bar-chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: transform var(--dur) var(--ease), color 160ms var(--ease);
+}
+.is-expanded .bar-chevron { transform: rotate(180deg); color: var(--text-soft); }
+
+/* ── Expanded panel ───────────────────────────────────────────────────────── */
+
+.panel {
+  border-top: 1px solid var(--border-soft);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-height: var(--panel-max, 52vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: normal;
+}
+
+/* The panel is a scrolling column, so its sections must not be squeezed to fit.
+   `.metrics` sets `overflow: hidden` for its rounded corners, which also clears
+   the automatic minimum size a flex item normally gets — without this it
+   collapses to the height of its own borders when the content overflows. */
+.panel > * { flex: 0 0 auto; }
+
+.panel::-webkit-scrollbar { width: 8px; }
+.panel::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Metrics row — four figures, monospaced so they never jitter as they update. */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.metric {
+  background: var(--surface-raised);
+  padding: 9px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.metric.is-gain .metric-value { color: var(--accent); }
+
+.metric-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Prompt comparison. Two labelled panes, stacked — side-by-side would force
+   both columns too narrow to read at the widths a composer actually has. */
+.compare { display: flex; flex-direction: column; gap: 8px; }
+
+.pane-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.pane-label .count {
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.pane {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-soft);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  max-height: 132px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pane.is-optimized {
+  color: var(--text);
+  background: var(--accent-wash);
+  border-color: var(--accent-line);
+}
+
+/* Diff marks inside the optimized pane. Removed text stays legible — struck
+   through, not hidden — so the user can see exactly what left. */
+.pane del {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.pane ins {
+  text-decoration: none;
+  background: var(--accent-wash);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.pane mark {
+  background: transparent;
+  color: inherit;
+  border-bottom: 1px dashed var(--accent-line);
+}
+
+/* ── Explanation and the preservation contract ─────────────────────────────── */
+
+.explain {
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+
+.chip {
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+
+.preserved {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-soft);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.preserved.is-warning { border-left-color: var(--amber); }
+.preserved svg { flex: none; margin-top: 1px; color: var(--accent); }
+.preserved.is-warning svg { color: var(--amber); }
+.preserved strong { color: var(--text); font-weight: 600; }
+
+/* ── Controls ─────────────────────────────────────────────────────────────── */
+
+.level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+.segmented button {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-pressed='true'] {
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+button.act {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease),
+              border-color 160ms var(--ease), transform 160ms var(--ease);
+}
+button.act:hover { background: var(--surface-hover); color: var(--text); }
+button.act:active { transform: scale(0.98); }
+button.act:disabled { opacity: 0.5; cursor: default; }
+
+button.act.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #FFFFFF;
+}
+:host([data-theme='dark']) button.act.primary { color: #17150F; }
+button.act.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+
+button.act.quiet { border-color: transparent; background: transparent; }
+button.act.quiet:hover { background: var(--surface-hover); }
+
+button:focus-visible,
+.bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Footer: privacy line + settings ──────────────────────────────────────── */
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.privacy { display: inline-flex; align-items: center; gap: 5px; }
+.privacy svg { color: var(--accent); }
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+/* ── Settings sheet ───────────────────────────────────────────────────────── */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+.settings-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.setting-note {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* A switch that is a real checkbox underneath, so it is focusable and
+   announced correctly without any ARIA of our own. */
+.switch { position: relative; flex: none; width: 34px; height: 19px; }
+.switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  transition: background 180ms var(--ease);
+}
+.switch span::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 180ms var(--ease);
+}
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(15px); }
+.switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Inline messages ──────────────────────────────────────────────────────── */
+/* Errors are calm, inline, and dismissible by carrying on typing. The page must
+   remain fully usable when the assistant fails, so nothing here blocks. */
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-soft);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.note svg { flex: none; margin-top: 1px; color: var(--text-muted); }
+.note.is-warning { border-color: rgba(176, 115, 31, 0.35); }
+.note.is-warning svg { color: var(--amber); }
+
+/* ── Undo toast ───────────────────────────────────────────────────────────── */
+
+.toast {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+}
+.toast.is-in { opacity: 1; transform: none; }
+.toast.is-below { bottom: auto; top: calc(100% + 8px); transform: translateY(-4px); }
+.toast.is-below.is-in { transform: none; }
+.toast .tick { color: var(--accent); display: grid; place-items: center; }
+
+/* ── Success flash ────────────────────────────────────────────────────────── */
+/* One short wash of accent across the shell after a replacement. No bounce, no
+   glow, no spin — the confirmation is the toast; this is only a nudge. */
+
+.shell.is-success { animation: flash 620ms var(--ease); }
+
+@keyframes flash {
+  0% { background: var(--surface); }
+  22% { background: var(--accent-wash); }
+  100% { background: var(--surface); }
+}
+
+/* ── Analyzing shimmer ────────────────────────────────────────────────────── */
+/* Applied to the headline only, so the layout cannot shift while it plays. */
+
+.headline.is-pending {
+  color: var(--text-muted);
+  background: linear-gradient(90deg,
+    var(--text-muted) 0%, var(--text) 45%, var(--text-muted) 90%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: sweep 1.5s linear infinite;
+}
+
+@keyframes sweep {
+  from { background-position: 140% 0; }
+  to { background-position: -40% 0; }
+}
+
+/* ── Motion preferences ───────────────────────────────────────────────────── */
+/* Honoured twice over: the OS/browser setting, and the assistant's own
+   "Animations" switch, which sets data-motion="off" on the host. */
+
+@media (prefers-reduced-motion: reduce) {
+  .shell, .bar-chevron, .toast, button.act, .bar-action,
+  .switch span, .switch span::after {
+    transition-duration: 1ms !important;
+  }
+  .shell.is-success, .headline.is-pending, .is-analyzing .mark {
+    animation: none !important;
+  }
+  .headline.is-pending {
+    -webkit-text-fill-color: currentColor;
+    color: var(--text-muted);
+    background: none;
+  }
+}
+
+:host([data-motion='off']) .shell,
+:host([data-motion='off']) .bar-chevron,
+:host([data-motion='off']) .toast,
+:host([data-motion='off']) button.act,
+:host([data-motion='off']) .bar-action,
+:host([data-motion='off']) .switch span,
+:host([data-motion='off']) .switch span::after {
+  transition-duration: 1ms !important;
+}
+:host([data-motion='off']) .shell.is-success,
+:host([data-motion='off']) .headline.is-pending,
+:host([data-motion='off']) .is-analyzing .mark {
+  animation: none !important;
+}
+:host([data-motion='off']) .headline.is-pending {
+  -webkit-text-fill-color: currentColor;
+  color: var(--text-muted);
+  background: none;
+}
+
+/* ── Narrow viewports ─────────────────────────────────────────────────────── */
+
+@media (max-width: 620px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sub { display: none; }
+}
+
+/* Screen-reader-only live region for state announcements. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

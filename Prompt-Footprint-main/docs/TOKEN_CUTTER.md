@@ -10,7 +10,46 @@ enhancement that can be switched off, fail, or be rate-limited without degrading
 anything.
 
 Open it at **Dashboard → Token Cutter** (`#/cutter` in the extension,
-`#/app/cutter` on the public site).
+`#/app/cutter` on the public site) — or use it without opening anything, from
+the in-page assistant beside the ChatGPT and Claude composer.
+
+---
+
+## Two surfaces, one engine
+
+The dashboard and the in-page assistant are not two optimizers. The extension's
+content script has no bundler, so `stats-site/src/lib/tokenCutter/` is compiled
+to a single content-script global:
+
+```
+stats-site/src/lib/tokenCutter/extensionEntry.ts
+        │  esbuild --format=iife --global-name=PFTokenCutter
+        ▼
+extension/lib/tokenCutter.bundle.js        (committed; `npm run build:cutter`)
+        │
+        ├── extension/overlay/assistant.js   in-page assistant
+        └── extension/dashboard/…            Token Cutter page (vite build)
+```
+
+Rebuild the bundle whenever the pipeline changes, or the in-page assistant will
+quietly keep running the old one.
+
+### What the in-page assistant uses
+
+| Stage | Used by the assistant |
+| --- | --- |
+| `analyzePrompt` | every analysis, after a 600 ms typing pause |
+| `validation` | the "Meaning preserved" claim — stated only when `validated && ok` |
+| `analytics` | token counts, percent reduction, and the water/energy figures |
+| `suggestions` | the "what changed" summary, grouped by title |
+| `loadMemory` | never-remove terms you saved in the dashboard apply in the composer |
+| `validateMeaning` | holds an optional *remote* rewrite to the local standard |
+
+Two rules the assistant adds on top of the pipeline:
+
+1. **A saving must be worth interrupting for** — at least 4 tokens *and* at least
+   4%. Below that it says "Already concise" rather than manufacturing a change.
+2. **A result that fails validation is never offered**, locally or remotely.
 
 ---
 
