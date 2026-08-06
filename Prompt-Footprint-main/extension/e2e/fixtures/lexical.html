@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<title>ChatGPT (Lexical-faithful simulation)</title>
+<style>
+  body { margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:#212121; color:#ececec; height:100vh; display:flex; }
+  html.light body { background:#fff; color:#0d0d0d; }
+  #sidebar { width:260px; background:#171717; flex:none; padding:12px; }
+  #app { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #thread { flex:1; overflow:auto; padding:24px 16px 8px; }
+  #composer-wrap { padding:12px 16px 24px; }
+  form[data-type="unified-composer"] { max-width:760px; margin:0 auto; }
+  #composer-background { background:#303030; border:1px solid #4a4a4a; border-radius:26px; padding:12px 14px; }
+  html.light #composer-background { background:#fff; border-color:#e3e3e3; }
+  #prompt-textarea { min-height:26px; max-height:200px; overflow:auto; outline:none; font-size:16px; line-height:1.5; }
+  #prompt-textarea p { margin:0 0 .4em; }
+  .row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .row button { width:34px; height:34px; border-radius:50%; border:0; background:#4a4a4a; color:#fff; }
+  .spacer { flex:1 }
+  button[data-testid="send-button"] { background:#fff; color:#000; }
+  #devbar { position:fixed; top:8px; right:8px; display:flex; gap:6px; z-index:9 }
+</style>
+</head>
+<body>
+  <div id="devbar">
+    <button onclick="document.documentElement.classList.toggle('dark');document.documentElement.classList.toggle('light')">theme</button>
+  </div>
+  <div id="sidebar">Chats</div>
+  <div id="app">
+    <div id="thread"></div>
+    <div id="composer-wrap">
+      <form data-type="unified-composer">
+        <div id="composer-background">
+          <div id="prompt-textarea" contenteditable="true" data-lexical-editor="true"
+               role="textbox" data-placeholder="Ask anything"><p><br></p></div>
+          <div class="row">
+            <button aria-label="Attach files">+</button>
+            <span class="spacer"></span>
+            <button data-testid="send-button" aria-label="Send prompt">↑</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<script>
+// ── A deliberately faithful stand-in for Lexical ────────────────────────────
+// The point of this fixture is that the DOM is NOT the source of truth. The
+// editor owns `model` (an array of paragraph strings), intercepts beforeinput,
+// applies the edit to the model itself, and re-renders the DOM from it.
+//
+// That is what makes it able to catch the failure the real thing exhibits:
+// anything that writes to the DOM directly (innerHTML / textContent) leaves the
+// model stale, so the box LOOKS right and `getState()` — what would actually be
+// sent — still holds the old prompt.
+(function () {
+  const el = document.getElementById('prompt-textarea');
+  let model = [''];
+  let caret = { p: 0, off: 0 };
+
+  function render() {
+    el.innerHTML = model.map((line) => `<p>${line ? escapeHtml(line) : '<br>'}</p>`).join('');
+    placeCaret();
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  }
+  function placeCaret() {
+    const p = el.children[Math.min(caret.p, el.children.length - 1)];
+    if (!p) return;
+    const node = p.firstChild && p.firstChild.nodeType === 3 ? p.firstChild : p;
+    const max = node.nodeType === 3 ? node.nodeValue.length : 0;
+    try {
+      const r = document.createRange();
+      r.setStart(node, Math.min(caret.off, max));
+      r.collapse(true);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } catch (_) {}
+  }
+
+  // Where the current DOM selection maps to in the model.
+  function selectionRange() {
+    const sel = getSelection();
+    if (!sel.rangeCount) return null;
+    const r = sel.getRangeAt(0);
+    const locate = (node, off) => {
+      let p = node;
+      while (p && p.parentElement !== el) p = p.parentElement;
+      if (!p) return null;
+      const idx = Array.prototype.indexOf.call(el.children, p);
+      if (idx < 0) return null;
+      // Offsets given against the <p> itself mean "start"/"end" of that block.
+      if (node === p) return { p: idx, off: off === 0 ? 0 : (model[idx] || '').length };
+      return { p: idx, off };
+    };
+    const start = locate(r.startContainer, r.startOffset);
+    const end = locate(r.endContainer, r.endOffset);
+    if (!start || !end) return null;
+    return { start, end };
+  }
+
+  function replaceRange(range, text) {
+    const { start, end } = range;
+    const head = (model[start.p] || '').slice(0, start.off);
+    const tail = (model[end.p] || '').slice(end.off);
+    const inserted = String(text).split('\n');
+    const next = model.slice(0, start.p);
+    if (inserted.length === 1) {
+      next.push(head + inserted[0] + tail);
+      caret = { p: next.length - 1, off: (head + inserted[0]).length };
+    } else {
+      next.push(head + inserted[0]);
+      for (let i = 1; i < inserted.length - 1; i += 1) next.push(inserted[i]);
+      const last = inserted[inserted.length - 1];
+      next.push(last + tail);
+      caret = { p: next.length - 1, off: last.length };
+    }
+    model = next.concat(model.slice(end.p + 1));
+    if (!model.length) model = [''];
+    render();
+    el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  }
+
+  // Lexical prevents the browser's default handling and drives the model itself.
+  el.addEventListener('beforeinput', (e) => {
+    const range = selectionRange();
+    if (!range) return;
+    const type = e.inputType;
+    if (type === 'insertText' || type === 'insertFromPaste' || type === 'insertReplacementText') {
+      const data = e.data != null ? e.data
+        : (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '');
+      e.preventDefault();
+      replaceRange(range, data || '');
+    } else if (type === 'insertParagraph' || type === 'insertLineBreak') {
+      e.preventDefault();
+      replaceRange(range, '\n');
+    } else if (type.startsWith('delete')) {
+      e.preventDefault();
+      if (range.start.p === range.end.p && range.start.off === range.end.off) {
+        if (range.start.off > 0) range.start.off -= 1;
+        else if (range.start.p > 0) {
+          range.start.p -= 1;
+          range.start.off = (model[range.start.p] || '').length;
+        }
+      }
+      replaceRange(range, '');
+    }
+  });
+
+  el.addEventListener('paste', (e) => {
+    const range = selectionRange();
+    if (!range) return;
+    e.preventDefault();
+    replaceRange(range, (e.clipboardData && e.clipboardData.getData('text/plain')) || '');
+  });
+
+  // What the app would actually send. Read from the MODEL, never the DOM.
+  window.getState = () => model.join('\n');
+  window.setState = (text) => {
+    model = String(text).split('\n');
+    caret = { p: model.length - 1, off: model[model.length - 1].length };
+    render();
+    el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  };
+  window.getCaret = () => {
+    const sel = getSelection();
+    if (!sel.rangeCount) return null;
+    const r = sel.getRangeAt(0);
+    let p = r.startContainer;
+    while (p && p.parentElement !== el) p = p.parentElement;
+    const idx = p ? Array.prototype.indexOf.call(el.children, p) : -1;
+    return { p: idx, off: r.startOffset, collapsed: sel.isCollapsed };
+  };
+  // True when the DOM and the model still agree — i.e. nobody wrote behind the
+  // editor's back.
+  window.inSync = () => {
+    const dom = Array.from(el.querySelectorAll('p'))
+      .map((p) => (p.textContent || '')).join('\n');
+    return dom === model.join('\n');
+  };
+  render();
+})();
+</script>
+</body>
+</html>

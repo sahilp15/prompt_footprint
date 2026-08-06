@@ -56,6 +56,12 @@
     gear: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   };
 
+  /** Same text once every run of whitespace is treated as one space. */
+  function sameIgnoringWhitespace(a, b) {
+    const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return norm(a) === norm(b);
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -198,6 +204,9 @@
     let undoRecord = null;            // { el, before, after }
     let successUntil = 0;
     let writingProgrammatically = false;
+    let replacing = false;            // re-entrancy guard for the write itself
+    let pendingWrite = null;          // { intended } — awaiting the editor's echo
+    let driftedAt = 0;                // last refused replace, for the inline note
     let lastRenderedSaved = 0;
 
     const guard = S.createRequestGuard();
@@ -515,12 +524,28 @@
 
       const next = composerLib.readText(composerEl);
       if (next === text) return;
+
+      // Our own write, echoed back by the host editor — possibly a moment later,
+      // and possibly with whitespace normalized to the editor's taste. Adopt
+      // what it actually produced so `text` and the undo record describe the
+      // real contents. Matching on normalized text (not a time window) means a
+      // genuine keystroke can never be swallowed by this branch: it would change
+      // the content, not just the spacing.
+      if (pendingWrite && sameIgnoringWhitespace(next, pendingWrite.intended)) {
+        pendingWrite = null;
+        text = next;
+        if (undoRecord) undoRecord.after = next;
+        render();
+        return;
+      }
+      pendingWrite = null;
       text = next;
 
       // Editing after a replacement means the stored original no longer
       // corresponds to what is on screen, so undo is retired honestly.
       if (undoRecord && next !== undoRecord.after) clearUndo();
       if (dismissedFor !== null && next !== dismissedFor) dismissedFor = null;
+      driftedAt = 0;
 
       guard.cancelAll();          // anything in flight now describes stale text
       typing = true;
@@ -676,31 +701,71 @@
 
     // ── Actions ─────────────────────────────────────────────────────────────
 
+    function composerText() {
+      return composerEl ? composerLib.readText(composerEl) : '';
+    }
+
+    /**
+     * Whether Replace is safe to run *right now*.
+     *
+     * The optimization — and every character offset the engine used to build it
+     * — describes `analysis.original`. If the composer no longer holds exactly
+     * that string, applying the result would overwrite whatever the user has
+     * since written with an optimization of text that no longer exists. So the
+     * check is identity against the analyzed text, not "is there a result".
+     *
+     * It also makes duplicate replacement structurally impossible: once the
+     * optimized text is in the box, the box no longer equals `analysis.original`
+     * and a second click is refused.
+     */
+    function canReplaceNow() {
+      if (replacing || !analysis || !composerEl || !optimizedText) return false;
+      if (optimizedText === analysis.original) return false;
+      return composerText() === analysis.original;
+    }
+
     function replacePrompt() {
-      if (!composerEl || !optimizedText) return;
-      const before = composerLib.readText(composerEl);
-      if (!before || before === optimizedText) return;
+      if (!canReplaceNow()) {
+        // The prompt changed under the open panel. Re-analyze rather than
+        // applying a stale result — and say so, so the click isn't a no-op.
+        if (analysis && composerEl && composerText() !== analysis.original) {
+          driftedAt = Date.now();
+          render();
+          analyze();
+        }
+        return false;
+      }
+
+      replacing = true;
+      const before = analysis.original;       // verified to be what is on screen
+      const intended = optimizedText;
 
       // The write dispatches input events synchronously; the flag covers exactly
-      // that window so our own edit is never mistaken for the user typing. It is
-      // cleared in the same tick, and `text` is updated immediately below, so a
-      // late duplicate event is a no-op either way.
+      // that window so our own edit is never mistaken for the user typing.
       writingProgrammatically = true;
       let ok = false;
       try {
-        ok = composerLib.writeText(composerEl, optimizedText);
+        ok = composerLib.writeText(composerEl, intended);
       } finally {
         writingProgrammatically = false;
+        replacing = false;
       }
 
       if (!ok) {
         engineError = 'Could not update the message box. Copy the optimized prompt instead.';
         render();
-        return;
+        return false;
       }
 
-      text = optimizedText;
-      undoRecord = { el: composerEl, before, after: optimizedText };
+      // The host editor may apply the change in its own microtask, and may
+      // normalize whitespace while doing it. `pendingWrite` lets the resulting
+      // input event be recognized as our own echo rather than as the user
+      // typing — which would otherwise retire undo and trigger a pointless
+      // re-analysis the moment a replacement succeeded.
+      pendingWrite = { intended };
+      text = intended;
+      undoRecord = { el: composerEl, before, after: intended };
+      driftedAt = 0;
       successUntil = Date.now() + SUCCESS_MS;
       debouncer.cancel();
       guard.cancelAll();
@@ -730,20 +795,23 @@
     }
 
     function undo() {
-      if (!undoRecord) return;
+      if (!undoRecord || replacing) return false;
       const target = undoRecord.el && undoRecord.el.isConnected ? undoRecord.el : composerEl;
-      if (!target) return;
+      if (!target) return false;
       const original = undoRecord.before;
 
+      replacing = true;
       writingProgrammatically = true;
       let ok = false;
       try {
         ok = composerLib.writeText(target, original);
       } finally {
         writingProgrammatically = false;
+        replacing = false;
       }
-      if (!ok) return;
+      if (!ok) return false;
 
+      pendingWrite = { intended: original };
       text = original;
       clearUndo();
       hideToast();
@@ -932,8 +1000,9 @@
         renderPreserved();
       }
 
-      const canReplace = hasResult && optimizedText && optimizedText !== text;
-      el['act-replace'].disabled = !canReplace;
+      // Disabled the moment the prompt drifts from the analyzed text, so the
+      // stale-replacement case is prevented rather than merely caught.
+      el['act-replace'].disabled = !canReplaceNow();
       el['act-copy'].disabled = !hasResult;
       el['act-undo'].hidden = !undoRecord;
       el['act-keep'].hidden = !!undoRecord;
@@ -1026,6 +1095,8 @@
 
       if (state === 'failed') {
         set(`${esc(engineError || 'Analysis failed.')} You can keep writing — nothing was changed.`, true);
+      } else if (driftedAt && Date.now() - driftedAt < 6000) {
+        set('Your prompt changed since this was analyzed, so it was not replaced. Re-checking it now.', true);
       } else if (state === 'offline') {
         set('You are offline, so enhanced mode is unavailable. Local optimization still works.', false);
       } else if (state === 'concise') {

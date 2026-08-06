@@ -150,6 +150,76 @@ function createPage(html, options) {
   };
 }
 
+/**
+ * Turn a contenteditable into a stand-in for Lexical / ProseMirror: an editor
+ * that keeps its OWN document model and treats the DOM as a rendering of it.
+ *
+ * This is the shape that matters. Those editors send what is in their model, not
+ * what is in the markup, and they build that model from `beforeinput` and
+ * `paste` — both of which they cancel. Anything that edits the DOM without going
+ * through one of them (including `execCommand`, which fires `input` but no
+ * `beforeinput`, and any `textContent`/`innerHTML` write) leaves the model
+ * holding the old prompt while the box shows the new one.
+ *
+ * Returns a handle whose `state` is the model — assert against that, never the
+ * DOM, or the test cannot see the bug.
+ */
+function attachModelEditor(el) {
+  let model = readModelFromDom();
+  let caretAtEnd = true;
+
+  function readModelFromDom() {
+    const paras = el.querySelectorAll('p');
+    if (paras.length) return Array.from(paras).map((p) => p.textContent || '');
+    return [el.textContent || ''];
+  }
+  function render() {
+    el.innerHTML = model.map((line) => `<p>${line.replace(/[&<>]/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</p>`).join('');
+  }
+  /** Replace the whole model — the editors collapse a full-content selection. */
+  function apply(text) {
+    model = String(text).split('\n');
+    if (!model.length) model = [''];
+    caretAtEnd = true;
+    render();
+    el.dispatchEvent(new el.ownerDocument.defaultView.InputEvent('input', {
+      bubbles: true, inputType: 'insertText',
+    }));
+  }
+
+  const onBeforeInput = (e) => {
+    const type = e.inputType || '';
+    if (!/^insert(Text|ReplacementText|FromPaste)$/.test(type)) return;
+    e.preventDefault();                       // "I own this change"
+    apply(e.data != null ? e.data : '');
+  };
+  const onPaste = (e) => {
+    e.preventDefault();
+    const dt = e.clipboardData;
+    apply(dt && dt.getData ? dt.getData('text/plain') : '');
+  };
+  el.addEventListener('beforeinput', onBeforeInput);
+  el.addEventListener('paste', onPaste);
+
+  render();
+  return {
+    /** What the app would actually send. */
+    get state() { return model.join('\n'); },
+    set state(next) { model = String(next).split('\n'); render(); },
+    /** True while nobody has written behind the editor's back. */
+    get inSync() {
+      return Array.from(el.querySelectorAll('p')).map((p) => p.textContent || '').join('\n')
+        === model.join('\n');
+    },
+    get caretAtEnd() { return caretAtEnd; },
+    detach() {
+      el.removeEventListener('beforeinput', onBeforeInput);
+      el.removeEventListener('paste', onPaste);
+    },
+  };
+}
+
 /** A page shaped like ChatGPT's Lexical composer, plus decoy text boxes. */
 const CHATGPT_HTML = `<!doctype html><html class="dark"><body>
   <header>
@@ -189,6 +259,7 @@ const TEXTAREA_HTML = `<!doctype html><html><body>
 module.exports = {
   available,
   createPage,
+  attachModelEditor,
   size,
   CHATGPT_HTML,
   CLAUDE_HTML,
