@@ -32,6 +32,9 @@
   .att { background:#4a4a4a; border-radius:10px; padding:8px 12px; font-size:13px; }
   #devbar { position:fixed; top:8px; right:8px; display:flex; gap:6px; z-index:9 }
   #devbar button { font-size:12px; padding:4px 8px; }
+  #page-header { padding:10px 16px; font-size:13px; }
+  #page-header button { background:transparent; border:0; color:inherit; font:inherit; cursor:pointer; }
+  #page-header [role="menu"][data-state="closed"] { display:none; }
 </style>
 </head>
 <body>
@@ -40,9 +43,23 @@
     <button onclick="document.getElementById('sidebar').classList.toggle('collapsed')">sidebar</button>
     <button onclick="document.getElementById('attachments').classList.toggle('on')">attach</button>
     <button onclick="swapComposer()">new chat</button>
+    <button onclick="switchModel()">switch model</button>
+    <button onclick="toggleAuto()">auto</button>
   </div>
   <div id="sidebar"><div>Chats</div></div>
   <div id="app">
+    <!-- The model switcher, in the shape ChatGPT exposes it: a button whose text
+         is the current model, plus a menu that only exists while open. The extra
+         hidden menu below is a decoy: a real page keeps the collapsed menu in the
+         DOM, and a detector that reads it instead of the button is wrong. -->
+    <div id="page-header">
+      <button data-testid="model-switcher-dropdown-button" aria-haspopup="menu"
+              aria-expanded="false" aria-label="Model selector">GPT-5.6 Sol</button>
+      <div role="menu" data-state="closed">
+        <div role="menuitemradio" aria-checked="false">GPT-5.6 Terra</div>
+        <div role="menuitemradio" aria-checked="false">GPT-5.6 Luna</div>
+      </div>
+    </div>
     <div id="thread">
       <div class="msg" data-message-author-role="user" data-message-id="m1">What is a token?</div>
       <div class="msg" data-message-author-role="assistant" data-message-id="m2">A token is a chunk of text a model processes.</div>
@@ -64,6 +81,16 @@
     </div>
   </div>
 <script>
+  // Change the model the way the product does: the button's text is the state.
+  function switchModel() {
+    const b = document.querySelector('[data-testid="model-switcher-dropdown-button"]');
+    b.textContent = b.textContent.trim() === 'GPT-5.6 Sol' ? 'GPT-5.6 Luna' : 'GPT-5.6 Sol';
+  }
+  function toggleAuto() {
+    const b = document.querySelector('[data-testid="model-switcher-dropdown-button"]');
+    b.textContent = b.textContent.trim() === 'Auto' ? 'GPT-5.6 Sol' : 'Auto';
+  }
+
   // Mimic ChatGPT swapping the composer node when you open a new conversation.
   function swapComposer() {
     const bg = document.getElementById('composer-background');

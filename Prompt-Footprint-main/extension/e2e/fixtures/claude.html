@@ -24,7 +24,20 @@
 </style>
 </head>
 <body>
-  <div id="dev"><button onclick="document.documentElement.classList.toggle('lightmode')">theme</button></div>
+  <div id="dev">
+    <button onclick="document.documentElement.classList.toggle('lightmode')">theme</button>
+    <button onclick="switchModel()">switch model</button>
+  </div>
+  <header>
+    <button data-testid="model-selector-dropdown" aria-haspopup="menu">Claude Opus 5</button>
+    <button data-testid="effort-selector" aria-label="Effort: high">High</button>
+  </header>
+  <script>
+    function switchModel() {
+      const b = document.querySelector('[data-testid="model-selector-dropdown"]');
+      b.textContent = b.textContent.trim() === 'Claude Opus 5' ? 'Claude Sonnet 5' : 'Claude Opus 5';
+    }
+  </script>
   <div id="side">Recents</div>
   <div id="main">
     <div id="chat">

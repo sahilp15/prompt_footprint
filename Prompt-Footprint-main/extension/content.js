@@ -24,6 +24,20 @@
   let sessionStats = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0 };
   let lastQueryImpact = null;
 
+  // ── Live model detection state ─────────────────────────────────────────---
+  // `observation` is what the page currently shows; `snapshots` is what each
+  // sent message was sent WITH. Those are different questions, and conflating
+  // them is how a model switch would silently rewrite history.
+  const providerAdapter = (typeof PFProviderAdapters !== 'undefined')
+    ? PFProviderAdapters.forLocation(typeof location !== 'undefined' ? location : null)
+    : null;
+  const snapshots = (typeof PFPromptSnapshots !== 'undefined') ? PFPromptSnapshots.createStore() : null;
+  let detector = null;
+  let observation = null;
+  let draftEstimate = null;         // projection for the prompt being typed
+  let lastChangeExplanation = null; // why the projection moved, for the panel
+  let draftTimer = null;
+
   // Verbose logging is opt-in (pf_config.debug) so production stays quiet.
   function log(...args) {
     if (config.debug) console.log('[PromptFootprint]', ...args);
@@ -68,8 +82,17 @@
       sendMessage({ type: 'REGISTER_SESSION', payload: { sessionId: currentSessionId } });
     }
 
+    // Additive schema stamp for anything recorded by the previous estimator.
+    // Never blocks tracking: a failure here just means the stamp is retried next
+    // load, and every stored number stays exactly as it was.
+    PFStorage.migrateStorage().then((r) => {
+      if (r && r.migrated) log('storage migrated', r);
+    }).catch((e) => log('storage migration skipped:', e && e.message));
+
     startObserver();
+    startModelDetection();
     setupSubmitHook();
+    setupDraftWatch();
     startAssistant();
     setupPanelShortcut();
     startWatchdog();
@@ -118,10 +141,143 @@
       return;
     }
     lastSubmitAt = Date.now();
-    pendingUserMessage = { id: `submit-${lastSubmitAt}`, text, startTime: lastSubmitAt };
+    // Freeze the model at SEND time. From here on this message belongs to this
+    // model, whatever the picker does next.
+    const snapshot = takeSendSnapshot(text, lastSubmitAt);
+    pendingUserMessage = {
+      id: `submit-${lastSubmitAt}`, text, startTime: lastSubmitAt,
+      snapshotId: snapshot ? snapshot.id : null,
+    };
     updateFloatingStatus('recording');
     startResponseWatch();
-    log('prompt captured at submit — trigger=', trigger, 'len=', text.length, '→ generation started');
+    log('prompt captured at submit — trigger=', trigger, 'len=', text.length,
+        'model=', observation && (observation.canonicalModel || observation.selectedLabel),
+        '→ generation started');
+  }
+
+  // ── Live model detection ───────────────────────────────────────────────--
+  // The detector owns the observers; this is the wiring that reacts to what it
+  // finds. On a model/mode change we re-project the UNSENT prompt and explain
+  // the move — and we deliberately do not touch anything already sent.
+  function startModelDetection() {
+    if (!providerAdapter || typeof PFModelDetector === 'undefined') {
+      log('model detection: no adapter for this host — estimates will be provider-level');
+      return;
+    }
+    detector = PFModelDetector.create({
+      adapter: providerAdapter,
+      document,
+      window,
+      log,
+      onChange: onModelChange,
+    });
+    detector.start();
+    observation = detector.current;
+    recomputeDraft('init');
+    log('model detection started —', observation && observation.selectedLabel, observation && observation.canonicalModel);
+  }
+
+  function onModelChange(current, previous) {
+    const prevEstimate = draftEstimate;
+    observation = current;
+    // Anything still in flight for the previous model is now describing a model
+    // the user has moved away from. The detector's generation counter is what
+    // makes that decidable; cancelling the pending draft pass is the local half.
+    if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+    recomputeDraft('model-change');
+    lastChangeExplanation = (typeof PFModelPresent !== 'undefined')
+      ? PFModelPresent.changeExplanation(previous, current, prevEstimate, draftEstimate)
+      : null;
+    updateModelPanel();
+    log('model change:', lastChangeExplanation);
+  }
+
+  /** The text sitting in the composer right now (never stored, never sent). */
+  function readDraftText() {
+    const el = PFComposer.findComposer(document, { adapterSelector: adapter.inputSelector });
+    return el ? PFComposer.readText(el) : '';
+  }
+
+  // Typing must not trigger a recalculation per keystroke; one per pause is
+  // enough for a projection whose inputs are a token count and a model id.
+  function setupDraftWatch() {
+    document.addEventListener('input', () => {
+      if (draftTimer) clearTimeout(draftTimer);
+      draftTimer = setTimeout(() => { draftTimer = null; recomputeDraft('typing'); }, 400);
+    }, true);
+  }
+
+  /** Shared estimator input, built from the current observation. */
+  function estimateInput(extra) {
+    const o = observation || {};
+    return {
+      provider: o.provider || (providerAdapter ? providerAdapter.provider : 'unknown'),
+      surface: o.surface || 'unknown',
+      selectedModel: o.canonicalModel || null,
+      effectiveModel: o.effectiveModel || null,
+      modelConfidence: o.confidence || 0,
+      routing: o.routing || 'unknown',
+      reasoning: o.reasoningMode || 'unknown',
+      tools: o.tools || [],
+      ...extra,
+    };
+  }
+
+  function recomputeDraft(reason) {
+    if (typeof PFEstimator === 'undefined') return;
+    const text = readDraftText();
+    const inputTokens = estimateTokens(text);
+    draftEstimate = PFEstimator.estimate(estimateInput({ inputTokens, phase: 'draft' }));
+    draftEstimate.generation = detector ? detector.generation : 0;
+    updateModelPanel();
+    if (reason !== 'typing') log('draft estimate (', reason, ')', inputTokens, 'tokens ->',
+      PFEstimator.formatRange(draftEstimate.energyWh, 'Wh'));
+  }
+
+  /** What the popup asks for; a plain object, no DOM nodes, no prompt text. */
+  function currentModelState() {
+    const obs = observation ? { ...observation } : null;
+    if (obs) delete obs.element;
+    const inputTokens = draftEstimate ? draftEstimate.inputTokens : 0;
+    let savings = null;
+    if (draftEstimate && typeof PFEstimator !== 'undefined' && lastDraftSavings) {
+      savings = lastDraftSavings;
+    }
+    return {
+      supported: !!providerAdapter,
+      observation: obs,
+      estimate: draftEstimate,
+      inputTokens,
+      savings,
+      changeExplanation: lastChangeExplanation,
+      generation: detector ? detector.generation : 0,
+    };
+  }
+
+  // The in-page assistant reports how many input tokens its suggestion would
+  // avoid. That is an INPUT-side number and is projected as such — never as a
+  // percentage of the whole interaction.
+  let lastDraftSavings = null;
+  function projectDraftSavings(originalTokens, optimizedTokens) {
+    if (typeof PFEstimator === 'undefined' || !draftEstimate) return null;
+    lastDraftSavings = PFEstimator.projectInputSavings({
+      estimate: draftEstimate,
+      originalInputTokens: originalTokens,
+      optimizedInputTokens: optimizedTokens,
+      phase: 'draft',
+    });
+    return lastDraftSavings;
+  }
+
+  /** What the in-page assistant needs to show an honest reduction figure. */
+  function projectSavingsForAssistant(originalTokens, optimizedTokens) {
+    const p = projectDraftSavings(originalTokens, optimizedTokens);
+    if (!p) return null;
+    return {
+      formatted: PFEstimator.formatPercentRange(p.totalReductionPct),
+      energy: p.energySavedWh,
+      projection: p,
+    };
   }
 
   // ── Robustness watchdog ────────────────────────────────────────────────--
@@ -132,7 +288,12 @@
   function startWatchdog() {
     const wd = setInterval(() => {
       // If the extension was reloaded/updated, stop quietly.
-      if (!extAlive()) { clearInterval(wd); stopResponseWatch(); return; }
+      if (!extAlive()) {
+        clearInterval(wd);
+        stopResponseWatch();
+        if (detector) { detector.destroy(); detector = null; }
+        return;
+      }
       // Re-inject any overlay the page removed.
       injectFloatingOverlay();
       injectModalOverlay();
@@ -248,9 +409,32 @@
       // the same turn surfacing in the DOM, so don't start a second capture.
       if (Date.now() - lastSubmitAt < SUBMIT_DEDUP_MS || pendingUserMessage) return;
 
-      pendingUserMessage = { id: messageId, text, startTime: Date.now() };
+      const now = Date.now();
+      const snapshot = takeSendSnapshot(text, now);
+      pendingUserMessage = { id: messageId, text, startTime: now, snapshotId: snapshot ? snapshot.id : null };
       updateFloatingStatus('recording');
       startResponseWatch();
+    });
+  }
+
+  /**
+   * Record the model/mode this prompt is being sent with.
+   *
+   * The prompt text itself is not stored — only a local non-reversible hash and
+   * the token count — so the history that lets us attribute a response to the
+   * right model never becomes a history of what the user wrote.
+   */
+  function takeSendSnapshot(text, sentAt) {
+    if (!snapshots || typeof PFEstimator === 'undefined') return null;
+    const inputTokens = estimateTokens(text);
+    const estimate = PFEstimator.estimate(estimateInput({ inputTokens, phase: 'sent' }));
+    return snapshots.create({
+      conversationKey: observation ? observation.conversationKey : null,
+      promptText: text,
+      inputTokens,
+      observation,
+      estimate,
+      sentAt,
     });
   }
 
@@ -326,6 +510,7 @@
     if (!pendingUserMessage) { stopResponseWatch(); return; }
     const prompt = pendingUserMessage.text;
     const startTime = pendingUserMessage.startTime;
+    const snapshotId = pendingUserMessage.snapshotId;
     const msgId = latestEl ? adapter.getMessageId(latestEl) : null;
     stopResponseWatch();
     pendingUserMessage = null;
@@ -342,16 +527,56 @@
 
     const responseTimeMs = Math.max(0, endTime - startTime);
     log('generation ended — assistant text len=', text.length, 'responseTimeMs=', responseTimeMs);
-    processQuery(prompt, text, responseTimeMs);
+    processQuery(prompt, text, responseTimeMs, snapshotId);
   }
 
-  async function processQuery(promptText, responseText, responseTimeMs) {
+  /**
+   * The completed-interaction estimate.
+   *
+   * It is built from the snapshot taken at SEND time, not from the current
+   * picker: if the user switched models while the answer was streaming, this
+   * response still came from the model that was selected when they hit send.
+   */
+  function completionEstimate(snapshotId, promptTokens, responseTokens) {
+    if (typeof PFEstimator === 'undefined') return null;
+    const snap = snapshots && snapshotId ? snapshots.get(snapshotId) : null;
+    const obs = (snap && snap.observation) || observation || {};
+    const est = PFEstimator.estimate({
+      provider: obs.provider || (providerAdapter ? providerAdapter.provider : 'unknown'),
+      surface: obs.surface || 'unknown',
+      selectedModel: obs.canonicalModel || null,
+      effectiveModel: obs.effectiveModel || null,
+      modelConfidence: obs.confidence || 0,
+      routing: obs.routing || 'unknown',
+      reasoning: obs.reasoningMode || 'unknown',
+      tools: obs.tools || [],
+      inputTokens: promptTokens,
+      outputTokens: responseTokens,
+      phase: 'complete',
+    });
+    if (snap && snapshots) snapshots.complete(snap.id, est);
+    return est;
+  }
+
+  async function processQuery(promptText, responseText, responseTimeMs, snapshotId) {
     const multiplier = config.energyPerTokenMultiplier || 1.0;
     const impact = calculateQueryImpact(promptText, responseText, {
       platform: adapter.id,
       responseTimeMs,
       multiplier,
     });
+    const est = completionEstimate(snapshotId, impact.promptTokens, impact.responseTokens);
+    if (est) {
+      // The evidence-aware estimate replaces the flat per-token figures. The
+      // band, the boundaries, and the evidence class travel with it into
+      // storage; the session totals keep using the central value so existing
+      // charts stay readable.
+      impact.energyWh = est.energyWh.central * multiplier;
+      impact.co2G = est.carbon ? est.carbon.central * multiplier : impact.co2G;
+      const w = est.water.fullOperational || est.water.cooling || est.water.reported;
+      impact.waterMl = w ? w.central * multiplier : impact.waterMl;
+      impact.estimate = est;
+    }
 
     // Defensive: never persist an empty interaction (both prompt and response
     // must contribute tokens). The submit hook already requires a non-empty
@@ -371,6 +596,7 @@
 
     if (currentSessionId && extAlive()) {
       try {
+        const est = impact.estimate;
         await PFStorage.addQuery(currentSessionId, {
           platform: adapter.id,
           promptTokens: impact.promptTokens,
@@ -380,6 +606,27 @@
           waterMl: impact.waterMl,
           co2G: impact.co2G,
           responseTimeMs,
+          ...(est ? {
+            energyWhLow: est.energyWh.low,
+            energyWhHigh: est.energyWh.high,
+            waterCoolingMl: est.water.cooling ? est.water.cooling.central : null,
+            waterFullOperationalMl: est.water.fullOperational ? est.water.fullOperational.central : null,
+            waterBoundary: (est.water.fullOperational && est.water.fullOperational.boundary) ||
+              (est.water.cooling && est.water.cooling.boundary) || 'undisclosed',
+            carbonScope: est.carbon ? est.carbon.scope : null,
+            carbonAccounting: est.carbon ? est.carbon.accounting : null,
+            evidence: est.evidence,
+            confidence: est.confidence,
+            selectedModel: est.selectedModel,
+            canonicalModel: est.canonicalModel,
+            effectiveModel: est.effectiveModel,
+            routing: est.routing,
+            reasoningMode: est.reasoning,
+            tools: est.tools,
+            lowerBound: est.lowerBound,
+            modelSnapshotId: est.modelSnapshotId,
+            estimatorVersion: est.profileId,
+          } : {}),
         });
         log('storage write ok — session', currentSessionId, 'tokens', impact.totalTokens);
       } catch (e) {
@@ -595,6 +842,22 @@
           </div>
         </div>
 
+        <div class="pf-modal-section pf-modal-model" id="pf-modal-model">
+          <div class="pf-modal-section-label">Model &amp; projected impact</div>
+          <div class="pf-model-head">
+            <span class="pf-model-provider" id="pf-model-provider">—</span>
+            <span class="pf-model-badge" id="pf-model-evidence" title="Evidence class"></span>
+          </div>
+          <div class="pf-model-name" id="pf-model-name">Detecting…</div>
+          <div class="pf-model-grid">
+            <div class="pf-model-cell"><span class="pf-model-val" id="pf-model-tokens">—</span><span class="pf-model-lbl">Input tokens</span></div>
+            <div class="pf-model-cell"><span class="pf-model-val" id="pf-model-energy">—</span><span class="pf-model-lbl" id="pf-model-energy-lbl">Projected interaction range</span></div>
+          </div>
+          <div class="pf-model-note" id="pf-model-change" hidden></div>
+          <button class="pf-model-toggle" id="pf-model-toggle" aria-expanded="false">Details</button>
+          <div class="pf-model-details" id="pf-model-details" hidden></div>
+        </div>
+
         <div class="pf-modal-section pf-modal-weather" id="pf-modal-weather" hidden>
           <div class="pf-modal-section-label">Weather adjustment <span class="pf-modal-approx">approx</span></div>
           <div class="pf-modal-weather-body" id="pf-weather-body"></div>
@@ -612,6 +875,19 @@
     document.body.appendChild(modal);
 
     document.getElementById('pf-modal-close-btn').addEventListener('click', () => toggleModal(false));
+    const detailsBtn = document.getElementById('pf-model-toggle');
+    if (detailsBtn) {
+      detailsBtn.addEventListener('click', () => {
+        const panel = document.getElementById('pf-model-details');
+        if (!panel) return;
+        const open = panel.hidden;
+        panel.hidden = !open;
+        detailsBtn.setAttribute('aria-expanded', String(open));
+        detailsBtn.textContent = open ? 'Hide details' : 'Details';
+        if (open) renderModelDetails(panel);
+      });
+    }
+    updateModelPanel();
     document.getElementById('pf-open-stats-btn').addEventListener('click', () => {
       // Local-first: stats live in the extension's own dashboard page.
       chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
@@ -691,8 +967,12 @@
     } else {
       modal.classList.toggle('pf-modal-hidden');
     }
-    // When the panel becomes visible, refresh the weather-adjusted figure.
-    if (!modal.classList.contains('pf-modal-hidden')) refreshWeatherAdjustment();
+    // When the panel becomes visible, refresh the weather-adjusted figure and
+    // re-project the prompt currently in the composer against the current model.
+    if (!modal.classList.contains('pf-modal-hidden')) {
+      refreshWeatherAdjustment();
+      recomputeDraft('panel-open');
+    }
   }
 
   // Real-world conversion helpers — shared with popup.js via lib/formatters.js.
@@ -707,6 +987,17 @@
     if (energyEl) energyEl.textContent = PFFormat.energy(sessionStats.totalEnergyWh).compact;
     if (waterEl)  waterEl.textContent  = PFFormat.water(sessionStats.totalWaterMl).compact;
     if (co2El)    co2El.textContent    = PFFormat.co2(sessionStats.totalCo2G).compact;
+
+    // A session total is only meaningful under one boundary, so name the one it
+    // was summed under. Every query in a session comes from the same provider,
+    // which is what makes the sum legitimate in the first place.
+    if (lastQueryImpact && lastQueryImpact.estimate) {
+      const est = lastQueryImpact.estimate;
+      const w = est.water.fullOperational || est.water.cooling || est.water.reported;
+      if (waterEl && w) waterEl.title = `Water boundary: ${w.boundary} (${w.scope}). ${PFEnvCopy.WATER_BOUNDARIES}`;
+      if (co2El && est.carbon) co2El.title = `Carbon accounting: ${est.carbon.accounting} (${est.carbon.scope}).`;
+      if (energyEl) energyEl.title = `Central values only; each query's range is in the model panel. Evidence: ${est.evidence}.`;
+    }
 
     // Last query — raw values (individual queries are tiny, context matters)
     if (lastQueryImpact) {
@@ -727,6 +1018,63 @@
     // Keep the weather-adjusted figures in step with the growing session totals
     // (re-render only — no network; the value is refreshed when the panel opens).
     renderWeatherAdjustment();
+    updateModelPanel();
+  }
+
+  // ── Model panel ───────────────────────────────────────────────────────────
+  // Renders what we currently believe about the model and what that implies for
+  // the prompt in the composer. Every value it shows is a range with an evidence
+  // badge; nothing here is presented as provider telemetry.
+  function updateModelPanel() {
+    const section = document.getElementById('pf-modal-model');
+    if (!section || typeof PFModelPresent === 'undefined') return;
+    const summary = PFModelPresent.collapsedSummary(observation, draftEstimate, {
+      inputTokens: draftEstimate ? draftEstimate.inputTokens : 0,
+      tokensAvoided: lastDraftSavings ? lastDraftSavings.tokensAvoided : null,
+    });
+
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('pf-model-provider', summary.surface && summary.surface !== summary.provider
+      ? `${summary.provider} · ${summary.surface}` : summary.provider);
+    set('pf-model-name', summary.model);
+    set('pf-model-tokens', summary.inputTokens != null ? String(summary.inputTokens) : '—');
+    set('pf-model-energy', summary.energyRange);
+    set('pf-model-energy-lbl', summary.energyLabel + (summary.lowerBound ? ' (lower bound)' : ''));
+
+    const badge = document.getElementById('pf-model-evidence');
+    if (badge) {
+      badge.textContent = summary.evidenceLabel || '—';
+      badge.className = `pf-model-badge pf-evidence-${(summary.evidence || 'unknown').toLowerCase()}`;
+      badge.title = summary.evidence
+        ? `${summary.evidenceLabel}: ${PFEnvCopy.EVIDENCE_EXPLANATION[summary.evidence]} Confidence: ${summary.confidence}.`
+        : '';
+    }
+
+    const change = document.getElementById('pf-model-change');
+    if (change) {
+      change.hidden = !lastChangeExplanation;
+      change.textContent = lastChangeExplanation || '';
+    }
+
+    const details = document.getElementById('pf-model-details');
+    if (details && !details.hidden) renderModelDetails(details);
+    else if (details) details.dataset.stale = '1';
+  }
+
+  function renderModelDetails(container) {
+    const rows = PFModelPresent.expandedRows(observation, draftEstimate);
+    const esc = PFModelPresent.escapeHtml;
+    const disclosures = draftEstimate ? draftEstimate.disclosures : [PFEnvCopy.providerCopy('unknown')];
+    container.innerHTML =
+      rows.map((r) => (
+        `<div class="pf-model-row"><span class="pf-model-row-k">${esc(r.label)}</span>` +
+        `<span class="pf-model-row-v">${esc(r.value)}</span>` +
+        (r.hint ? `<span class="pf-model-row-h">${esc(r.hint)}</span>` : '') +
+        '</div>'
+      )).join('') +
+      `<div class="pf-model-disclosures">${disclosures.map((d) => `<p>${esc(d)}</p>`).join('')}` +
+      `<p>${esc(PFEnvCopy.SAVINGS)}</p></div>`;
+    container.dataset.stale = '';
   }
 
   // ── Weather-adjusted estimate (shown beneath the base numbers) ────────────
@@ -820,6 +1168,7 @@
         return { text: (resp && resp.rewritten) || '', status: resp && resp.status };
       },
       onReplaced: (savings) => recordSavings(savings),
+      projectSavings: projectSavingsForAssistant,
     };
 
     assistant = PFAssistant.createAssistant(deps);
@@ -841,12 +1190,26 @@
   function recordSavings(result) {
     if (!result || !extAlive() || !PFStorage.addSavings) return;
     if (!(result.savedTokens > 0)) return;
+    // Project what those avoided INPUT tokens are worth against the whole
+    // interaction. The engine's own figure is an input-side number; presenting
+    // it as a share of total energy without this step would overstate it by an
+    // order of magnitude on a short prompt.
+    let projection = null;
+    if (draftEstimate) {
+      const original = draftEstimate.inputTokens;
+      projection = projectDraftSavings(original, Math.max(0, original - result.savedTokens));
+      updateModelPanel();
+    }
     try {
+      // The ledger records the PROJECTED reduction, not the token-linear one, so
+      // the dashboard's running total cannot inherit the overstatement. Where no
+      // projection is available the resource fields are left at zero rather than
+      // filled in with a number we do not believe.
       PFStorage.addSavings({
         savedTokens: result.savedTokens || 0,
-        savedEnergyWh: result.savedEnergyWh || 0,
-        savedWaterMl: result.savedWaterMl || 0,
-        savedCo2G: result.savedCo2G || 0,
+        savedEnergyWh: projection && projection.energySavedWh ? Math.max(0, projection.energySavedWh.central) : 0,
+        savedWaterMl: projection && projection.waterSaved ? Math.max(0, projection.waterSaved.central) : 0,
+        savedCo2G: projection && projection.carbonSaved ? Math.max(0, projection.carbonSaved.central) : 0,
       });
       log('Savings recorded:', result.savedTokens, 'tokens');
     } catch (_) {
@@ -855,9 +1218,17 @@
   }
 
   // Listen for config changes from popup
-  chrome.runtime.onMessage.addListener((message, sender) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // SECURITY: Only accept messages from our own extension
     if (sender.id !== chrome.runtime.id) return;
+
+    // The popup asks the page what model it is looking at. Only detection
+    // metadata crosses this boundary — never composer text.
+    if (message.type === 'PF_MODEL_STATE') {
+      recomputeDraft('popup');
+      sendResponse(currentModelState());
+      return true;
+    }
 
     if (message.type === 'CONFIG_UPDATED' && message.config) {
       // SECURITY: Only accept known config keys with validated types
@@ -892,6 +1263,10 @@
   // listeners, timers, and shadow host never outlive the document.
   window.addEventListener('pagehide', () => {
     if (assistant) { assistant.destroy(); assistant = null; }
+    // The detector owns observers, listeners, and timers; none of them may
+    // outlive the document.
+    if (detector) { detector.destroy(); detector = null; }
+    if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
   });
 
   // End session on page unload (best-effort; background also closes on tab removal)

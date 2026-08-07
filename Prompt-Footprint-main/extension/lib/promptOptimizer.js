@@ -284,6 +284,13 @@
   // Compute the savings of replacing `original` with `shortened`, using the
   // per-platform intensity profile. Shared by the local heuristic and the AI
   // rewrite path so both report identical math.
+  //
+  // WARNING: `savedEnergyWh`/`savedWaterMl`/`savedCo2G` here are INPUT-SIDE and
+  // token-linear. They are NOT a share of the whole interaction — fixed serving
+  // cost, output decoding, hidden reasoning, routing, tools, and retries do not
+  // shrink because the prompt got shorter. Anything user-facing must run these
+  // through PFEstimator.projectInputSavings() first; the shipped extension does
+  // (see content.js), and this module is currently only exercised by tests.
   function savings(originalText, shortenedText, platform) {
     const original = (originalText || '').toString();
     const shortened = (shortenedText || '').toString();

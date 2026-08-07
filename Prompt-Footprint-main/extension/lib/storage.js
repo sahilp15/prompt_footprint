@@ -28,6 +28,15 @@
   const CONFIG_KEY = 'pf_config';
   const SESSION_PREFIX = 'pf_session_';
   const SAVINGS_KEY = 'pf_savings';
+  const SCHEMA_KEY = 'pf_schema';
+
+  // Schema 2 introduced the evidence-aware estimator. Records written before it
+  // came from the flat per-token model and are NOT comparable with the new
+  // ranges, so they are stamped rather than recomputed — history is a record of
+  // what the user was actually shown, and rewriting it would be a lie about the
+  // past. `LEGACY_ESTIMATOR` is what marks them.
+  const CURRENT_SCHEMA = 2;
+  const LEGACY_ESTIMATOR = 'legacy-token-linear-v1';
 
   const DEFAULT_CONFIG = { overlayEnabled: true, energyPerTokenMultiplier: 1.0 };
 
@@ -193,10 +202,30 @@
       promptTokens: query.promptTokens || 0,
       responseTokens: query.responseTokens || 0,
       totalTokens: query.totalTokens || 0,
+      // `energyWh` stays the single central value the dashboard already reads.
+      // The band, the evidence class, and the model identity travel alongside it
+      // so a stored row can always be re-read with the uncertainty it was
+      // recorded under, instead of hardening into a false fact.
       energyWh: query.energyWh || 0,
       waterMl: query.waterMl || 0,
       co2G: query.co2G || 0,
       responseTimeMs: query.responseTimeMs || 0,
+      ...(query.estimate ? { estimate: query.estimate } : {}),
+      ...(query.energyWhLow != null ? { energyWhLow: query.energyWhLow, energyWhHigh: query.energyWhHigh } : {}),
+      ...(query.waterCoolingMl != null ? { waterCoolingMl: query.waterCoolingMl } : {}),
+      ...(query.waterFullOperationalMl != null ? { waterFullOperationalMl: query.waterFullOperationalMl } : {}),
+      ...(query.waterBoundary ? { waterBoundary: query.waterBoundary } : {}),
+      ...(query.carbonScope ? { carbonScope: query.carbonScope, carbonAccounting: query.carbonAccounting } : {}),
+      ...(query.evidence ? { evidence: query.evidence, confidence: query.confidence } : {}),
+      ...(query.selectedModel !== undefined ? { selectedModel: query.selectedModel } : {}),
+      ...(query.canonicalModel !== undefined ? { canonicalModel: query.canonicalModel } : {}),
+      ...(query.effectiveModel !== undefined ? { effectiveModel: query.effectiveModel } : {}),
+      ...(query.routing ? { routing: query.routing } : {}),
+      ...(query.reasoningMode !== undefined ? { reasoningMode: query.reasoningMode } : {}),
+      ...(query.tools ? { tools: query.tools } : {}),
+      ...(query.modelSnapshotId ? { modelSnapshotId: query.modelSnapshotId } : {}),
+      ...(query.estimatorVersion ? { estimatorVersion: query.estimatorVersion } : {}),
+      ...(query.lowerBound != null ? { lowerBound: query.lowerBound } : {}),
     };
 
     session.queries.push(record);
@@ -287,6 +316,51 @@
     const next = mergeSavings(current, entry);
     await setLocal({ [SAVINGS_KEY]: next });
     return next;
+  }
+
+  // ── Schema migration ─────────────────────────────────────────────────────
+  // Additive only. Values recorded by an older estimator keep their numbers and
+  // gain a label saying which estimator produced them, so a chart can separate
+  // the two eras instead of silently averaging incomparable figures together.
+
+  /** Pure: stamp one session (and its queries) as legacy. Never edits numbers. */
+  function migrateSession(session) {
+    if (!session || session.estimatorVersion) return { session, changed: false };
+    const next = {
+      ...session,
+      estimatorVersion: LEGACY_ESTIMATOR,
+      queries: (session.queries || []).map((q) => (
+        q && q.estimatorVersion ? q : { ...q, estimatorVersion: LEGACY_ESTIMATOR }
+      )),
+    };
+    return { session: next, changed: true };
+  }
+
+  async function getSchemaVersion() {
+    const res = await getLocal([SCHEMA_KEY]);
+    const v = res[SCHEMA_KEY];
+    return typeof v === 'number' ? v : 1;
+  }
+
+  /**
+   * Bring stored data up to the current schema. Safe to call on every start: it
+   * is idempotent, it only writes sessions that actually needed a stamp, and a
+   * failure leaves the old data intact and readable.
+   */
+  async function migrateStorage() {
+    const from = await getSchemaVersion();
+    if (from >= CURRENT_SCHEMA) return { from, to: CURRENT_SCHEMA, migrated: 0 };
+    const all = await getLocal(null);
+    const writes = {};
+    let migrated = 0;
+    for (const key of Object.keys(all)) {
+      if (!key.startsWith(SESSION_PREFIX)) continue;
+      const { session, changed } = migrateSession(all[key]);
+      if (changed) { writes[key] = session; migrated += 1; }
+    }
+    writes[SCHEMA_KEY] = CURRENT_SCHEMA;
+    await setLocal(writes);
+    return { from, to: CURRENT_SCHEMA, migrated };
   }
 
   // ── Pure aggregation helpers (unit-testable, no chrome dependency) ─────────
@@ -387,6 +461,9 @@
     CONFIG_KEY,
     SESSION_PREFIX,
     SAVINGS_KEY,
+    SCHEMA_KEY,
+    CURRENT_SCHEMA,
+    LEGACY_ESTIMATOR,
     DEFAULT_CONFIG,
     ASSISTANT_LEVELS,
     ASSISTANT_MODES,
@@ -403,7 +480,10 @@
     getPlatformBreakdown,
     getSavings,
     addSavings,
+    getSchemaVersion,
+    migrateStorage,
     // pure helpers
+    migrateSession,
     localDayKey,
     emptySavings,
     mergeSavings,

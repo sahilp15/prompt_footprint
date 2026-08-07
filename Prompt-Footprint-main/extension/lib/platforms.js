@@ -197,7 +197,63 @@
     extractText,
   };
 
-  const ADAPTERS = [chatgpt, claude];
+  // ── Gemini ───────────────────────────────────────────────────────────────
+  // gemini.google.com renders each turn as an Angular component: <user-query>
+  // for the prompt and <model-response> for the answer. Element-name selectors
+  // are used first precisely because they are the component contract and survive
+  // the class-name churn that Material's generated classes go through; the
+  // data-test-id and role fallbacks cover builds that wrap them differently.
+  const GEMINI_USER = 'user-query, [data-test-id="user-query"], .user-query-bubble-with-background';
+  const GEMINI_ASSISTANT = 'model-response, [data-test-id="model-response"], message-content.model-response-text';
+  const gemini = {
+    id: 'gemini',
+    name: 'Gemini',
+    hostMatches: ['gemini.google.com'],
+    rootSelector: 'main',
+    messageSelector: `${GEMINI_USER}, ${GEMINI_ASSISTANT}`,
+    inputSelector: 'rich-textarea .ql-editor, div[contenteditable="true"][role="textbox"], div[contenteditable="true"]',
+    stopSelector: 'button[aria-label*="Stop" i], [data-test-id="stop-button"]',
+    sendSelector: 'button[aria-label*="Send" i], [data-test-id="send-button"], button.send-button',
+    getRole(el) {
+      if (el.matches?.(GEMINI_USER) || el.closest?.(GEMINI_USER)) return 'user';
+      if (el.matches?.(GEMINI_ASSISTANT) || el.closest?.(GEMINI_ASSISTANT)) return 'assistant';
+      return null;
+    },
+    getMessageId(el) {
+      return el.getAttribute?.('id') || assignPfId(el);
+    },
+    getLatestAssistant() {
+      const msgs = document.querySelectorAll(GEMINI_ASSISTANT);
+      return msgs[msgs.length - 1] || null;
+    },
+    generatingSignal() {
+      if (document.querySelector(this.stopSelector)) return 'stop-button';
+      if (document.querySelector('[data-test-id="loading-indicator"], .response-loading')) return 'loading-indicator';
+      return null;
+    },
+    isGenerating() {
+      return !!this.generatingSignal();
+    },
+    // A finished Gemini turn renders its response action bar (copy / thumbs);
+    // while streaming there is none.
+    isComplete() {
+      if (this.isGenerating()) return false;
+      const latest = this.getLatestAssistant();
+      if (!latest || !extractText(latest)) return false;
+      const turn = latest.closest('model-response') || latest.parentElement || latest;
+      return !!(turn && (
+        turn.querySelector('message-actions') ||
+        turn.querySelector('[data-test-id="copy-button"]') ||
+        turn.querySelector('button[aria-label*="Copy" i]')
+      ));
+    },
+    getSendButton() {
+      return document.querySelector(this.sendSelector) || null;
+    },
+    extractText,
+  };
+
+  const ADAPTERS = [chatgpt, claude, gemini];
 
   // Resolve the adapter for a given host (defaults to location.host).
   function getActiveAdapter(host) {

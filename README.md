@@ -1,8 +1,9 @@
 # PromptFootprint
 
-A Chrome extension that passively tracks your AI chat usage (**ChatGPT** and
-**Claude**, extensible to more) and estimates its environmental impact — energy
-(Wh), water (mL), and CO₂ (g) — using a token-level, response-time-aware model.
+A Chrome extension that passively tracks your AI chat usage (**ChatGPT**,
+**Claude**, and **Gemini**, extensible to more) and estimates its environmental
+impact — energy (Wh), water (mL), and CO₂ (g) — as an evidence-classed **range**
+for the model you actually have selected.
 
 **Local-first:** by default all data stays on your device in
 `chrome.storage.local` and nothing leaves your browser. No backend is required to
@@ -37,6 +38,10 @@ Prompt-Footprint/
 │   │   ├── composer.js           Evidence-based composer detection + safe read/write
 │   │   ├── assistantState.js     Assistant states, debounce, stale-request guard, settings
 │   │   ├── promptOptimizer.js    Local prompt shortener + curated typo map
+│   │   ├── estimator.js          Evidence-aware range estimator (energy/carbon/water)
+│   │   ├── env/                  Versioned source ledger, profiles, factors, required copy
+│   │   ├── models/               Canonical catalog, observation scoring, live detector
+│   │   │   └── adapters/         Per-provider DOM adapters (OpenAI, Anthropic, Google)
 │   │   ├── spellChecker.js       Offline spell/grammar/punct/cap checker (unused in-page; see below)
 │   │   ├── writingFormat.js      Diff renderer (bolds changed words, HTML-safe)
 │   │   ├── proxyConfig.js        Proxy-first Gemini resolution helpers
@@ -55,22 +60,38 @@ Prompt-Footprint/
 
 ## Environmental model
 
-See [`METHODOLOGY.md`](METHODOLOGY.md) for full formulas, constants, sources,
-and limitations. In short:
+See [`METHODOLOGY.md`](METHODOLOGY.md) for full formulas, sources, and
+limitations. In short: **no provider publishes production per-query telemetry for
+any current flagship model**, so every figure carries the class of evidence
+behind it and is shown as a range, never a single confident number.
 
-```
-impact = totalTokens × perTokenIntensity(platform) × userMultiplier × timeFactor
-```
+| Class | Meaning |
+|---|---|
+| `MEASURED` | Production instrumentation with a disclosed methodology |
+| `REPORTED` | A provider figure published without a reproducible method |
+| `MODELED` | An independent estimate from hardware/token assumptions |
+| `ENGINEERING_PRIOR` | A PromptFootprint assumption for an unmeasured model |
 
-- **ChatGPT (GPT-4o)** intensities are derived from OpenAI's 2025 sustainability
-  disclosure (the Vanderbilt YSJ token-level framework). Per 1k tokens: ~1.065 Wh,
-  ~3.54 mL, ~0.375 g CO₂.
-- **Claude** is scaled from the GPT-4o anchor using independent benchmarks
-  (Jegham et al. 2025, arXiv:2505.09598); see methodology for the factor and its
-  uncertainty.
-- **`timeFactor`** raises the estimate for responses that stream slower than the
-  platform baseline (a capped proxy for heavier per-token compute). It is `1` when
-  no response time is available, so prior ChatGPT figures are unchanged.
+- **Anchors.** Google measured a 0.24 Wh / 0.03 gCO₂e / 0.26 mL median Gemini
+  Apps text prompt (May 2025) — a *product median*, not a model measurement.
+  OpenAI reported ~0.34 Wh for an average ChatGPT query with no methodology.
+  Anthropic has published nothing per-query.
+- **Current models** get low-confidence priors (e.g. Gemini 3.6 Flash
+  0.15–0.40 Wh, Claude Opus 5 0.80–2.00 Wh), with separate, much wider bands for
+  high-reasoning and agentic work.
+- **Carbon and water** carry their accounting scope. Cooling water and
+  full-operational water are shown as separate fields and are never merged;
+  market-based and location-based carbon are never averaged together.
+- **Prompt savings** are projected onto the *whole interaction*: cutting 50% of
+  the input on a short prompt shows as roughly 0.5–2.5%, not 50%.
+
+### Live model detection
+
+The extension reads the selected model, reasoning/effort level, and tool modes
+from accessible DOM state — no network interception, no page-world injection. It
+reacts to a model switch without a reload, refuses to guess when a label is
+unknown or when Auto routing hides the backend, and freezes the model at send
+time so an already-sent message keeps the model it was sent with.
 
 ## Setup
 
@@ -85,7 +106,8 @@ No server or configuration is needed — the extension is fully local.
 
 ### Usage
 
-1. Navigate to [chatgpt.com](https://chatgpt.com) or [claude.ai](https://claude.ai)
+1. Navigate to [chatgpt.com](https://chatgpt.com), [claude.ai](https://claude.ai),
+   or [gemini.google.com](https://gemini.google.com)
 2. Send a message — prompts and responses are auto-detected
 3. As you type, the **in-page assistant** appears beside the composer with your
    live token count and, when there is a real saving to be had, how much a
