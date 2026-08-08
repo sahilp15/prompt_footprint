@@ -1,5 +1,9 @@
-import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Scissors, Settings as SettingsIcon, CircleUserRound } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import {
+  Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Scissors,
+  Settings as SettingsIcon, CircleUserRound, Sparkles,
+} from 'lucide-react'
 import WeeklyStats from './components/WeeklyStats'
 import SessionList from './components/SessionList'
 import Savings from './components/Savings'
@@ -12,6 +16,28 @@ import { Privacy, Terms, Support, Contact, Confirmed } from './marketing/Pages'
 import { isDemoMode } from './lib/api'
 import './App.css'
 
+const NAV_ITEMS = [
+  { to: '', end: true, icon: BarChart3, label: 'Weekly Stats' },
+  { to: 'sessions', icon: Zap, label: 'Sessions' },
+  { to: 'savings', icon: Leaf, label: 'Savings' },
+  { to: 'cutter', icon: Scissors, label: 'Token Cutter' },
+  { to: 'learn', icon: GraduationCap, label: 'How it Works' },
+  { to: 'awards', icon: Trophy, label: 'Awards' },
+  { to: 'settings', icon: SettingsIcon, label: 'Settings' },
+]
+
+/** Raises the header once the page has moved, so it detaches from the content. */
+function useScrolled(threshold = 6) {
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > threshold)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [threshold])
+  return scrolled
+}
+
 // The dashboard shell (top nav + the stats pages). It is mounted at two
 // different base paths depending on context, so its links are base-aware:
 //   • Extension options page  → base '' , lives at the hash root ('#/').
@@ -19,46 +45,48 @@ import './App.css'
 // Passing base='' reproduces the original extension routes exactly.
 function Dashboard({ base = '' }) {
   const demo = isDemoMode()
+  const scrolled = useScrolled()
+  const location = useLocation()
   const home = base || '/'
-  const to = (p) => `${base}/${p}`
+  const to = (p) => (p ? `${base}/${p}` : home)
 
   return (
     <div className="app">
-      <nav className="nav">
+      <div className="app-ambient" aria-hidden="true" />
+
+      <nav className={`nav${scrolled ? ' is-scrolled' : ''}`}>
         <div className="nav-inner">
           <NavLink to={home} end className="nav-brand">
-            <Droplets size={22} className="nav-logo" />
-            <span className="nav-title">PromptFootprint</span>
+            <span className="nav-mark"><Droplets size={18} /></span>
+            <span className="nav-wordmark">
+              <span className="nav-title">PromptFootprint</span>
+              <span className="nav-kicker">Dashboard</span>
+            </span>
           </NavLink>
+
           <div className="nav-links">
-            <NavLink to={home} end className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <BarChart3 size={16} /><span>Weekly Stats</span>
-            </NavLink>
-            <NavLink to={to('sessions')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <Zap size={16} /><span>Sessions</span>
-            </NavLink>
-            <NavLink to={to('savings')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <Leaf size={16} /><span>Savings</span>
-            </NavLink>
-            <NavLink to={to('cutter')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <Scissors size={16} /><span>Token Cutter</span>
-            </NavLink>
-            <NavLink to={to('learn')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <GraduationCap size={16} /><span>How it Works</span>
-            </NavLink>
-            <NavLink to={to('awards')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <Trophy size={16} /><span>Awards</span>
-            </NavLink>
-            <NavLink to={to('settings')} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <SettingsIcon size={16} /><span>Settings</span>
-            </NavLink>
+            {NAV_ITEMS.map((item) => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={item.label}
+                  to={to(item.to)}
+                  end={item.end}
+                  className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  <span>{item.label}</span>
+                </NavLink>
+              )
+            })}
+            <span className="nav-divider" aria-hidden="true" />
             <NavLink
               to={to('settings')}
               className={({ isActive }) => `nav-account${isActive ? ' active' : ''}`}
               title="Account"
               aria-label="Account"
             >
-              <CircleUserRound size={20} />
+              <CircleUserRound size={19} />
             </NavLink>
           </div>
         </div>
@@ -66,12 +94,20 @@ function Dashboard({ base = '' }) {
 
       {demo && (
         <div className="demo-banner">
-          Showing <strong>sample data</strong>. Install the PromptFootprint extension
-          and open this dashboard from it to see your own footprint.
+          <span className="demo-banner-inner">
+            <Sparkles size={14} aria-hidden="true" />
+            <span>
+              Showing <strong>sample data</strong>. Install the PromptFootprint extension
+              and open this dashboard from it to see your own footprint.
+            </span>
+          </span>
         </div>
       )}
 
-      <main className="main">
+      {/* Keyed on the path so each route fades and lifts into place instead of
+          snapping. Purely additive — the animation's resting state is the
+          normal one, so a reduced-motion visitor simply sees the page. */}
+      <main className="main" key={location.pathname}>
         <Routes>
           <Route index element={<WeeklyStats />} />
           <Route path="sessions" element={<SessionList />} />

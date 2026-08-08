@@ -1,50 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchWeeklyStats, fetchSessions, fetchSavings } from '../lib/api';
 
 // The data layer resolves context itself (extension local data vs. demo),
 // so the hooks no longer require a userId.
+//
+// Each hook also returns `reload`, so an error state can offer a real retry
+// instead of asking the user to refresh the whole page.
 
-export function useWeeklyStats() {
-  const [data, setData] = useState(null);
+function useAsyncData(fetcher, initial) {
+  const [data, setData] = useState(initial);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    fetchWeeklyStats()
-      .then(setData)
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetcher()
+      .then((result) => { if (!cancelled) setData(result); })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+    // `fetcher` is a module-level function; `attempt` is what re-runs this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt]);
 
-  return { data, loading, error };
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  return { data, loading, error, reload };
+}
+
+export function useWeeklyStats() {
+  return useAsyncData(fetchWeeklyStats, null);
 }
 
 export function useSessions() {
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    fetchSessions()
-      .then(setSessions)
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  return { sessions, loading, error };
+  const { data, loading, error, reload } = useAsyncData(fetchSessions, []);
+  return { sessions: data || [], loading, error, reload };
 }
 
 export function useSavings() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    fetchSavings()
-      .then(setData)
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  return { data, loading, error };
+  return useAsyncData(fetchSavings, null);
 }

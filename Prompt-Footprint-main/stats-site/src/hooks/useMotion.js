@@ -5,7 +5,7 @@
 // counters jump straight to their target value. Nothing animates, nothing is
 // hidden — the page is simply static.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 /** True when the user has asked the OS to minimize animation. Live-updating. */
 export function usePrefersReducedMotion() {
@@ -34,14 +34,19 @@ export function usePrefersReducedMotion() {
 export function useReveal({ threshold = 0.15, rootMargin = '0px 0px -8% 0px', fallbackMs = 1500 } = {}) {
   const reduced = usePrefersReducedMotion()
   const noObserver = typeof IntersectionObserver === 'undefined'
-  const ref = useRef(null)
+  // A callback ref, not a ref object: the element frequently arrives on a
+  // later render (a page that shows a loading state first, a section behind a
+  // conditional). A ref object would still be null when the effect below ran,
+  // and because nothing in its dependency list changed afterwards the observer
+  // would never be attached and the content would stay in its entrance state
+  // forever. Storing the node in state re-runs the effect the moment it lands.
+  const [node, setNode] = useState(null)
   const [seen, setSeen] = useState(false)
 
   useEffect(() => {
-    const el = ref.current
     // Nothing to observe when motion is reduced or the API is missing — the
     // returned flag is already true in those cases, so content stays visible.
-    if (!el || reduced || noObserver) return
+    if (!node || reduced || noObserver) return
 
     const io = new IntersectionObserver(
       (entries) => {
@@ -52,7 +57,7 @@ export function useReveal({ threshold = 0.15, rootMargin = '0px 0px -8% 0px', fa
       },
       { threshold, rootMargin },
     )
-    io.observe(el)
+    io.observe(node)
 
     // Safety net. An entrance animation must never be the reason content is
     // missing — full-page screenshots, printing, in-page search, and scroll
@@ -61,9 +66,9 @@ export function useReveal({ threshold = 0.15, rootMargin = '0px 0px -8% 0px', fa
     const timer = setTimeout(() => { setSeen(true); io.disconnect() }, fallbackMs)
 
     return () => { clearTimeout(timer); io.disconnect() }
-  }, [reduced, noObserver, threshold, rootMargin, fallbackMs])
+  }, [node, reduced, noObserver, threshold, rootMargin, fallbackMs])
 
-  return [ref, seen || reduced || noObserver]
+  return [setNode, seen || reduced || noObserver]
 }
 
 /**

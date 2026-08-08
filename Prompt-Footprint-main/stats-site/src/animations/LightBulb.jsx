@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { motion, useAnimation } from 'framer-motion'
+import { motion as Motion, useAnimation } from 'framer-motion'
 
 const MAX_ENERGY_WH = 50
 
@@ -36,7 +36,7 @@ export default function LightBulb({ energyWh = 0 }) {
       <div className="anim-sub">of a {MAX_ENERGY_WH} Wh reference</div>
 
       <div className="bulb-wrapper">
-        <motion.div
+        <Motion.div
           className="bulb-glow"
           animate={glowControls}
           initial={{ opacity: 0.05, scale: 0.4 }}
@@ -51,7 +51,7 @@ export default function LightBulb({ energyWh = 0 }) {
             </radialGradient>
           </defs>
 
-          <motion.ellipse
+          <Motion.ellipse
             cx="60" cy="70" rx="42" ry="50"
             fill="url(#bulbGrad)"
             stroke="#243524"
@@ -60,12 +60,12 @@ export default function LightBulb({ energyWh = 0 }) {
             initial={{ fillOpacity: 0.08 }}
           />
 
-          <motion.g animate={filamentControls} initial={{ opacity: 0.15 }}>
+          <Motion.g animate={filamentControls} initial={{ opacity: 0.15 }}>
             <line x1="53" y1="62" x2="53" y2="82" stroke={bulbColor} strokeWidth="1.5" />
             <line x1="67" y1="62" x2="67" y2="82" stroke={bulbColor} strokeWidth="1.5" />
             <path d="M53 62 Q60 56 67 62" fill="none" stroke={bulbColor} strokeWidth="1.5" />
             <path d="M53 82 Q60 88 67 82" fill="none" stroke={bulbColor} strokeWidth="1.5" />
-          </motion.g>
+          </Motion.g>
 
           <rect x="47" y="118" width="26" height="8" rx="2" fill="#162416" />
           <rect x="45" y="124" width="30" height="7" rx="2" fill="#111A11" stroke="#243524" strokeWidth="1" />

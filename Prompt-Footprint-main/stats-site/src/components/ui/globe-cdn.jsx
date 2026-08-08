@@ -1,18 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import createGlobe from 'cobe'
-
-const MARKERS = [
-  { id: 'ashburn',   location: [39.0458, -76.8755], label: 'Ashburn, VA' },
-  { id: 'dublin',    location: [53.3498, -6.2603],  label: 'Dublin, IE' },
-  { id: 'mumbai',    location: [19.0760, 72.8777],  label: 'Mumbai, IN' },
-  { id: 'singapore', location: [1.3521, 103.8198],  label: 'Singapore' },
-  { id: 'tokyo',     location: [35.6762, 139.6503], label: 'Tokyo, JP' },
-  { id: 'dallas',    location: [32.7767, -96.7970], label: 'Dallas, TX' },
-  { id: 'london',    location: [51.5074, -0.1278],  label: 'London, UK' },
-  { id: 'sydney',    location: [-33.8688, 151.209], label: 'Sydney, AU' },
-]
-
-const COBE_MARKERS = MARKERS.map(m => ({ location: m.location, size: 0.05 }))
+import { GLOBE_MARKERS } from '../../lib/regions'
 
 export default function Globe({ className = '' }) {
   const canvasRef = useRef(null)
@@ -73,6 +61,17 @@ export default function Globe({ className = '' }) {
     const canvas = canvasRef.current
     if (!canvas) return
 
+    // Tear down completely, including the ref guard below. Without clearing
+    // it, StrictMode's mount → unmount → remount in development left the guard
+    // pointing at an already-destroyed instance, so the second mount bailed out
+    // and the canvas kept whatever frame the first one happened to end on.
+    const teardown = () => {
+      if (animIdRef.current) cancelAnimationFrame(animIdRef.current)
+      animIdRef.current = null
+      globeRef.current?.destroy()
+      globeRef.current = null
+    }
+
     const init = () => {
       const width = canvas.offsetWidth
       if (width === 0 || globeRef.current) return
@@ -85,13 +84,18 @@ export default function Globe({ className = '' }) {
         phi: 0,
         theta: 0.2,
         dark: 0,
-        diffuse: 1.5,
+        diffuse: 1.2,
         mapSamples: 16000,
-        mapBrightness: 10,
-        baseColor:   [1, 1, 1],
+        // With `dark: 0` cobe shades a land dot as baseColor × (1 − mapBrightness
+        // + 0.1), so a brightness *below* 1 is what draws the continents darker
+        // than the sphere. At the previous value of 10 the term went negative
+        // and clamped, and a pure-white base left nothing to see either way.
+        // Parchment sphere, sepia landmasses, clay markers.
+        mapBrightness: 0.72,
+        baseColor:   [0.87, 0.84, 0.78],
         markerColor: [0.63, 0.32, 0.14],
-        glowColor:   [0.94, 0.93, 0.91],
-        markers: COBE_MARKERS,
+        glowColor:   [0.82, 0.80, 0.76],
+        markers: GLOBE_MARKERS,
       })
 
       const animate = () => {
@@ -124,16 +128,9 @@ export default function Globe({ className = '' }) {
         if (entries[0]?.contentRect.width > 0) { ro.disconnect(); init() }
       })
       ro.observe(canvas)
-      return () => {
-        ro.disconnect()
-        if (animIdRef.current) cancelAnimationFrame(animIdRef.current)
-        globeRef.current?.destroy()
-      }
+      return () => { ro.disconnect(); teardown() }
     }
-    return () => {
-      if (animIdRef.current) cancelAnimationFrame(animIdRef.current)
-      globeRef.current?.destroy()
-    }
+    return teardown
   }, [])
 
   return (
