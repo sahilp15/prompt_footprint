@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { motion, useAnimation } from 'framer-motion'
+import { motion as Motion, useAnimation } from 'framer-motion'
 
 const MAX_WATER_ML = 200
 
@@ -47,7 +47,7 @@ export default function WaterTank({ waterMl = 0 }) {
             </clipPath>
           </defs>
           <g clipPath="url(#tankClip)">
-            <motion.rect
+            <Motion.rect
               x="13"
               width="94"
               fill="#4AADB5"
@@ -55,7 +55,7 @@ export default function WaterTank({ waterMl = 0 }) {
               animate={fillControls}
               initial={{ y: 167, height: 0 }}
             />
-            <motion.path
+            <Motion.path
               fill="#4AADB5"
               fillOpacity="0.85"
               animate={waveControls}

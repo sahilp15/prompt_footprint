@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { motion, useAnimation } from 'framer-motion'
+import { motion as Motion, useAnimation } from 'framer-motion'
 
 const MAX_CO2_G = 20
 
@@ -39,7 +39,7 @@ export default function GasTank({ co2G = 0 }) {
             fill="none" stroke="#243524" strokeWidth="3" />
 
           <g clipPath="url(#gasTankClip)">
-            <motion.rect
+            <Motion.rect
               x="20"
               y="25"
               width="80"

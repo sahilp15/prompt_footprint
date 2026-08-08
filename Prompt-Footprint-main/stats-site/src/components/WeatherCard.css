@@ -1,10 +1,24 @@
 .hw-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  padding: 20px 22px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 22px 24px;
   margin: 0;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
+.hw-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(520px 200px at 100% 0%, rgba(193, 127, 36, 0.10), transparent 66%);
+}
+.hw-card:hover { border-color: var(--border); box-shadow: var(--shadow-md); }
 /* Warm accent when it's actually hot near the region. */
 .hw-card-hot {
   border-color: color-mix(in srgb, var(--accent-red) 45%, var(--border-subtle));
@@ -23,20 +37,24 @@
 }
 .hw-head h3 {
   margin: 0;
+  font-family: var(--font-serif);
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.2px;
   color: var(--text-primary);
 }
 .hw-approx {
   margin-left: auto;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10.5px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--accent-amber);
-  border: 1px solid var(--accent-amber);
-  border-radius: 999px;
-  padding: 2px 9px;
+  letter-spacing: 0.7px;
+  color: var(--accent-amber-ink);
+  background: rgba(193, 127, 36, 0.10);
+  border: 1px solid rgba(193, 127, 36, 0.34);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  white-space: nowrap;
 }
 
 .hw-lead {
@@ -76,23 +94,30 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 13px;
+  padding: 9px 14px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
   color: var(--text-primary);
+  font-family: var(--font-sans);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: var(--transition, 0.15s ease);
+  transition:
+    border-color var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
 }
-.hw-btn:hover { border-color: var(--accent-green); }
+.hw-btn:hover { border-color: var(--accent-green); transform: translateY(-1px); }
+.hw-btn:active { transform: translateY(0); }
 .hw-btn-primary {
-  background: var(--accent-green);
-  border-color: var(--accent-green);
+  background: var(--grad-green);
+  border-color: transparent;
   color: #fff;
+  box-shadow: 0 4px 12px rgba(91, 124, 58, 0.24);
 }
-.hw-btn-primary:hover { filter: brightness(1.05); }
+.hw-btn-primary:hover { box-shadow: 0 8px 20px rgba(91, 124, 58, 0.32); }
 
 .hw-link {
   background: none;
@@ -134,18 +159,27 @@
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: 11px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--accent-amber) 6%, var(--bg-card));
+  box-shadow: var(--shadow-xs);
 }
 .hw-temp {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 78px;
+  min-width: 84px;
 }
-.hw-temp-val { font-size: 30px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.hw-temp-val {
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -1.4px;
+  color: var(--text-primary);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
 .hw-temp-lbl { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .hw-verdict { font-size: 13.5px; line-height: 1.5; color: var(--text-secondary); }
 .hw-verdict.hot strong { color: var(--accent-red); }

@@ -33,7 +33,10 @@ function makeQuery(id, promptTokens, responseTokens, platform, responseTimeMs) {
   };
 }
 
-// Six sessions across the last week, mixing ChatGPT and Claude.
+// Six sessions across the last week, mixing ChatGPT and Claude — plus the week
+// before, so the dashboard's week-over-week comparison has something to
+// compare against. The older week is deliberately a little heavier: the
+// showcase should read as usage trending down.
 const SESSION_SPECS = [
   { dayOffset: 0, platform: 'chatgpt', queries: [[60, 320, 4200], [45, 210, 2600], [120, 540, 7800]] },
   { dayOffset: 1, platform: 'claude', queries: [[90, 680, 9100], [55, 300, 3500]] },
@@ -41,6 +44,14 @@ const SESSION_SPECS = [
   { dayOffset: 3, platform: 'claude', queries: [[150, 900, 12500], [70, 410, 5200], [30, 160, 1900]] },
   { dayOffset: 5, platform: 'chatgpt', queries: [[200, 1100, 14000], [80, 360, 4300]] },
   { dayOffset: 6, platform: 'claude', queries: [[110, 720, 9800]] },
+  // ── the previous seven days ──
+  { dayOffset: 7, platform: 'chatgpt', queries: [[80, 420, 5200], [60, 280, 3300]] },
+  { dayOffset: 8, platform: 'claude', queries: [[140, 860, 11800], [70, 390, 4800]] },
+  { dayOffset: 9, platform: 'chatgpt', queries: [[180, 980, 12600]] },
+  { dayOffset: 10, platform: 'claude', queries: [[95, 610, 8200], [50, 240, 2900], [35, 190, 2200]] },
+  { dayOffset: 11, platform: 'chatgpt', queries: [[220, 1240, 15500], [75, 330, 4000]] },
+  { dayOffset: 12, platform: 'claude', queries: [[130, 780, 10400]] },
+  { dayOffset: 13, platform: 'chatgpt', queries: [[65, 300, 3600], [40, 170, 2000]] },
 ];
 
 function buildSessions(now = Date.now()) {
@@ -81,52 +92,76 @@ export function demoQueries(sessionId) {
   return s ? s.queries : [];
 }
 
-// Sample Apply-savings for the public showcase: a week of optimizer usage.
+// Sample Apply-savings for the public showcase: two weeks of optimizer usage,
+// so the Savings page can show its own week-over-week movement.
+const SAVINGS_PER_DAY = [
+  // 13 days ago → yesterday → today (index 13 is today)
+  { count: 1, tokens: 16 },
+  { count: 0, tokens: 0 },
+  { count: 2, tokens: 34 },
+  { count: 1, tokens: 27 },
+  { count: 1, tokens: 19 },
+  { count: 2, tokens: 41 },
+  { count: 0, tokens: 0 },
+  { count: 2, tokens: 38 },
+  { count: 1, tokens: 22 },
+  { count: 3, tokens: 71 },
+  { count: 0, tokens: 0 },
+  { count: 2, tokens: 49 },
+  { count: 4, tokens: 96 },
+  { count: 1, tokens: 18 },
+];
+
 export function demoSavings(now = Date.now()) {
-  const perDay = [
-    { count: 2, tokens: 38 },
-    { count: 1, tokens: 22 },
-    { count: 3, tokens: 71 },
-    { count: 0, tokens: 0 },
-    { count: 2, tokens: 49 },
-    { count: 4, tokens: 96 },
-    { count: 1, tokens: 18 },
-  ];
   const daily = {};
   const totals = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
-  for (let i = 6; i >= 0; i--) {
+  const previous = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
+
+  for (let i = 13; i >= 0; i--) {
     const key = localDayKey(now - i * DAY);
-    const spec = perDay[6 - i];
-    const i2 = impact(spec.tokens);
-    daily[key] = { count: spec.count, tokens: spec.tokens, energyWh: i2.energyWh, waterMl: i2.waterMl, co2G: i2.co2G };
-    totals.applyCount += spec.count;
-    totals.totalTokensSaved += spec.tokens;
-    totals.totalEnergyWh += i2.energyWh;
-    totals.totalWaterMl += i2.waterMl;
-    totals.totalCo2G += i2.co2G;
+    const spec = SAVINGS_PER_DAY[13 - i];
+    const im = impact(spec.tokens);
+    const bucket = { count: spec.count, tokens: spec.tokens, energyWh: im.energyWh, waterMl: im.waterMl, co2G: im.co2G };
+    daily[key] = bucket;
+    const into = i >= 7 ? previous : totals;
+    into.applyCount += spec.count;
+    into.totalTokensSaved += spec.tokens;
+    into.totalEnergyWh += im.energyWh;
+    into.totalWaterMl += im.waterMl;
+    into.totalCo2G += im.co2G;
   }
-  return { ...totals, daily };
+  return { ...totals, daily, previous };
 }
 
-export function demoWeekly() {
-  const now = Date.now();
+export function demoWeekly(now = Date.now()) {
   const sessions = buildSessions(now);
+  const current = bucketRange(sessions, now);
+  const prior = bucketRange(sessions, now - 7 * DAY);
+  return {
+    totals: current.totals,
+    daily: current.daily,
+    previous: prior.totals,
+    previousDaily: prior.daily,
+  };
+}
+
+// Same shape as `periodBuckets` in lib/api.js — kept local so the demo module
+// stays independent of the data layer that imports it.
+function bucketRange(sessions, endMs, days = 7) {
   const dailyMap = new Map();
-  for (let i = 6; i >= 0; i--) {
-    const key = localDayKey(now - i * DAY);
+  for (let i = days - 1; i >= 0; i--) {
+    const key = localDayKey(endMs - i * DAY);
     dailyMap.set(key, { date: key, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0, queries: 0 });
   }
   const totals = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0, sessionCount: 0 };
   for (const s of sessions) {
-    const key = localDayKey(s.startTime);
-    const b = dailyMap.get(key);
-    if (b) {
-      b.tokens += s.totalTokens;
-      b.energyWh += s.totalEnergyWh;
-      b.waterMl += s.totalWaterMl;
-      b.co2G += s.totalCo2G;
-      b.queries += s.queryCount;
-    }
+    const b = dailyMap.get(localDayKey(s.startTime));
+    if (!b) continue;
+    b.tokens += s.totalTokens;
+    b.energyWh += s.totalEnergyWh;
+    b.waterMl += s.totalWaterMl;
+    b.co2G += s.totalCo2G;
+    b.queries += s.queryCount;
     totals.totalTokens += s.totalTokens;
     totals.totalEnergyWh += s.totalEnergyWh;
     totals.totalWaterMl += s.totalWaterMl;

@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { motion, useScroll, useTransform } from 'framer-motion'
+import { motion as Motion, useScroll, useTransform } from 'framer-motion'
 
 export function ContainerScroll({ titleComponent, children }) {
   const containerRef = useRef(null)
@@ -30,11 +30,11 @@ export function ContainerScroll({ titleComponent, children }) {
           alignItems: 'center',
         }}
       >
-        <motion.div style={{ translateY }} className="container-scroll-header">
+        <Motion.div style={{ translateY }} className="container-scroll-header">
           {titleComponent}
-        </motion.div>
+        </Motion.div>
 
-        <motion.div
+        <Motion.div
           style={{
             rotateX: rotate,
             scale,
@@ -46,7 +46,7 @@ export function ContainerScroll({ titleComponent, children }) {
           }}
         >
           {children}
-        </motion.div>
+        </Motion.div>
       </div>
     </div>
   )

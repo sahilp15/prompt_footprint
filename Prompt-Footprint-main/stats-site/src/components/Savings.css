@@ -1,45 +1,22 @@
-/* Savings tab — reuses metric/chart styles from WeeklyStats.css and the
-   animation grid from AnimationPage.css; only savings-specific bits live here. */
+/* Savings — reuses the metric/chart primitives from styles/dashboard.css and
+   the animation grid from AnimationPage.css. Only savings-specific bits here. */
 
-.savings-page .page-header {
-  margin-bottom: 8px;
-}
+.savings-page { gap: 28px; }
 
-.savings-page .page-header .mission-badge {
-  margin-bottom: 14px;
-}
-
-.savings-empty {
-  display: flex;
-  flex-direction: column;
+.savings-empty { max-width: 620px; margin: 24px auto; }
+.savings-empty strong { color: var(--accent-green-ink); font-weight: 700; }
+.savings-empty-hint {
+  display: inline-flex;
   align-items: center;
-  text-align: center;
-  gap: 12px;
-  max-width: 480px;
-  margin: 48px auto;
-  padding: 40px 32px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  gap: 7px;
+  margin-top: 2px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+  color: var(--text-muted-ink);
 }
+.savings-empty-hint svg { color: var(--accent-amber); flex-shrink: 0; }
 
-.savings-empty h2 {
-  font-family: var(--font-serif);
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.savings-empty p {
-  font-size: 14px;
-  color: var(--text-secondary);
-  line-height: 1.7;
-}
-
-.savings-empty strong {
-  color: var(--accent-green);
-}
-
-.savings-page .anim-grid-section {
-  margin-top: 8px;
-}
+.savings-page .anim-grid-section { margin-top: 0; }

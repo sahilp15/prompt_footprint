@@ -50,25 +50,25 @@ async function readLocalSessions() {
     .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
 }
 
-function aggregateWeekly(sessions, now = Date.now()) {
+// Bucket sessions into the `days` calendar days ending on `endMs`, and total
+// them. Bucketing and totalling share one pass over the same day keys, so the
+// headline totals always equal the sum of the chart the user is looking at.
+export function periodBuckets(sessions, endMs, days = 7) {
   const DAY = 24 * 60 * 60 * 1000;
-  const recent = sessions.filter((s) => new Date(s.startTime).getTime() >= now - 7 * DAY);
   const dailyMap = new Map();
-  for (let i = 6; i >= 0; i--) {
-    const key = localDayKey(now - i * DAY);
+  for (let i = days - 1; i >= 0; i--) {
+    const key = localDayKey(endMs - i * DAY);
     dailyMap.set(key, { date: key, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0, queries: 0 });
   }
   const totals = { totalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0, queryCount: 0, sessionCount: 0 };
-  for (const s of recent) {
-    const key = localDayKey(s.startTime);
-    const b = dailyMap.get(key);
-    if (b) {
-      b.tokens += s.totalTokens || 0;
-      b.energyWh += s.totalEnergyWh || 0;
-      b.waterMl += s.totalWaterMl || 0;
-      b.co2G += s.totalCo2G || 0;
-      b.queries += s.queryCount || 0;
-    }
+  for (const s of sessions) {
+    const b = dailyMap.get(localDayKey(s.startTime));
+    if (!b) continue;
+    b.tokens += s.totalTokens || 0;
+    b.energyWh += s.totalEnergyWh || 0;
+    b.waterMl += s.totalWaterMl || 0;
+    b.co2G += s.totalCo2G || 0;
+    b.queries += s.queryCount || 0;
     totals.totalTokens += s.totalTokens || 0;
     totals.totalEnergyWh += s.totalEnergyWh || 0;
     totals.totalWaterMl += s.totalWaterMl || 0;
@@ -77,6 +77,20 @@ function aggregateWeekly(sessions, now = Date.now()) {
     totals.sessionCount += 1;
   }
   return { totals, daily: Array.from(dailyMap.values()) };
+}
+
+// The last 7 days, plus the 7 before them so the dashboard can show how the
+// week moved rather than just where it landed.
+function aggregateWeekly(sessions, now = Date.now()) {
+  const DAY = 24 * 60 * 60 * 1000;
+  const current = periodBuckets(sessions, now, 7);
+  const prior = periodBuckets(sessions, now - 7 * DAY, 7);
+  return {
+    totals: current.totals,
+    daily: current.daily,
+    previous: prior.totals,
+    previousDaily: prior.daily,
+  };
 }
 
 export async function fetchSessions() {
@@ -112,9 +126,28 @@ const EMPTY_SAVINGS = {
 export async function fetchSavings() {
   if (isExtensionContext()) {
     const all = await getAllLocal();
-    return { ...EMPTY_SAVINGS, ...(all[SAVINGS_KEY] || {}) };
+    const saved = { ...EMPTY_SAVINGS, ...(all[SAVINGS_KEY] || {}) };
+    return { ...saved, previous: priorWeekSavings(saved.daily) };
   }
   return demoSavings();
+}
+
+// Totals for the seven days *before* the current week, read back out of the
+// per-day savings ledger the content script writes. Used for the delta pills.
+function priorWeekSavings(daily, now = Date.now()) {
+  const DAY = 24 * 60 * 60 * 1000;
+  const out = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
+  if (!daily) return out;
+  for (let i = 13; i >= 7; i--) {
+    const d = daily[localDayKey(now - i * DAY)];
+    if (!d) continue;
+    out.applyCount += d.count || 0;
+    out.totalTokensSaved += d.tokens || 0;
+    out.totalEnergyWh += d.energyWh || 0;
+    out.totalWaterMl += d.waterMl || 0;
+    out.totalCo2G += d.co2G || 0;
+  }
+  return out;
 }
 
 // ── Settings (pf_config) ────────────────────────────────────────────────────
