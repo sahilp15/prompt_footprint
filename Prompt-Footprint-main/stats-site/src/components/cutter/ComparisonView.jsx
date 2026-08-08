@@ -7,8 +7,17 @@ import { Check, Copy } from 'lucide-react'
  * Left: the original with every accepted change struck through and each
  * protected region marked, so nothing changes without being visible.
  * Right: the resulting prompt, ready to copy.
+ *
+ * The strike-throughs describe the FIRST compression pass, because those are the
+ * edits whose coordinates address the original text and which the user can
+ * toggle. Later refinement rounds work on the previous round's output, so they
+ * cannot be drawn here — and going silent about them would mean the right pane
+ * were shorter than the left pane explains. They are counted instead.
  */
-export default function ComparisonView({ diff, optimized, focusedId, onFocus }) {
+export default function ComparisonView({ diff, optimized, refinements = [], focusedId, onFocus }) {
+  const refined = refinements
+    .filter((p) => !p.rejected)
+    .reduce((n, p) => n + p.edits.length, 0)
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
@@ -78,6 +87,13 @@ export default function ComparisonView({ diff, optimized, focusedId, onFocus }) 
           </button>
         </header>
         <div className="tc-pane-body tc-result">{optimized}</div>
+        {refined > 0 && (
+          <p className="tc-pane-note">
+            {refined} further {refined === 1 ? 'reduction was' : 'reductions were'} found by
+            re-running the pipeline on this result, so {refined === 1 ? 'it is' : 'they are'} not
+            struck through on the left.
+          </p>
+        )}
       </section>
     </div>
   )

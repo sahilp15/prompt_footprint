@@ -32,6 +32,12 @@
     ? PFProviderAdapters.forLocation(typeof location !== 'undefined' ? location : null)
     : null;
   const snapshots = (typeof PFPromptSnapshots !== 'undefined') ? PFPromptSnapshots.createStore() : null;
+  // Models the catalog does not know yet. Recorded locally, never transmitted,
+  // and never used to guess an identity — only to mark an estimate as a
+  // provider-level fallback and to leave a trace worth acting on later.
+  const discovery = (typeof PFModelDiscovery !== 'undefined')
+    ? PFModelDiscovery.createRegistry({ log })
+    : null;
   let detector = null;
   let observation = null;
   let draftEstimate = null;         // projection for the prompt being typed
@@ -173,8 +179,11 @@
     });
     detector.start();
     observation = detector.current;
+    if (discovery) discovery.load().catch(() => {});
+    recordDiscovery(observation);
     recomputeDraft('init');
-    log('model detection started —', observation && observation.selectedLabel, observation && observation.canonicalModel);
+    log('model detection started —', observation && observation.selectedLabel, observation && observation.canonicalModel,
+        '| reasoning:', observation && observation.reasoningMode);
   }
 
   function onModelChange(current, previous) {
@@ -189,7 +198,26 @@
       ? PFModelPresent.changeExplanation(previous, current, prevEstimate, draftEstimate)
       : null;
     updateModelPanel();
+    // The in-page assistant re-reads the model, re-labels its pill, and
+    // re-optimizes the draft against the new target — without a reload, without
+    // the panel closing, and without the user touching the prompt.
+    publishModel(current);
+    recordDiscovery(current);
     log('model change:', lastChangeExplanation);
+  }
+
+  /**
+   * A picker label the catalog has never seen.
+   *
+   * Recorded so the registry can be updated for real, and so the estimate can
+   * be marked as a provider-level fallback — while the UI keeps showing the
+   * exact model the product named. Knowing WHICH model is selected and knowing
+   * WHAT IT COSTS are different things with different confidences.
+   */
+  function recordDiscovery(obs) {
+    if (!discovery || !obs || !obs.selectedLabel || obs.canonicalModel) return;
+    if (obs.routing === 'auto') return;   // Auto is a mode, not an unknown model
+    discovery.record(obs.provider, obs.selectedLabel);
   }
 
   /** The text sitting in the composer right now (never stored, never sent). */
@@ -274,10 +302,34 @@
     const p = projectDraftSavings(originalTokens, optimizedTokens);
     if (!p) return null;
     return {
+      // Two ranges, never one number: what the avoided input tokens are worth
+      // to the prefill stage, and what that is worth to the whole interaction
+      // once output decoding and hidden reasoning are accounted for.
+      inputProcessing: p.inputProcessingPct
+        ? PFEstimator.formatPercentRange(p.inputProcessingPct)
+        : null,
       formatted: PFEstimator.formatPercentRange(p.totalReductionPct),
       energy: p.energySavedWh,
       projection: p,
     };
+  }
+
+  // ── Model changes reach the assistant through here ────────────────────────
+  // One subscription list, fed by the single detector. Components never scrape
+  // the page for a model of their own — that is how two parts of one extension
+  // end up disagreeing about what is selected.
+  const modelSubscribers = new Set();
+
+  function subscribeModel(fn) {
+    if (typeof fn !== 'function') return function () {};
+    modelSubscribers.add(fn);
+    return function () { modelSubscribers.delete(fn); };
+  }
+
+  function publishModel(current) {
+    modelSubscribers.forEach((fn) => {
+      try { fn(current); } catch (e) { log('model subscriber failed:', e && e.message); }
+    });
   }
 
   // ── Robustness watchdog ────────────────────────────────────────────────--
@@ -1169,6 +1221,14 @@
       },
       onReplaced: (savings) => recordSavings(savings),
       projectSavings: projectSavingsForAssistant,
+      // Model detection is owned by the detector and handed to the assistant.
+      // The assistant never queries the DOM for a model, which is what keeps one
+      // answer on the page and makes a model switch a single event rather than a
+      // rescan in every component that cares.
+      present: (typeof PFModelPresent !== 'undefined') ? PFModelPresent : null,
+      getModel: () => observation,
+      subscribeModel,
+      observedRoots: () => (detector ? detector.observedRoots.length : 0),
     };
 
     assistant = PFAssistant.createAssistant(deps);

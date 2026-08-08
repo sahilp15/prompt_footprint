@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const O = require('../lib/promptOptimizer.js');
+const O = require('../lib/writingLexicon.js');
 const WF = require('../lib/writingFormat.js');
 const SC = require('../lib/spellChecker.js');
 

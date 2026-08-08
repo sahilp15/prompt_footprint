@@ -767,3 +767,12 @@
   .tc-editor-help { font-size: 10.5px; }
   .tc-sug-foot { flex-direction: column; align-items: flex-start; }
 }
+
+/* A note under the optimized pane, for reductions the diff cannot draw. */
+.tc-pane-note {
+  margin: 8px 0 0;
+  padding: 0 2px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--tc-text-muted, #8B7355);
+}

@@ -545,6 +545,22 @@
       inputReductionFraction: fraction,
       scenario,
       inputShare: { low: share.low, central: shareCentral, high: share.high },
+      // The three magnitudes a UI must not merge, kept as three fields:
+      //
+      //   inputReductionFraction   how much of the PROMPT went away. Token
+      //                            counting; no modelling in it at all.
+      //   inputProcessingPct       what that is worth as a share of the whole
+      //                            interaction's energy, before accounting for
+      //                            anything the shorter prompt might change.
+      //   totalReductionPct        the same, net of expected output growth.
+      //
+      // Reporting the first as if it were the third is the "36% fewer tokens =
+      // 36% less energy" error the methodology exists to prevent.
+      inputProcessingPct: {
+        low: gross.low * 100,
+        central: gross.central * 100,
+        high: gross.high * 100,
+      },
       totalReductionPct: {
         low: netFraction.low * 100,
         central: netFraction.central * 100,

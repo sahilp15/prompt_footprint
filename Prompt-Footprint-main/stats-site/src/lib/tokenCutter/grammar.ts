@@ -226,3 +226,36 @@ export function findCapitalizationEdits(text: string): RawEdit[] {
   }
   return edits
 }
+
+/**
+ * The question mark left behind when a polite request becomes an imperative.
+ *
+ * "Can you please summarize the report?" loses its wrapper and reads
+ * "Summarize the report?" — a request punctuated as a question, which is the
+ * kind of seam that makes an otherwise correct optimization look careless.
+ *
+ * Proposed as its own edit rather than folded into the wrapper rule: the two
+ * are at opposite ends of the sentence, and keeping them separate means the
+ * terminator is only changed when the wrapper removal is actually accepted-
+ * looking — a sentence that still opens on "Can you" is left alone.
+ */
+export function findRequestPunctuation(text: string): RawEdit[] {
+  const edits: RawEdit[] = []
+  const re = /(?:^|[.!?]\s+)((?:could|can|would|will)\s+you\s+(?:please\s+|kindly\s+)?|please\s+|i\s+was\s+wondering\s+if\s+you\s+could\s+)[^?!.\n]{4,300}(\?)/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const at = m.index + m[0].length - 1
+    edits.push({
+      start: at,
+      end: at + 1,
+      replacement: '.',
+      category: 'grammar',
+      title: 'Request punctuation',
+      reason: 'Without the polite wrapper this is an instruction, not a question.',
+      score: 0.8,
+      minLevel: 'balanced',
+      safe: false,
+    })
+  }
+  return edits
+}

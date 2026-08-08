@@ -11,6 +11,10 @@
 // and there is only ever one implementation of the pipeline to maintain.
 
 export { analyzePrompt, recompute, optimize, computeAnalytics, DEFAULT_OPTIONS } from './index.ts'
+// The in-page assistant's "Already concise" decision and its Removed/Preserved
+// breakdown are the SAME assessment the dashboard shows, not a second opinion.
+export { assessConcision, NEGLIGIBLE_PERCENT, NEGLIGIBLE_TOKENS } from './concision.ts'
+export { summarizeChanges } from './summary.ts'
 export { buildDiff, acceptedEdits } from './apply.ts'
 // `validateMeaning` is what lets the in-page assistant hold an OPTIONAL remote
 // rewrite to exactly the same standard as a local suggestion.

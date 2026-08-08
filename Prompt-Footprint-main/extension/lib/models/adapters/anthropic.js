@@ -117,23 +117,16 @@
       return SH.readToolChips(scope || document, TOOL_SELECTORS, TOOL_VOCABULARY);
     },
 
-    /** The effort/thinking control, read separately from the model itself. */
-    readEffort(scope) {
-      const doc = scope || document;
-      const els = SH.queryAll(doc, EFFORT_SELECTORS);
-      for (const el of els) {
-        const cand = SH.candidateFrom(el, 'anthropic', { source: 'picker-label' });
-        if (cand.hidden) continue;
-        if (cand.mode && cand.mode.reasoning) return cand.mode.reasoning;
-      }
-      // A selected effort row inside an open menu.
-      const rows = SH.queryAll(doc, MENU_SELECTORS);
-      for (const el of rows) {
-        const cand = SH.candidateFrom(el, 'anthropic', { optionRow: true });
-        if (!cand.selected || cand.hidden) continue;
-        if (!cand.canon && cand.mode && cand.mode.reasoning) return cand.mode.reasoning;
-      }
-      return null;
+    /**
+     * The effort/thinking control, read separately from the model itself.
+     *
+     * Shared with the other providers now: the two-pass shape (dedicated control
+     * first, then the selected row of an open menu that is not a model) was
+     * written here and is the same everywhere, so it lives in the shared layer
+     * and this is the selector list it runs against.
+     */
+    readReasoning(scope) {
+      return SH.readReasoningControl(scope || document, EFFORT_SELECTORS, MENU_SELECTORS, 'anthropic');
     },
 
     collectCandidates(scope) {
@@ -157,15 +150,6 @@
       return out;
     },
 
-    refine(obs, ctx) {
-      const next = { ...obs };
-      const effort = (ctx && ctx.effort) || null;
-      // Effort is its own control; it must not overwrite an adaptive/locked mode
-      // the model itself imposes, which applyModelConstraints re-asserts after.
-      if (effort) next.reasoningMode = effort;
-      return next;
-    },
-
     readModelObservation(scope, opts) {
       const doc = scope || document;
       const o = opts || {};
@@ -175,7 +159,10 @@
         surface: this.readSurface(doc, url),
         tools: this.readToolModes(doc),
         conversationKey: this.readConversationKey(url),
-        effort: this.readEffort(doc),
+        // Applied by the shared layer, then re-checked by the catalog's model
+        // constraints: Fable 5's adaptive thinking cannot be turned off, and
+        // Opus 5's cannot be disabled at xhigh or max, whatever a control says.
+        reasoning: this.readReasoning(doc),
         effectiveModel: o.effectiveModel || null,
         now: o.now,
       });

@@ -126,6 +126,10 @@ export type SuggestionCategory =
   | 'transition'
   | 'hedge'
   | 'whitespace'
+  /** A verbose instruction wrapper around an intact instruction ("make sure that you …"). */
+  | 'instruction-collapse'
+  /** Talk *about* the request rather than part of it ("hope that makes sense"). */
+  | 'meta-commentary'
 
 export type Confidence = 'high' | 'medium' | 'low'
 
@@ -293,6 +297,28 @@ export interface AppliedMemory {
 
 export type ProcessingMode = 'local' | 'enhanced'
 
+/**
+ * What the cutter knows about the model the prompt is about to be sent to.
+ *
+ * Used for ONE thing: the final readability decision. A dense, telegraphic
+ * rewrite is safe for a frontier model and risky for one we cannot identify, so
+ * an unrecognised target keeps a little more explicit structure. It never
+ * changes which information survives — that is the validator's job, and the
+ * validator does not know or care what model is selected.
+ */
+export interface TargetModel {
+  provider: string
+  /** Canonical id, or null when the picker label is not in the registry. */
+  canonicalModel: string | null
+  /** Exactly what the product showed, even when unrecognised. */
+  label: string | null
+  tier: string | null
+  /** Normalized reasoning class, when the product exposes one. */
+  reasoningClass: string | null
+  /** False when the label is unmapped — density is dialled back, not the content. */
+  known: boolean
+}
+
 export interface CutterOptions {
   level: OptimizationLevel
   /** Platform id for the environmental model. */
@@ -300,6 +326,92 @@ export interface CutterOptions {
   memory: MemoryState
   /** Allow rewriting inside quotes/code. Off by default. */
   allowProtectedEdits: boolean
+  /** Target model for the final readability check. Null when unknown. */
+  targetModel?: TargetModel | null
+  /** Refinement rounds after the first. 0 disables iterative compression. */
+  maxRefinementPasses?: number
+}
+
+// ── Iterative compression ───────────────────────────────────────────────────
+
+/**
+ * One edit made by a refinement round.
+ *
+ * Rounds after the first operate on the *previous round's output*, so their
+ * offsets do not address the original text and they are deliberately NOT
+ * returned as `Suggestion`s: a Suggestion is something the user can toggle, and
+ * toggling something whose coordinates refer to a string that only exists
+ * mid-pipeline is not a coherent offer. They are reported instead.
+ */
+export interface RefinementEdit {
+  pass: number
+  category: SuggestionCategory
+  title: string
+  reason: string
+  original: string
+  replacement: string
+  tokensSaved: number
+}
+
+export interface RefinementPass {
+  pass: number
+  tokensBefore: number
+  tokensAfter: number
+  edits: RefinementEdit[]
+  /** Set when the round was computed and then discarded. */
+  rejected?: 'validation' | 'no-gain'
+}
+
+// ── Concision ───────────────────────────────────────────────────────────────
+
+/** The seven independent conditions that must ALL hold for "already concise". */
+export interface ConcisionChecks {
+  /** No sentence or clause restates an earlier one. */
+  noRepetition: boolean
+  /** No filler, politeness, hedge, or wordy construction is left. */
+  noFiller: boolean
+  /** No two instructions can safely be combined. */
+  notMergeable: boolean
+  /** Whitespace and formatting carry no spare tokens. */
+  formattingTight: boolean
+  /** No verbose instruction wrapper or empty framing remains. */
+  noVerboseFraming: boolean
+  /** The reduction actually available is negligible. */
+  savingsNegligible: boolean
+  /** Another full pass finds nothing more. */
+  convergedOnRepeat: boolean
+}
+
+export interface ConcisionReport {
+  /** True only when every check above is true. */
+  concise: boolean
+  checks: ConcisionChecks
+  /** Human-readable reasons the prompt is NOT concise, most valuable first. */
+  reasons: string[]
+  /** Edits still on the table at this level that were not applied. */
+  residualOpportunities: number
+  /** Tokens the residual opportunities would remove. */
+  residualTokens: number
+  /**
+   * Information density: the share of tokens carrying task, constraint, or
+   * entity content. Length-independent by construction — a 25-token prompt and
+   * a 1,000-token prompt are scored the same way.
+   */
+  density: number
+}
+
+// ── What changed, in the user's terms ───────────────────────────────────────
+
+export interface ChangeSummaryItem {
+  label: string
+  count: number
+}
+
+export interface ChangeSummary {
+  removed: ChangeSummaryItem[]
+  preserved: ChangeSummaryItem[]
+  /** True when the validator ran and passed. */
+  verified: boolean
 }
 
 export interface CutterResult {
@@ -318,6 +430,15 @@ export interface CutterResult {
   analytics: CutterAnalytics
   appliedMemories: AppliedMemory[]
   mode: ProcessingMode
+  /**
+   * Refinement rounds run after the toggleable suggestion set was applied.
+   * Empty when the first pass already converged.
+   */
+  refinements: RefinementPass[]
+  /** Whether this prompt is genuinely as short as it can usefully be. */
+  concision: ConcisionReport
+  /** What was removed and what was checked as preserved. */
+  changeSummary: ChangeSummary
   /** Populated when the enhanced path ran; describes what it contributed. */
   enhancement?: EnhancementReport
 }

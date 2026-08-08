@@ -14,6 +14,7 @@
 
   const OBS = (typeof PFModelObservation !== 'undefined') ? PFModelObservation : require('../observation.js');
   const CAT = (typeof PFModelCatalog !== 'undefined') ? PFModelCatalog : require('../catalog.js');
+  const RSN = (typeof PFReasoning !== 'undefined') ? PFReasoning : require('../reasoning.js');
 
   /** querySelectorAll over a list of selectors, de-duplicated, never throwing. */
   function queryAll(scope, selectors) {
@@ -72,6 +73,43 @@
   }
 
   /**
+   * The reasoning / thinking / effort control, read as its own thing.
+   *
+   * Two passes in priority order, mirroring the model detection above:
+   *   1. a dedicated reasoning control that is visible right now, and
+   *   2. the selected row of an open menu whose label describes reasoning but
+   *      NOT a model — that second condition is what stops "GPT-5.6 Sol" being
+   *      read as an effort level because it happens to contain "Sol".
+   *
+   * Returns `{ mode, label, source }` or null. Null means the product is not
+   * exposing a reasoning setting on this page, which is a fact worth reporting
+   * as itself rather than filling in with a default.
+   */
+  function readReasoningControl(scope, controlSelectors, menuSelectors, provider) {
+    const doc = scope || document;
+
+    for (const el of queryAll(doc, controlSelectors)) {
+      if (OBS.isHiddenElement(el)) continue;
+      const label = OBS.controlText(el) || OBS.accessibleName(el);
+      const mode = RSN.readModeLabel(label) || RSN.readModeLabel(OBS.accessibleName(el));
+      if (mode) return { mode, label: label || OBS.accessibleName(el), source: 'reasoning-control' };
+    }
+
+    for (const el of queryAll(doc, menuSelectors || [])) {
+      if (OBS.isHiddenElement(el) || !OBS.isSelectedOption(el)) continue;
+      const label = OBS.controlText(el) || OBS.accessibleName(el);
+      // A row that resolves to a MODEL is a model row, even if its name also
+      // contains a reasoning word. Only rows that are purely about reasoning
+      // count here.
+      if (CAT.canonicalize(provider, label)) continue;
+      const mode = RSN.readModeLabel(label);
+      if (mode) return { mode, label, source: 'selected-menu-item' };
+    }
+
+    return null;
+  }
+
+  /**
    * Turn scored candidates into a ModelObservation.
    *
    * The two rules that matter most are here: an unresolved label is preserved as
@@ -84,7 +122,18 @@
     const c = ctx || {};
     const provider = adapter.provider;
     const candidates = c.candidates || [];
-    const best = OBS.pickBest(candidates);
+
+    // A control that NAMES A MODEL outranks one that does not — but only when it
+    // is a credible answer in its own right.
+    //
+    // Without the preference, opening the effort submenu lets its checked row
+    // ("Max", 75 as a selected option) beat the model picker beside it, and the
+    // observation loses the model entirely. Without the "credible" half, a
+    // COLLAPSED menu full of model names — which every real page keeps in the
+    // DOM — would suppress the visible picker whenever the picker shows a mode
+    // like Auto, and the page would read as having no model at all.
+    const named = candidates.filter((x) => x.canon);
+    const best = OBS.pickBest(named) || OBS.pickBest(candidates);
 
     let obs = OBS.emptyObservation({
       provider,
@@ -140,6 +189,17 @@
       }
     }
 
+    // A dedicated reasoning control outranks anything inferred from the model
+    // label: the model picker saying "Thinking" is a guess about effort, while
+    // the effort control saying "High" is the product stating it. The raw label
+    // is kept beside the normalized mode so the UI can show what was actually
+    // on screen rather than our word for it.
+    if (c.reasoning && c.reasoning.mode) {
+      obs.reasoningMode = c.reasoning.mode;
+      obs.reasoningLabel = c.reasoning.label || null;
+      obs.reasoningSource = c.reasoning.source || 'reasoning-control';
+    }
+
     // Explicit response metadata, when a provider exposes it, outranks the picker
     // for the message it describes.
     if (c.effectiveModel) {
@@ -187,6 +247,7 @@
     firstMatch,
     isNear,
     readToolChips,
+    readReasoningControl,
     observeAdapter,
     buildObservation,
     pathSegmentAfter,

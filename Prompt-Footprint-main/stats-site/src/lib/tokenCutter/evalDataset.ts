@@ -193,4 +193,81 @@ export const EVAL_CASES: EvalCase[] = [
     minReduction: 0,
     maxReduction: 0.25,
   },
+  // ── Aggression cases ──────────────────────────────────────────────────────
+  // Added with the aggressive-compression rebuild. Each one is a prompt the
+  // optimizer used to describe as "already concise" while a reader could see
+  // the padding from across the room, so each carries a real FLOOR as well as a
+  // ceiling — a case that quietly stops compressing now fails.
+  {
+    id: 'instruction-wrappers',
+    description: 'An intact instruction buried in three layers of wrapper',
+    prompt:
+      'I want you to make sure that when you respond to this question, you do not give me a really long response because I would prefer something shorter and easier to understand.',
+    level: 'balanced',
+    mustContain: ['do not', 'long response'],
+    mustNotContain: ['I want you to make sure', 'when you respond to this question'],
+    minReduction: 0.3,
+    maxReduction: 0.85,
+  },
+  {
+    id: 'restated-emphasis',
+    description: 'Emphasis wrappers restating an instruction already given',
+    prompt:
+      'Please review this pull request. When you review it, make sure that you check the error handling. It is very important that you check the error handling. Do not approve it. Keep your notes under 150 words.',
+    level: 'balanced',
+    mustContain: ['error handling', 'Do not approve', '150 words'],
+    mustNotContain: ['It is very important'],
+    minReduction: 0.2,
+    maxReduction: 0.65,
+  },
+  {
+    id: 'duplicated-formatting',
+    description: 'The same output format demanded twice, in two phrasings',
+    prompt:
+      'Summarize the incident report. Respond in a bulleted list format. Use bullet points for your response. Do not include speculation.',
+    level: 'balanced',
+    mustContain: ['incident report', 'bullet', 'Do not include speculation'],
+    minReduction: 0.15,
+    maxReduction: 0.55,
+  },
+  {
+    id: 'repeated-context',
+    description: 'Background stated twice before the actual task',
+    prompt:
+      'We are migrating from MySQL to PostgreSQL. Our team is migrating from MySQL to PostgreSQL. I want you to make sure that you list the schema differences. It is very important that you list the schema differences. Keep it under 600 words.',
+    level: 'balanced',
+    mustContain: ['MySQL', 'PostgreSQL', 'schema differences', '600 words'],
+    minReduction: 0.35,
+    maxReduction: 0.8,
+  },
+  {
+    id: 'short-but-wasteful',
+    description: 'A 20-token prompt that is still mostly padding',
+    prompt: 'I was wondering if you could please just help me write a short email to my boss.',
+    level: 'balanced',
+    mustContain: ['email', 'boss'],
+    mustNotContain: ['I was wondering'],
+    minReduction: 0.25,
+    maxReduction: 0.7,
+  },
+  {
+    id: 'parallel-imperatives',
+    description: 'Maximum merges instructions that repeat one verb for three objects',
+    prompt:
+      'Review the config. Check for exposed secrets. Check for missing timeouts. Check for unbounded retries. Do not change the file. Respond as JSON.',
+    level: 'maximum',
+    mustContain: ['exposed secrets', 'missing timeouts', 'unbounded retries', 'Do not change', 'JSON'],
+    minReduction: 0.05,
+    maxReduction: 0.5,
+  },
+  {
+    id: 'dense-spec-unchanged',
+    description: 'A dense technical spec that is already tight and must stay so',
+    prompt:
+      'Validate payload against schema v2.1. Reject any request over 4 MB. Return 422 with the field path on failure. Log the request id. Never log the body.',
+    level: 'maximum',
+    mustContain: ['schema v2.1', '4 MB', '422', 'request id', 'Never log the body'],
+    minReduction: 0,
+    maxReduction: 0.12,
+  },
 ]

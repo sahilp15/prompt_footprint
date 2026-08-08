@@ -17,7 +17,12 @@ import type { OptimizationLevel, SuggestionCategory } from './types.ts'
 export interface LexiconRule {
   /** Matched case-insensitively with word boundaries. */
   pattern: RegExp
-  /** Replacement text; '' deletes. */
+  /**
+   * Replacement text; '' deletes. May reference capture groups (`$1`), which the
+   * detector expands against the matched text — that is what lets one rule strip
+   * an intensifier off a whole family of adjectives instead of needing an entry
+   * per adjective.
+   */
   replacement: string
   category: SuggestionCategory
   title: string
@@ -61,6 +66,64 @@ export const POLITENESS_RULES: LexiconRule[] = [
   rule(/\bplease\b/gi, '', 'politeness', 'Politeness marker', 'Removing “please” does not change what is being asked.', 0.86, 'balanced'),
   rule(/\bkindly\b/gi, '', 'politeness', 'Politeness marker', 'Removing “kindly” does not change what is being asked.', 0.88, 'balanced'),
   rule(/^\s*(?:hi|hey|hello|greetings|good (?:morning|afternoon|evening))(?:\s+(?:there|team|claude|chatgpt|gpt|everyone|all))?\b[\s,!.–—-]*/i, '', 'politeness', 'Greeting', 'A greeting has no effect on the response.', 0.97, 'light'),
+]
+
+// ── Verbose instruction wrappers ────────────────────────────────────────────
+// The single biggest source of waste in a real prompt, and the one a word-level
+// lexicon cannot reach: an intact instruction wrapped in three clauses of
+// throat-clearing. "Make sure that you look for bugs" and "look for bugs" ask
+// for exactly the same thing.
+//
+// These are the ONLY rules allowed to overlap a constraint, because they remove
+// the *trigger phrasing* and leave the payload — "make sure you keep it under
+// 300 words" still says 300 words afterwards. The generator whitelists the
+// category for that reason, and the validator re-checks the constraint key.
+//
+// Every entry is anchored on an explicit second person or infinitive ("you ",
+// "to ") so that "make sure it is signed" — where the payload is a statement,
+// not an imperative — is left alone rather than turned into a claim.
+
+export const INSTRUCTION_RULES: LexiconRule[] = [
+  // Scored above the shorter "I want you to" rule so overlap resolution picks
+  // the whole construction. Without this, "what I want you to do is write…"
+  // loses its middle and becomes "what do is write".
+  rule(/\b(?:so,?\s+)?what i (?:really )?(?:want|need|would like|'?d like) (?:you )?to do is(?: to)?\b/gi, '', 'instruction-collapse', 'Verbose lead-in', 'Names the instruction that follows instead of giving it.', 0.94, 'light'),
+  rule(/\bi (?:want|need) you to make (?:sure|certain) (?:that )?(?:you )?/gi, '', 'instruction-collapse', 'Verbose lead-in', 'The instruction after this is the whole request.', 0.9, 'light'),
+  rule(/\b(?:be sure|make (?:sure|certain))\s+(?:that\s+)?(?:you\s+|to\s+)/gi, '', 'instruction-collapse', 'Instruction wrapper', '“Make sure you X” and “X” ask for the same thing.', 0.86, 'balanced'),
+  rule(/\bit (?:is|'?s) (?:very |really |extremely |critically |absolutely )?(?:important|essential|critical|crucial|vital|imperative) (?:that|for you to)\s+(?:you\s+)?/gi, '', 'instruction-collapse', 'Emphasis wrapper', 'Emphasis does not change the instruction; the instruction does.', 0.88, 'balanced'),
+  rule(/\bit (?:is|'?s) (?:very |really |extremely |critically |absolutely )?(?:important|essential|critical|crucial|vital|imperative) to\b/gi, '', 'instruction-collapse', 'Emphasis wrapper', 'Emphasis does not change the instruction; the instruction does.', 0.87, 'balanced'),
+  rule(/\byour (?:task|job|role|goal|objective) (?:here )?is (?:going to be )?to\b/gi, '', 'instruction-collapse', 'Task announcement', 'Announcing the task costs tokens; stating it does the work.', 0.86, 'balanced'),
+  rule(/\bthe (?:goal|objective|aim|idea|point) (?:here |of this )?is (?:to|for you to)\b/gi, '', 'instruction-collapse', 'Task announcement', 'Announcing the task costs tokens; stating it does the work.', 0.82, 'balanced'),
+  rule(/\bwhen (?:you )?(?:respond|reply|answer|write back)(?: to (?:this|my|the) (?:question|prompt|message|request))?\s*,\s*/gi, '', 'instruction-collapse', 'Empty framing', 'Every instruction in a prompt already applies to the response.', 0.84, 'balanced'),
+  rule(/\bin your (?:response|answer|reply)\s*,\s*/gi, '', 'instruction-collapse', 'Empty framing', 'Every instruction in a prompt already applies to the response.', 0.8, 'balanced'),
+  rule(/\bi'?d (?:really )?appreciate it if you (?:could|would)\b/gi, '', 'instruction-collapse', 'Verbose lead-in', 'The instruction after this is the whole request.', 0.92, 'light'),
+  rule(/\bhere (?:is|'?s) what i (?:want|need|'?d like)(?: you to do)?\s*:?\s*/gi, '', 'instruction-collapse', 'Verbose lead-in', 'Names the instruction that follows instead of giving it.', 0.86, 'balanced'),
+  rule(/\bi (?:would like|want|need) (?:the |your )?(?:response|answer|reply|output|result) to be\b/gi, 'Be', 'instruction-collapse', 'Indirect requirement', 'Stating the requirement directly costs fewer tokens.', 0.8, 'balanced'),
+  rule(/\bwhat i(?:'?m| am) looking for is\b/gi, '', 'instruction-collapse', 'Verbose lead-in', 'Names the instruction that follows instead of giving it.', 0.86, 'balanced'),
+  rule(/\bi(?:'?m| am) (?:trying|looking) to (?:get you to|have you)\b/gi, '', 'instruction-collapse', 'Verbose lead-in', 'Names the instruction that follows instead of giving it.', 0.82, 'balanced'),
+  // Removing a lead-in ("When you respond, …") can expose the subject of what was
+  // a subordinate clause: "you do not give me a long response". Dropping the
+  // pronoun restores the imperative the user meant. Restricted to negative and
+  // "always" forms, where second person can only be addressing the model — and
+  // the negation itself is kept, so the negation veto is satisfied by
+  // construction rather than by exception.
+  rule(/(?:^|(?<=[.!?]\s))you\s+(?=(?:do not|don'?t|must not|must never|should not|shouldn'?t|never|always)\b)/gi, '', 'instruction-collapse', 'Implied subject', 'A prompt already addresses the model; the pronoun is a spare token.', 0.86, 'balanced'),
+]
+
+// ── Meta-commentary ─────────────────────────────────────────────────────────
+// Sentences about the request rather than part of it. They read as courteous in
+// an email and cost tokens in a prompt without changing a single word of the
+// answer.
+
+export const META_RULES: LexiconRule[] = [
+  rule(/\blet me know if (?:you (?:have|need|want)|this|that|there'?s|anything)[^.!?\n]*[.!?]?/gi, '', 'meta-commentary', 'Sign-off', 'Nothing after this changes the answer.', 0.9, 'light'),
+  rule(/\b(?:i )?hope (?:that|this) (?:makes sense|helps|is clear)\b[.!?]?/gi, '', 'meta-commentary', 'Sign-off', 'Nothing after this changes the answer.', 0.92, 'light'),
+  rule(/\b(?:hopefully )?(?:that|this) (?:makes sense|is clear enough)\b[.!?]?/gi, '', 'meta-commentary', 'Meta-commentary', 'Talks about the request instead of stating it.', 0.88, 'light'),
+  rule(/\b(?:just )?(?:so you know|for your (?:information|reference)|fyi)\s*,?\s*/gi, '', 'meta-commentary', 'Meta-commentary', 'Talks about the request instead of stating it.', 0.88, 'balanced'),
+  rule(/\bi'?m not (?:sure|certain) (?:if|whether|how) (?:this|that|i)(?: (?:is|am|was))? (?:clear|explained|makes sense|worded)[^.!?\n]*[.!?]?/gi, '', 'meta-commentary', 'Meta-commentary', 'Talks about the request instead of stating it.', 0.86, 'balanced'),
+  rule(/\b(?:sorry (?:for|about) the (?:long |rambling )?(?:message|prompt|question)|apologies for the (?:length|ramble))\b[^.!?\n]*[.!?]?/gi, '', 'meta-commentary', 'Meta-commentary', 'Talks about the request instead of stating it.', 0.92, 'light'),
+  rule(/\bif (?:that|this) (?:makes sense|works for you|is ok(?:ay)?)\b[.!?]?/gi, '', 'meta-commentary', 'Meta-commentary', 'Talks about the request instead of stating it.', 0.86, 'balanced'),
+  rule(/\bas (?:you|we) (?:can see|already know|both know)\s*,?\s*/gi, '', 'meta-commentary', 'Meta-commentary', 'Talks about the request instead of stating it.', 0.82, 'balanced'),
 ]
 
 // ── Filler words and hedges ─────────────────────────────────────────────────
@@ -134,16 +197,43 @@ export const WORDY_RULES: LexiconRule[] = [
   rule(/\bat the end of the day\b/gi, 'ultimately', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.85, 'balanced'),
   rule(/\ba (?:variety|number) of different\b/gi, 'various', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.86, 'balanced'),
   rule(/\bit (?:is|'?s) (?:my|our) understanding that\b/gi, '', 'wordy-phrase', 'Empty framing', 'The statement that follows carries the meaning.', 0.86, 'balanced'),
+  // Intensifier + absolute adjective. The adjective already carries the extreme;
+  // the intensifier is a second copy of it.
+  rule(/\b(?:very|really|super|extremely|highly|incredibly|truly) (important|critical|essential|crucial|vital|unique|perfect|final|complete)\b/gi, '$1', 'wordy-phrase', 'Redundant emphasis', 'The adjective already means this; the intensifier repeats it.', 0.86, 'balanced'),
+  rule(/\b(?:absolutely|totally|completely|entirely|fully) (sure|certain|essential|unique|perfect|final|complete|impossible)\b/gi, '$1', 'wordy-phrase', 'Redundant emphasis', 'The adjective already means this; the intensifier repeats it.', 0.88, 'balanced'),
+  rule(/\b(?:actual|real|true) (fact|reason|purpose)\b/gi, '$1', 'wordy-phrase', 'Redundant pair', 'The noun already means this.', 0.84, 'balanced'),
+  rule(/\bbasic (?:fundamentals|essentials)\b/gi, 'fundamentals', 'wordy-phrase', 'Redundant pair', 'Fundamentals are always basic.', 0.86, 'balanced'),
+  rule(/\bplan ahead\b/gi, 'plan', 'wordy-phrase', 'Redundant pair', 'Planning is always ahead.', 0.84, 'maximum'),
+  rule(/\bcollaborate together\b/gi, 'collaborate', 'wordy-phrase', 'Redundant pair', 'Collaboration is always together.', 0.88, 'balanced'),
+  rule(/\bcombine together\b/gi, 'combine', 'wordy-phrase', 'Redundant pair', 'Combining is always together.', 0.88, 'balanced'),
+  rule(/\bat (?:the )?(?:same|exact same) time\b/gi, 'simultaneously', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.7, 'maximum'),
+  rule(/\bin the (?:context|case) of\b/gi, 'for', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.72, 'maximum'),
+  rule(/\bit (?:would|might|may) be (?:great|good|helpful|useful|nice) if you (?:could|would)\b/gi, '', 'wordy-phrase', 'Indirect request', 'Stating the task directly says the same thing in fewer tokens.', 0.88, 'balanced'),
+  rule(/\bwith the exception of\b/gi, 'except', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.9, 'light'),
+  rule(/\bin the (?:absence|event) of\b/gi, 'without', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.82, 'balanced'),
+  rule(/\bon the (?:subject|topic) of\b/gi, 'about', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.86, 'balanced'),
+  rule(/\bcome up with\b/gi, 'create', 'wordy-phrase', 'Wordy phrase', 'Shorter phrasing, same meaning.', 0.76, 'maximum'),
+  rule(/\ba (?:total|grand total) of\b/gi, '', 'wordy-phrase', 'Wordy phrase', 'The number after it already says this.', 0.84, 'balanced'),
+  rule(/\bthe (?:fact|thing) (?:of the matter )?is (?:that )?\b/gi, '', 'wordy-phrase', 'Empty framing', 'The statement that follows carries the meaning.', 0.86, 'balanced'),
+  rule(/\bwhat (?:i mean|i'?m saying) is (?:that )?\b/gi, '', 'wordy-phrase', 'Empty framing', 'The statement that follows carries the meaning.', 0.86, 'balanced'),
 ]
 
 // ── Discourse transitions ───────────────────────────────────────────────────
 // Real signposting in an essay; noise at the start of a prompt sentence.
 
 export const TRANSITION_RULES: LexiconRule[] = [
-  rule(/(?:^|(?<=[.!?]\s))(?:additionally|furthermore|moreover|in addition|also,)\s*/gi, '', 'transition', 'Excess transition', 'Sentence order already carries this.', 0.76, 'maximum'),
+  // A prompt is a list of requirements, not an argument, so "additionally" is
+  // signposting a structure the reader already has. Demoted from `maximum` to
+  // `balanced`: it is one of the highest-frequency wasted tokens in real prompts
+  // and removing it has never changed a response.
+  rule(/(?:^|(?<=[.!?]\s))(?:additionally|furthermore|moreover|in addition|also)\s*,?\s+/gi, '', 'transition', 'Excess transition', 'Sentence order already carries this.', 0.78, 'balanced'),
   rule(/(?:^|(?<=[.!?]\s))(?:that (?:being |having been )?said|with that in mind|having said that)\s*,?\s*/gi, '', 'transition', 'Excess transition', 'Sentence order already carries this.', 0.82, 'balanced'),
   rule(/(?:^|(?<=[.!?]\s))(?:as (?:i|you) (?:mentioned|said) (?:earlier|before|above))\s*,?\s*/gi, '', 'transition', 'Excess transition', 'The earlier statement is still in the prompt.', 0.84, 'balanced'),
   rule(/(?:^|(?<=[.!?]\s))(?:to be honest|honestly|frankly)\s*,?\s*/gi, '', 'transition', 'Excess transition', 'Adds no instruction.', 0.86, 'balanced'),
+  rule(/(?:^|(?<=[.!?]\s))(?:on top of that|beyond that|apart from that|other than that)\s*,?\s*/gi, '', 'transition', 'Excess transition', 'Sentence order already carries this.', 0.8, 'balanced'),
+  rule(/(?:^|(?<=[.!?]\s))(?:in (?:conclusion|summary)|to sum up|to summari[sz]e|all in all|overall)\s*,\s*/gi, '', 'transition', 'Excess transition', 'A prompt does not need a concluding transition.', 0.76, 'maximum'),
+  rule(/(?:^|(?<=[.!?]\s))(?:one (?:more|last|final) thing(?: though)?|another thing)\s*[,:—-]\s*/gi, '', 'transition', 'Excess transition', 'Sentence order already carries this.', 0.82, 'balanced'),
+  rule(/(?:^|(?<=[.!?]\s))(?:so|now|anyway|ok(?:ay)?|alright|right)\s*,\s+/gi, '', 'transition', 'Excess transition', 'Conversational opener with no instruction in it.', 0.84, 'balanced'),
 ]
 
 // ── Spelling ────────────────────────────────────────────────────────────────
@@ -243,8 +333,23 @@ export const MEANING_ANCHORS = new Set([
 ])
 
 export const ALL_LEXICON_RULES: LexiconRule[] = [
+  ...INSTRUCTION_RULES,
   ...POLITENESS_RULES,
   ...WORDY_RULES,
+  ...META_RULES,
   ...FILLER_WORD_RULES,
   ...TRANSITION_RULES,
 ]
+
+/**
+ * Categories that remove *framing around* an instruction rather than the
+ * instruction itself.
+ *
+ * The generator lets these overlap a constraint — "make sure you keep it under
+ * 300 words" still says 300 words once the wrapper is gone — and the validator
+ * independently confirms the constraint key survived. Every other category is
+ * refused outright when it touches a constraint.
+ */
+export const CONSTRAINT_AWARE_CATEGORIES: ReadonlySet<SuggestionCategory> = new Set<SuggestionCategory>([
+  'repeated-instruction', 'sentence-merge', 'instruction-collapse',
+])

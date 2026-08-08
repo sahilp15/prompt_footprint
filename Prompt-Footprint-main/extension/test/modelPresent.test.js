@@ -63,11 +63,16 @@ test('an estimate carries the disclosures its situation requires', () => {
 // ── Honest labels ─────────────────────────────────────────────────────────
 
 test('an unresolved model is never rendered as a flagship', () => {
-  assert.strictEqual(PRESENT.modelLabel(OBS.emptyObservation({})), 'Unknown model');
-  assert.strictEqual(
-    PRESENT.modelLabel(OBS.emptyObservation({ provider: 'openai', selectedLabel: 'GPT-7.2 Nimbus' })),
-    'Unknown model — "GPT-7.2 Nimbus"'
-  );
+  assert.strictEqual(PRESENT.modelLabel(OBS.emptyObservation({})), 'No model detected');
+  // A label the registry has never seen is still a KNOWN selection — the product
+  // showed it to us. It is displayed verbatim, with no hedging word attached and
+  // no rounding to the nearest model we do know. The uncertainty about what it
+  // COSTS lives on the estimate, not on the model's name.
+  const unmapped = OBS.emptyObservation({ provider: 'openai', selectedLabel: 'GPT-7.2 Nimbus' });
+  assert.strictEqual(PRESENT.modelLabel(unmapped), 'GPT-7.2 Nimbus');
+  assert.strictEqual(OBS.toDetectedModel(unmapped).canonicalModelId, null);
+  assert.strictEqual(OBS.toDetectedModel(unmapped).estimateBasis, 'provider-fallback');
+  assert.ok(!/probably|maybe|likely|not sure|unknown/i.test(PRESENT.modelLabel(unmapped)));
   assert.strictEqual(
     PRESENT.modelLabel(OBS.emptyObservation({ provider: 'openai', routing: 'auto' })),
     'Auto — effective model not exposed'

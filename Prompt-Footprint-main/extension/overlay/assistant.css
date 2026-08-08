@@ -307,6 +307,178 @@
   background-clip: content-box;
 }
 
+/* ── Model pill ────────────────────────────────────────────────────────────
+   Which model this prompt is about to be sent to, and how hard it will think.
+   Its own row under the bar rather than inside it: the bar's content changes on
+   every keystroke pause and the model does not, so sharing a line would make a
+   stable fact flicker with an unstable one. */
+
+.model-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  margin: 5px 2px 0 0;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  pointer-events: auto;
+}
+.model-pill[hidden] { display: none; }
+
+.model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* A model switch is worth one beat of attention and no more. No toast, no
+   layout shift — the pill's own text tints and settles. */
+.model-pill.is-changed { animation: model-change 900ms var(--ease); }
+.model-pill.is-changed .model-dot { animation: model-dot 900ms var(--ease); }
+
+@keyframes model-change {
+  0% { border-color: var(--accent-line); background: var(--accent-wash); color: var(--text-soft); }
+  100% { border-color: var(--border-soft); background: var(--surface-sunken); color: var(--text-muted); }
+}
+@keyframes model-dot {
+  0% { transform: scale(1.9); }
+  100% { transform: scale(1); }
+}
+
+/* ── Savings headline ──────────────────────────────────────────────────────
+   The before/after the whole feature exists to show. */
+
+.savings {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-line);
+}
+.savings[hidden] { display: none; }
+
+.savings-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.savings-headline .was { color: var(--text-muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.savings-headline .now { color: var(--accent-strong); }
+.savings-headline .arrow { color: var(--text-muted); font-size: 13px; }
+
+.savings-detail {
+  font-size: 11.5px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+.savings-detail strong { color: var(--text); font-weight: 600; }
+.savings-detail .dot { margin: 0 6px; color: var(--text-muted); }
+.savings-detail .for-model { color: var(--text-muted); }
+
+/* ── Removed / Preserved ledger ────────────────────────────────────────────
+   Two columns, because aggressive compression is only usable when both halves
+   are visible at once. */
+
+.ledger {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.ledger[hidden] { display: none; }
+
+.ledger-col {
+  background: var(--surface-raised);
+  padding: 9px 10px;
+  min-width: 0;
+}
+
+.ledger-title {
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.ledger-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-soft);
+}
+.ledger-list li { position: relative; padding-left: 10px; }
+.ledger-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--text-muted);
+}
+.ledger-col:last-child .ledger-list li::before { color: var(--accent); }
+.ledger-empty { color: var(--text-muted); font-style: italic; }
+
+/* ── Model-detection debug panel ───────────────────────────────────────────
+   Off unless asked for. Dense and monospaced on purpose: it is read to diagnose
+   a detection bug, often from a screenshot. */
+
+.debug {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: var(--surface-sunken);
+}
+.debug[hidden] { display: none; }
+
+.debug-title {
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.debug-row {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 60%);
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.debug-k { color: var(--text-muted); }
+.debug-v { color: var(--text-soft); word-break: break-word; }
+
 /* Metrics row — four figures, monospaced so they never jitter as they update. */
 .metrics {
   display: grid;
@@ -733,6 +905,8 @@ button:focus-visible,
 }
 :host([data-motion='off']) .shell.is-success,
 :host([data-motion='off']) .headline.is-pending,
+:host([data-motion='off']) .model-pill.is-changed,
+:host([data-motion='off']) .model-pill.is-changed .model-dot,
 :host([data-motion='off']) .is-analyzing .mark {
   animation: none !important;
 }

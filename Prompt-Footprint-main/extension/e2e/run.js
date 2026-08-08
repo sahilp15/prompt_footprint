@@ -213,10 +213,43 @@ async function runChatGPT() {
     await shot(page, '06-narrow');
     await page.setViewportSize({ width: 1280, height: 800 });
 
+    // A genuinely tight prompt — no filler, no repetition, nothing to merge —
+    // is the only kind that may be called concise.
     await typeInto(page, editor, 'Summarize this in three bullets.');
     await page.waitForTimeout(1200);
     const short = await page.locator('#pf-assistant-root #headline').textContent();
-    check('short prompts report "Already concise"', /concise/i.test(short), short);
+    check('a genuinely tight prompt reports "Already concise"', /concise/i.test(short), short);
+
+    // …and a padded one never does, however short it is. This is the regression
+    // the aggressive-compression rebuild exists to prevent.
+    await typeInto(page, editor,
+      'Hi! I was wondering if you could please, if it is not too much trouble, basically just help me write a summary? It is very important that you keep it short. Please make sure that you keep it short.');
+    await page.waitForTimeout(1300);
+    const padded = await page.locator('#pf-assistant-root #headline').textContent();
+    check('a padded prompt is never called concise', !/concise/i.test(padded) && /save/i.test(padded), padded);
+
+    // The model is named in the popup, and switching it mid-draft updates the
+    // popup in place — no reload, no reopen, no second popup, prompt untouched.
+    const pillName = page.locator('#pf-assistant-root #model-name');
+    check('the popup names the selected model',
+      (await pillName.textContent()).includes('GPT-5.6 Sol'), await pillName.textContent());
+
+    const draftBefore = await readComposer(page, editor);
+    await page.click('#devbar button:nth-child(5)');           // switch model
+    await page.waitForTimeout(1400);
+    check('a model switch updates the popup without a reload',
+      (await pillName.textContent()).includes('GPT-5.6 Luna'), await pillName.textContent());
+    check('a model switch leaves the prompt alone', await readComposer(page, editor) === draftBefore);
+    check('a model switch creates no second popup',
+      await page.locator('#pf-assistant-root').count() === 1);
+
+    await page.click('#devbar button:nth-child(6)');           // Auto
+    await page.waitForTimeout(1400);
+    const autoPill = await pillName.textContent();
+    check('Auto is shown as Auto and never resolved into a model name',
+      /^Auto/.test(autoPill) && !/Sol|Terra|Luna/.test(autoPill), autoPill);
+    await page.click('#devbar button:nth-child(6)');           // back to a real model
+    await page.waitForTimeout(1200);
 
     await typeInto(page, editor, CODE_PROMPT);
     await page.waitForTimeout(1300);

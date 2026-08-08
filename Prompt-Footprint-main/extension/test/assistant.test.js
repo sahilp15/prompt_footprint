@@ -646,3 +646,263 @@ test('dark and light are followed from the page, not the OS', { skip: !dom.avail
     page.restore();
   }
 });
+
+// ── Model display and live switching ───────────────────────────────────────
+// The assistant never queries the page for a model; it is handed one and told
+// when it changes. These tests drive that seam directly, which is also how the
+// content script drives it.
+
+const PRESENT = require('../lib/models/present.js');
+const MODEL_OBS = require('../lib/models/observation.js');
+
+function obs(partial) {
+  return MODEL_OBS.emptyObservation({ provider: 'openai', routing: 'fixed', ...partial });
+}
+
+const SOL = obs({ canonicalModel: 'gpt-5.6-sol', selectedLabel: 'GPT-5.6 Sol', tier: 'flagship', reasoningMode: 'high', reasoningLabel: 'Thinking · High' });
+const TERRA = obs({ canonicalModel: 'gpt-5.6-terra', selectedLabel: 'GPT-5.6 Terra', tier: 'balanced' });
+const LUNA = obs({ canonicalModel: 'gpt-5.6-luna', selectedLabel: 'GPT-5.6 Luna', tier: 'efficient' });
+
+/** Boot with model detection wired the way content.js wires it. */
+async function bootWithModel(initial) {
+  let publish = null;
+  const booted = await boot({
+    deps: {
+      present: PRESENT,
+      getModel: () => initial,
+      subscribeModel: (fn) => { publish = fn; return () => { publish = null; }; },
+    },
+  });
+  return { ...booted, publish: (next) => publish && publish(next) };
+}
+
+test('the popup names the selected model and its reasoning level', { skip: !dom.available }, async () => {
+  const { page, instance } = await bootWithModel(SOL);
+  try {
+    assert.strictEqual(instance.modelPill, 'GPT-5.6 Sol · Thinking · High');
+    const pill = instance.shadow.getElementById('model-pill');
+    assert.strictEqual(pill.hidden, false);
+    assert.strictEqual(instance.shadow.getElementById('model-name').textContent,
+      'GPT-5.6 Sol · Thinking · High');
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('switching model mid-draft updates the popup without a reload or a reopen',
+  { skip: !dom.available }, async () => {
+    const { page, instance, composerEl, publish } = await bootWithModel(LUNA);
+    try {
+      type(page, composerEl, VERBOSE_PROMPT);
+      await page.tick(900);
+      assert.strictEqual(instance.state, 'available');
+      assert.strictEqual(instance.modelPill, 'GPT-5.6 Luna');
+      const hostBefore = instance.host;
+
+      // The user switches to Sol without touching the prompt.
+      publish(SOL);
+      await page.tick(900);
+
+      assert.strictEqual(instance.modelPill, 'GPT-5.6 Sol · Thinking · High');
+      assert.strictEqual(instance.model.canonicalModel, 'gpt-5.6-sol');
+      assert.strictEqual(instance.state, 'available', 'the result is still there');
+      assert.strictEqual(instance.host, hostBefore, 'the popup was not torn down and rebuilt');
+      assert.strictEqual(page.document.querySelectorAll('#pf-assistant-root').length, 1,
+        'no duplicate popup');
+      assert.strictEqual(composerEl.textContent.includes('Northwind'), true,
+        'the prompt was never touched');
+    } finally {
+      instance.destroy();
+      page.restore();
+    }
+  });
+
+test('a model change while the panel is expanded keeps it expanded and re-optimizes',
+  { skip: !dom.available }, async () => {
+    const { page, instance, composerEl, publish } = await bootWithModel(TERRA);
+    try {
+      type(page, composerEl, VERBOSE_PROMPT);
+      await page.tick(900);
+      instance.setExpanded(true);
+      assert.strictEqual(instance.expanded, true);
+      const before = instance.optimized;
+
+      publish(LUNA);
+      await page.tick(900);
+
+      assert.strictEqual(instance.expanded, true, 'the panel must not close under the user');
+      assert.strictEqual(instance.modelPill, 'GPT-5.6 Luna');
+      assert.ok(instance.result, 're-analysis produced a result');
+      assert.ok(typeof instance.optimized === 'string' && instance.optimized.length > 0);
+      // Whatever the model, the requirements survive.
+      assert.match(instance.optimized, /Northwind Logistics/);
+      assert.match(instance.optimized, /200 words/);
+      assert.match(instance.optimized, /\bDo not\b/i);
+      assert.ok(before.length > 0);
+    } finally {
+      instance.destroy();
+      page.restore();
+    }
+  });
+
+test('an unrecognised model is shown by name, never hedged', { skip: !dom.available }, async () => {
+  const nimbus = obs({ selectedLabel: 'GPT-7.2 Nimbus', source: 'picker-label' });
+  const { page, instance } = await bootWithModel(nimbus);
+  try {
+    assert.strictEqual(instance.modelPill, 'GPT-7.2 Nimbus');
+    for (const bad of [/probably/i, /maybe/i, /unknown/i, /not sure/i]) {
+      assert.ok(!bad.test(instance.modelPill), instance.modelPill);
+    }
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('Auto is shown as Auto and never resolved into a model name', { skip: !dom.available }, async () => {
+  const auto = obs({ routing: 'auto', selectedLabel: 'Auto', canonicalModel: null });
+  const { page, instance } = await bootWithModel(auto);
+  try {
+    assert.match(instance.modelPill, /^Auto/);
+    assert.ok(!/Sol|Terra|Luna/.test(instance.modelPill), instance.modelPill);
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('no model detected means no pill, not a guessed one', { skip: !dom.available }, async () => {
+  const { page, instance } = await bootWithModel(null);
+  try {
+    assert.strictEqual(instance.shadow.getElementById('model-pill').hidden, true);
+    assert.strictEqual(instance.modelPill, '');
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+// ── The savings display and the ledger ─────────────────────────────────────
+
+test('the panel shows before, after, removed, and percent', { skip: !dom.available }, async () => {
+  const { page, instance, composerEl } = await bootWithModel(SOL);
+  try {
+    type(page, composerEl, VERBOSE_PROMPT);
+    await page.tick(900);
+    instance.setExpanded(true);
+
+    const headline = instance.shadow.getElementById('savings-headline').textContent;
+    const detail = instance.shadow.getElementById('savings-detail').textContent;
+    const a = instance.analytics;
+    assert.ok(headline.includes(String(a.originalTokens)), headline);
+    assert.ok(headline.includes(String(a.optimizedTokens)), headline);
+    assert.match(detail, new RegExp(`${a.tokensSaved} input tokens? removed`));
+    assert.match(detail, new RegExp(`${Math.round(a.percentReduction)}% shorter`));
+    assert.match(detail, /GPT-5\.6 Sol/, 'the figure is tied to the model it is for');
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('the panel lists what was removed and what was preserved', { skip: !dom.available }, async () => {
+  const { page, instance, composerEl } = await bootWithModel(SOL);
+  try {
+    type(page, composerEl, VERBOSE_PROMPT);
+    await page.tick(900);
+    instance.setExpanded(true);
+
+    assert.strictEqual(instance.shadow.getElementById('ledger').hidden, false);
+    const removed = instance.shadow.getElementById('ledger-removed').textContent;
+    const preserved = instance.shadow.getElementById('ledger-preserved').textContent;
+    assert.ok(removed.length > 0, 'the removed column must say what went');
+    assert.match(preserved, /requirement/i);
+    assert.ok(!/not verified/.test(preserved), 'this result passed validation');
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+test('the environmental figures are three separate claims, never one', { skip: !dom.available }, async () => {
+  const EST = require('../lib/estimator.js');
+  const estimate = EST.estimate({ provider: 'openai', selectedModel: 'gpt-5.6-sol', inputTokens: 200, phase: 'draft' });
+  const { page, instance, composerEl } = await boot({
+    deps: {
+      present: PRESENT,
+      getModel: () => SOL,
+      subscribeModel: () => () => {},
+      projectSavings: (from, to) => {
+        const p = EST.projectInputSavings({ estimate, originalInputTokens: from, optimizedInputTokens: to, phase: 'draft' });
+        return {
+          inputProcessing: EST.formatPercentRange(p.inputProcessingPct),
+          formatted: EST.formatPercentRange(p.totalReductionPct),
+          energy: p.energySavedWh,
+        };
+      },
+    },
+  });
+  try {
+    type(page, composerEl, VERBOSE_PROMPT);
+    await page.tick(900);
+    instance.setExpanded(true);
+
+    const metrics = instance.shadow.getElementById('metrics').textContent;
+    assert.match(metrics, /Input tokens reduced/);
+    assert.match(metrics, /Est\. input-processing reduction/);
+    assert.match(metrics, /Projected total interaction/);
+    // The token reduction and the interaction reduction must be DIFFERENT
+    // numbers on screen — that difference is the whole methodological point.
+    const tokenPct = `${Math.round(instance.analytics.percentReduction)}%`;
+    const rows = metrics.split(/(?=Original|Optimized|Input|Est\.|Projected)/);
+    const interaction = rows.find((r) => r.startsWith('Projected total interaction')) || '';
+    assert.ok(!interaction.includes(tokenPct) || /–/.test(interaction),
+      'the interaction figure must be a range, not the token percentage repeated');
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+// ── The concise decision, end to end ───────────────────────────────────────
+
+test('a bloated prompt is never called concise by the popup', { skip: !dom.available }, async () => {
+  const { page, instance, composerEl } = await bootWithModel(SOL);
+  try {
+    type(page, composerEl, 'Hi! Could you please, if it is not too much trouble, basically just help me write a summary? I would really like you to make sure that you keep it short. It is very important that you keep it short.');
+    await page.tick(900);
+    assert.strictEqual(instance.state, 'available');
+    assert.ok(instance.analytics.percentReduction > 25,
+      `expected a substantial reduction, got ${instance.analytics.percentReduction}`);
+    assert.strictEqual(instance.result.concision.concise, false);
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});
+
+// ── Debug panel ────────────────────────────────────────────────────────────
+
+test('the model-detection debug panel is off by default and opt-in', { skip: !dom.available }, async () => {
+  const { page, instance } = await bootWithModel(SOL);
+  try {
+    instance.setExpanded(true);
+    assert.strictEqual(instance.shadow.getElementById('debug').hidden, true);
+
+    await instance.applySettings({ ...instance.settings, debugPanel: true });
+    instance.setExpanded(false);
+    instance.setExpanded(true);
+
+    const debug = instance.shadow.getElementById('debug');
+    assert.strictEqual(debug.hidden, false);
+    const text = debug.textContent;
+    for (const field of ['Provider', 'Product', 'Canonical', 'Reasoning (class)', 'Detection source', 'Verified', 'Signals']) {
+      assert.ok(text.includes(field), `debug panel is missing "${field}"`);
+    }
+    assert.match(text, /gpt-5\.6-sol/);
+  } finally {
+    instance.destroy();
+    page.restore();
+  }
+});

@@ -31,6 +31,26 @@
     '[data-radix-menu-content] [role="menuitemradio"]',
   ];
 
+  /**
+   * Controls that describe HOW HARD the model thinks, not WHICH model it is.
+   *
+   * ChatGPT has surfaced this as a submenu under the model picker, as a chip
+   * beside the composer, and as rows inside the picker itself, so this is a list
+   * of shapes rather than one selector. Read separately from the model, because
+   * "GPT-5.6 Sol on Instant" and "GPT-5.6 Sol on Thinking" are the same model
+   * and — per the environmental spec — potentially an order of magnitude apart
+   * in energy.
+   */
+  const REASONING_SELECTORS = [
+    '[data-testid*="reasoning" i]',
+    '[data-testid*="thinking" i]',
+    '[data-testid*="effort" i]',
+    'button[aria-label*="reasoning" i]',
+    'button[aria-label*="thinking" i]',
+    'button[aria-label*="effort" i]',
+    '[role="menuitemradio"][aria-label*="thinking" i]',
+  ];
+
   const COMPOSER_SELECTORS = [
     '#prompt-textarea',
     'form[data-type="unified-composer"] [contenteditable="true"]',
@@ -85,7 +105,14 @@
 
     findModelControls(scope) {
       const doc = scope || document;
-      return SH.queryAll(doc, PICKER_SELECTORS).concat(SH.queryAll(doc, MENU_SELECTORS));
+      return SH.queryAll(doc, PICKER_SELECTORS)
+        .concat(SH.queryAll(doc, MENU_SELECTORS))
+        .concat(SH.queryAll(doc, REASONING_SELECTORS));
+    },
+
+    /** The thinking/effort setting, read independently of the model. */
+    readReasoning(scope) {
+      return SH.readReasoningControl(scope || document, REASONING_SELECTORS, MENU_SELECTORS, 'openai');
     },
 
     /** The smallest stable ancestors worth watching for model/mode changes. */
@@ -165,6 +192,7 @@
         surface: this.readSurface(doc, url),
         tools: this.readToolModes(doc),
         conversationKey: this.readConversationKey(url),
+        reasoning: this.readReasoning(doc),
         effectiveModel: o.effectiveModel || null,
         now: o.now,
       });

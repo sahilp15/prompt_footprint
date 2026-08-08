@@ -153,6 +153,85 @@ const GEMINI_GEM = `<!doctype html><html><body>
   </main>
 </body></html>`;
 
+
+// ── Reasoning / thinking controls ──────────────────────────────────────────
+// The thinking setting is a SEPARATE control from the model, and every product
+// puts it somewhere different. These fixtures pin the three shapes that matter:
+// a composer-adjacent chip, a submenu row inside the open model picker, and a
+// picker label that names a mode rather than a model.
+
+const CHATGPT_THINKING_HIGH = `<!doctype html><html><body>
+  <div id="page-header">
+    <button data-testid="model-switcher-dropdown-button">GPT-5.6 Sol</button>
+    <button data-testid="reasoning-effort-button" aria-label="Reasoning effort">Thinking · High</button>
+  </div>
+  <main><form data-type="unified-composer">
+    <div contenteditable="true" id="prompt-textarea"></div>
+  </form></main>
+</body></html>`;
+
+const CHATGPT_INSTANT = `<!doctype html><html><body>
+  <div id="page-header">
+    <button data-testid="model-switcher-dropdown-button">GPT-5.6 Luna</button>
+    <button data-testid="reasoning-effort-button" aria-label="Thinking mode">Instant</button>
+  </div>
+  <main><form data-type="unified-composer">
+    <div contenteditable="true" id="prompt-textarea"></div>
+  </form></main>
+</body></html>`;
+
+// The effort submenu is open. The selected row is the answer; the model picker
+// still shows the model, and neither may be read as the other.
+const CHATGPT_EFFORT_MENU = `<!doctype html><html><body>
+  <div id="page-header">
+    <button data-testid="model-switcher-dropdown-button">GPT-5.6 Terra</button>
+  </div>
+  <div role="menu" data-state="open">
+    <div role="menuitemradio" aria-checked="false">Instant</div>
+    <div role="menuitemradio" aria-checked="false">Thinking</div>
+    <div role="menuitemradio" aria-checked="true">Max</div>
+  </div>
+  <main><form data-type="unified-composer">
+    <div contenteditable="true" id="prompt-textarea"></div>
+  </form></main>
+</body></html>`;
+
+const CHATGPT_PRO = `<!doctype html><html><body>
+  <div id="page-header">
+    <button data-testid="model-switcher-dropdown-button">GPT-5.6 Sol</button>
+    <button data-testid="reasoning-effort-button" aria-label="Reasoning">Pro</button>
+  </div>
+  <main><form data-type="unified-composer">
+    <div contenteditable="true" id="prompt-textarea"></div>
+  </form></main>
+</body></html>`;
+
+const CLAUDE_EFFORT_LOW = `<!doctype html><html><body>
+  <header><button data-testid="model-selector-dropdown">Claude Sonnet 5</button></header>
+  <fieldset>
+    <div contenteditable="true" class="ProseMirror"></div>
+    <button data-testid="effort-selector" aria-label="Effort: low">Low</button>
+  </fieldset>
+</body></html>`;
+
+const CLAUDE_FABLE_ADAPTIVE = `<!doctype html><html><body>
+  <header><button data-testid="model-selector-dropdown">Claude Fable 5</button></header>
+  <fieldset>
+    <div contenteditable="true" class="ProseMirror"></div>
+    <button data-testid="effort-selector" aria-label="Effort">Off</button>
+  </fieldset>
+</body></html>`;
+
+const GEMINI_DEEP_THINK_MODE = `<!doctype html><html><body>
+  <main>
+    <div class="input-area">
+      <rich-textarea><div class="ql-editor" contenteditable="true"></div></rich-textarea>
+      <button data-test-id="bard-mode-menu-button">Gemini 3.1 Pro</button>
+      <button data-test-id="thinking-toggle" aria-label="Deep Think">Deep Think</button>
+    </div>
+  </main>
+</body></html>`;
+
 module.exports = {
   CHATGPT_MENU_CLOSED,
   CHATGPT_MENU_OPEN,
@@ -166,4 +245,11 @@ module.exports = {
   GEMINI_COMPOSER,
   GEMINI_MENU_OPEN,
   GEMINI_GEM,
+  CHATGPT_THINKING_HIGH,
+  CHATGPT_INSTANT,
+  CHATGPT_EFFORT_MENU,
+  CHATGPT_PRO,
+  CLAUDE_EFFORT_LOW,
+  CLAUDE_FABLE_ADAPTIVE,
+  GEMINI_DEEP_THINK_MODE,
 };

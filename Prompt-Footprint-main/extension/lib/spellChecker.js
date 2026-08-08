@@ -19,9 +19,9 @@
 (function (root) {
   'use strict';
 
-  const _O = (typeof PFPromptOptimizer !== 'undefined')
-    ? PFPromptOptimizer
-    : require('./promptOptimizer.js');
+  const _O = (typeof PFWritingLexicon !== 'undefined')
+    ? PFWritingLexicon
+    : require('./writingLexicon.js');
 
   // Resolve the Typo constructor (browser global from vendor/typo.js, or npm in
   // Node tests). Returns null if unavailable so callers degrade gracefully.

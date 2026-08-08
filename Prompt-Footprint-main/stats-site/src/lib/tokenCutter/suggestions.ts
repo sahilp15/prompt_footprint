@@ -14,17 +14,21 @@
 // optimization level.
 
 import type {
-  Constraint, OptimizationLevel, ProtectedSpan, Segment, Suggestion,
+  Constraint, OptimizationLevel, ProtectedSpan, Segment, Suggestion, TargetModel,
 } from './types.ts'
 import type { RawEdit } from './grammar.ts'
 import {
-  findCapitalizationEdits, findGrammarEdits, findSpellingEdits, findWhitespaceEdits,
+  findCapitalizationEdits, findGrammarEdits, findRequestPunctuation, findSpellingEdits,
+  findWhitespaceEdits,
 } from './grammar.ts'
 import {
-  findAmbiguity, findDuplicateSegments, findMergeableSentences,
-  findRedundantExamples, findRestatedConstraints,
+  findAmbiguity, findDuplicateSegments, findMergeableSentences, findParallelImperatives,
+  findRedundantClauses, findRedundantExamples, findRedundantJustifications,
+  findRestatedConstraints,
 } from './redundancy.ts'
-import { ALL_LEXICON_RULES, MEANING_ANCHORS, TONE_WORDS } from './lexicon.ts'
+import {
+  ALL_LEXICON_RULES, CONSTRAINT_AWARE_CATEGORIES, MEANING_ANCHORS, TONE_WORDS,
+} from './lexicon.ts'
 import { buildProtectionMask, maskOverlaps } from './protect.ts'
 import { NEGATION_WORDS, countNegations } from './entities.ts'
 import { estimateTokens } from './tokens.ts'
@@ -43,11 +47,6 @@ function negationCount(text: string): number {
   let total = 0
   for (const n of countNegations(text).values()) total += n
   return total
-}
-
-/** Words around an edit, used by the context vetoes. */
-function neighborhood(text: string, start: number, end: number, radius = 40): string {
-  return text.slice(Math.max(0, start - radius), Math.min(text.length, end + radius)).toLowerCase()
 }
 
 /**
@@ -76,13 +75,19 @@ function fillerIsMeaningful(text: string, start: number, end: number): boolean {
   const nextWord = (after.trim().split(/\s+/)[0] || '').replace(/[^a-z]/g, '')
   if (TONE_WORDS.has(nextWord)) return true
 
-  // Anything adjacent to an explicit meaning anchor gets the benefit of doubt.
-  const ctx = neighborhood(text, start, end, 18)
-  for (const anchor of MEANING_ANCHORS) {
-    if (new RegExp(`\\b${anchor}\\b`).test(ctx) && ctx.indexOf(anchor) < ctx.length / 2) {
-      // Only vetoes when the anchor is genuinely before the word.
-      if (word === 'very' || word === 'quite' || word === 'really' || word === 'just') return true
-    }
+  // An explicit meaning anchor IMMEDIATELY around the word makes it load-bearing
+  // ("not just the summary", "only very short answers").
+  //
+  // This used to scan a 36-character window, which meant any "not" anywhere in
+  // the clause vetoed every intensifier after it: "do not give me a really long
+  // response" kept "really" because of a "not" five words earlier. The window is
+  // now one word on each side, which is the case the rule was written for.
+  if (word === 'very' || word === 'quite' || word === 'really' || word === 'just') {
+    const prevWords = before.trim().split(/\s+/)
+    const nextWords = after.trim().split(/\s+/)
+    const adjacent = [prevWords[prevWords.length - 1] || '', nextWords[0] || '']
+      .map((w) => w.replace(/[^a-z']/g, ''))
+    if (adjacent.some((w) => MEANING_ANCHORS.has(w))) return true
   }
   return false
 }
@@ -92,13 +97,19 @@ function lexiconEdits(text: string): RawEdit[] {
   const edits: RawEdit[] = []
   for (const r of ALL_LEXICON_RULES) {
     const re = new RegExp(r.pattern.source, r.pattern.flags.includes('g') ? r.pattern.flags : `${r.pattern.flags}g`)
+    // A rule may keep part of what it matched ("very important" -> "important").
+    // Expanding the reference against the matched text — rather than against the
+    // whole prompt — keeps the edit local and its offsets exact.
+    const expand = r.replacement.includes('$')
+      ? new RegExp(r.pattern.source, r.pattern.flags.replace(/g/g, ''))
+      : null
     let m: RegExpExecArray | null
     while ((m = re.exec(text)) !== null) {
       if (m[0].length === 0) { re.lastIndex += 1; continue }
       edits.push({
         start: m.index,
         end: m.index + m[0].length,
-        replacement: r.replacement,
+        replacement: expand ? m[0].replace(expand, r.replacement) : r.replacement,
         category: r.category,
         title: r.title,
         reason: r.reason,
@@ -213,7 +224,7 @@ export function generateSuggestions(input: GenerateInput): Suggestion[] {
     : buildProtectionMask(text.length, protectedSpans.filter((s) => !SOFT.has(s.kind)))
 
   const STRUCTURAL: ReadonlySet<string> = new Set([
-    'repeated-instruction', 'redundant-example', 'sentence-merge',
+    'repeated-instruction', 'redundant-example', 'sentence-merge', 'meta-commentary',
   ])
 
   const raw: RawEdit[] = [
@@ -221,11 +232,15 @@ export function generateSuggestions(input: GenerateInput): Suggestion[] {
     ...findSpellingEdits(text),
     ...findGrammarEdits(text),
     ...findCapitalizationEdits(text),
+    ...findRequestPunctuation(text),
     ...lexiconEdits(text),
     ...findDuplicateSegments(segments, text),
+    ...findRedundantClauses(segments, constraints),
+    ...findRedundantJustifications(segments, constraints, text),
     ...findRestatedConstraints(segments, constraints, text),
     ...findRedundantExamples(segments, text),
     ...findMergeableSentences(segments),
+    ...findParallelImperatives(segments),
   ]
 
   const advisory = findAmbiguity(segments)
@@ -251,10 +266,10 @@ export function generateSuggestions(input: GenerateInput): Suggestion[] {
     // lets that phrase legitimately shorten to "whether".
     if (negationCount(original) > negationCount(edit.replacement)) continue
 
-    // Veto 3 — never damage a constraint. Duplicate-constraint removals are
-    // exempt: they are *about* constraints and the validator re-checks the key.
-    const isConstraintAware =
-      edit.category === 'repeated-instruction' || edit.category === 'sentence-merge'
+    // Veto 3 — never damage a constraint. Deduplication and wrapper collapse are
+    // exempt: they are *about* constraints, they leave the payload in place, and
+    // the validator re-checks the key afterwards.
+    const isConstraintAware = CONSTRAINT_AWARE_CATEGORIES.has(edit.category)
     if (!isConstraintAware && edit.replacement === '') {
       const damages = constraints.some((c) => edit.start < c.end && edit.end > c.start)
       if (damages) continue
@@ -319,14 +334,80 @@ export function generateSuggestions(input: GenerateInput): Suggestion[] {
 }
 
 /**
+ * Confidence floor for auto-applying an edit, per level.
+ *
+ * This is the single number that decides how aggressive the optimizer is, and
+ * the old policy — "apply only edits scoring ≥ 0.85" at every level — is why
+ * Balanced and Maximum produced nearly identical, nearly unchanged text. The
+ * detectors were finding the repetition and the wrappers; the acceptance rule
+ * was throwing almost all of it away, and the result was reported as "Already
+ * concise".
+ *
+ * Being aggressive here is safe because it is not the last word: everything
+ * applied is re-checked by the validator against the original, and any edit
+ * that actually lost information is rolled back individually.
+ */
+const ACCEPT_FLOOR: Record<OptimizationLevel, number> = {
+  light: 0.85,      // only what cannot change meaning at all
+  balanced: 0.7,    // strong compression, still natural to read
+  maximum: 0.55,    // everything the detectors are more than half sure of
+}
+
+/**
+ * Model-awareness, and the only place the target model influences anything.
+ *
+ * A dense, telegraphic prompt is read correctly by a current frontier model and
+ * is a real risk with one we cannot identify — so an unrecognised or efficiency
+ * -tier target keeps a little more explicit structure by holding the two
+ * *rewriting* categories (sentence merging, wrapper collapse) to a higher bar.
+ * Deletions of filler and repetition are unaffected: those do not make a prompt
+ * harder to read for anyone.
+ */
+function floorFor(
+  suggestion: Suggestion,
+  level: OptimizationLevel,
+  target: TargetModel | null | undefined,
+): number {
+  const base = ACCEPT_FLOOR[level]
+  const restructures = suggestion.category === 'sentence-merge' ||
+    suggestion.category === 'instruction-collapse'
+  // Light already refuses everything not marked meaning-preserving, so there is
+  // nothing left for the model nudge to protect against — applying it there only
+  // made Light quieter than it was before.
+  if (!restructures || level === 'light') return base
+  // A nudge, not a veto. Making the unknown-model case a hard 0.8 floor would
+  // mean the chosen level stopped deciding anything for these categories, which
+  // is not what "consider the target model" should buy: the user picked Maximum,
+  // and an unidentified model is a reason to be slightly choosier, not to
+  // silently behave like Light.
+  if (!target || !target.known) return base + 0.08
+  if (target.tier === 'efficient') return base + 0.05
+  return base
+}
+
+export interface DefaultAcceptOptions {
+  targetModel?: TargetModel | null
+}
+
+/**
  * Which suggestions are accepted before the user touches anything.
  *
- * Only `safe` edits at or below the chosen level, and never an advisory note.
- * Low-confidence changes are always presented, never pre-applied — the user
- * stays in control of anything the system is not sure about.
+ * Advisory notes never are — they carry no edit. Everything else is judged on
+ * its score against the level's floor.
  */
-export function defaultAcceptedIds(suggestions: Suggestion[], level: OptimizationLevel): string[] {
+export function defaultAcceptedIds(
+  suggestions: Suggestion[],
+  level: OptimizationLevel,
+  options: DefaultAcceptOptions = {},
+): string[] {
   return suggestions
-    .filter((s) => !s.advisory && s.safe && s.confidence !== 'low' && levelAllows(level, s.minLevel))
+    .filter((s) => {
+      if (s.advisory) return false
+      if (!levelAllows(level, s.minLevel)) return false
+      // Light is the "keep my voice" tier: it applies only edits the rule set
+      // marks as unable to change meaning, regardless of score.
+      if (level === 'light' && !s.safe) return false
+      return s.score >= floorFor(s, level, options.targetModel)
+    })
     .map((s) => s.id)
 }
