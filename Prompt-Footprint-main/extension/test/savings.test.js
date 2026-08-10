@@ -1,8 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const O = require('../lib/promptOptimizer.js');
+const O = require('../lib/writingLexicon.js');
 const S = require('../lib/spellChecker.js');
 const Storage = require('../lib/storage.js');
+const { estimateTokens } = require('../lib/tokenEstimator.js');
+const { calculateImpact } = require('../lib/environmentalModel.js');
 
 // In-memory chrome.storage.local mock so storage.js's addSavings/getSavings
 // (which the dashboard's Savings tab and the content script both read/write
@@ -34,15 +36,30 @@ function installChromeMock() {
   return backing;
 }
 
-// Mirrors content.js's applyWritingText(): apply a suggestion, compute
-// savings, and only record them if the text actually changed and the
-// savings are non-trivial — the same guard that prevents double-counting
-// when the same suggestion is "accepted" again after it no longer applies.
+// Apply a suggestion, compute the token delta, and only record it if the text
+// actually changed and the saving is non-trivial — the guard that prevents
+// double-counting when the same suggestion is "accepted" again after it no
+// longer applies.
+//
+// The delta is computed here rather than by a helper in the lexicon module: the
+// lexicon describes words, and the one thing allowed to turn a text change into
+// a resource figure is the estimator.
+function tokenDelta(beforeText, afterText, platform) {
+  const savedTokens = Math.max(0, estimateTokens(beforeText) - estimateTokens(afterText));
+  const impact = calculateImpact(savedTokens, { platform: platform || 'chatgpt' });
+  return {
+    savedTokens,
+    savedEnergyWh: impact.energyWh,
+    savedWaterMl: impact.waterMl,
+    savedCo2G: impact.co2G,
+  };
+}
+
 async function simulateAccept(beforeText, sug, platform) {
   const afterText = S.applyOne(beforeText, sug);
   if (afterText === beforeText) return afterText; // no-op guard
-  const s = O.savings(beforeText, afterText, platform);
-  if (s.changed && s.savedTokens >= 1) await Storage.addSavings(s);
+  const s = tokenDelta(beforeText, afterText, platform);
+  if (s.savedTokens >= 1) await Storage.addSavings(s);
   return afterText;
 }
 

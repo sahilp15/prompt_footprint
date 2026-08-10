@@ -18,6 +18,7 @@
   'use strict';
 
   const _Cat = (typeof PFModelCatalog !== 'undefined') ? PFModelCatalog : require('./catalog.js');
+  const _R = (typeof PFReasoning !== 'undefined') ? PFReasoning : require('./reasoning.js');
 
   // ── Scoring ──────────────────────────────────────────────────────────────
 
@@ -93,6 +94,9 @@
       family: null,
       tier: null,
       reasoningMode: null,
+      /** The reasoning control's own label, verbatim. Null when none was found. */
+      reasoningLabel: null,
+      reasoningSource: null,
       routing: 'unknown',
       effectiveModel: null,
       tools: [],
@@ -103,6 +107,91 @@
       conversationKey: null,
       generation: 0,
       ...(partial || {}),
+    };
+  }
+
+  // ── The normalized cross-provider record ─────────────────────────────────
+
+  const PRODUCT_BY_PROVIDER = {
+    openai: 'chatgpt',
+    anthropic: 'claude',
+    google: 'gemini',
+  };
+
+  /**
+   * Detection sources we are prepared to call VERIFIED.
+   *
+   * Verified means: the product itself told us, in a control that describes the
+   * present state — the row it marked as current, or the label on the picker
+   * that opens it. A provider default is not verification, and neither is a
+   * label we merely found somewhere on the page.
+   */
+  const VERIFIED_SOURCES = new Set(['selected-menu-item', 'picker-label', 'response-metadata']);
+
+  /**
+   * Project an observation onto the shape every consumer speaks.
+   *
+   * The three separations this preserves are the whole point:
+   *
+   *   selectedLabel vs canonicalModelId — what the UI showed vs what we mapped
+   *     it to. An unmapped label keeps its label and gets a null id; it is never
+   *     rounded to the nearest flagship.
+   *
+   *   selectedModel vs effectiveModel — the user's choice vs the model that
+   *     actually served a response. Under Auto the first is "auto" and the
+   *     second is null unless the provider exposed it. They never merge.
+   *
+   *   verified vs confident — whether the product told us, and how sure we are
+   *     of the footprint. Those are different questions with different answers:
+   *     a brand-new model can be verified and still have a fallback estimate.
+   */
+  function toDetectedModel(observation, extra) {
+    const o = observation || {};
+    const x = extra || {};
+    const meta = o.canonicalModel ? _Cat.modelMeta(o.provider, o.canonicalModel) : null;
+    const reasoning = _R.describe(o, x.reasoningLabel);
+
+    return {
+      provider: o.provider || 'unknown',
+      product: PRODUCT_BY_PROVIDER[o.provider] || 'unknown',
+      surface: o.surface || 'unknown',
+
+      // Exactly the string the product rendered, unedited.
+      selectedLabel: o.selectedLabel || null,
+      canonicalModelId: o.canonicalModel || null,
+
+      family: (meta && meta.family) || o.family || null,
+      variant: meta && meta.label && meta.family
+        ? meta.label.replace(new RegExp(`^${meta.family.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i'), '').trim() || null
+        : null,
+      tier: (meta && meta.tier) || o.tier || null,
+
+      // "auto" is a selection, not a model. Recorded as such.
+      selectedMode: o.routing === 'auto' ? 'auto' : 'fixed',
+      routing: o.routing || 'unknown',
+      effectiveModel: o.effectiveModel || null,
+
+      reasoningModeLabel: reasoning.reasoningModeLabel,
+      reasoningEffortLabel: reasoning.reasoningEffortLabel,
+      reasoningMode: reasoning.reasoningMode,
+      reasoningClass: reasoning.reasoningClass,
+      reasoningLockedBy: reasoning.lockedBy,
+
+      tools: (o.tools || []).slice(),
+
+      detectionSource: o.source || 'unknown',
+      verified: VERIFIED_SOURCES.has(o.source) && !!o.selectedLabel,
+      /** True when the label is real but the catalog has no entry for it. */
+      unmapped: !!o.selectedLabel && !o.canonicalModel && o.routing !== 'auto',
+      /** Detection confidence — NOT the estimate's confidence. */
+      confidence: o.confidence != null ? o.confidence : 0,
+      /** Set when the environmental estimate is provider-level, not model-level. */
+      estimateBasis: o.canonicalModel || o.effectiveModel ? 'model' : 'provider-fallback',
+
+      conversationKey: o.conversationKey || null,
+      rawEvidence: (o.rawEvidence || []).slice(),
+      detectedAt: o.observedAt || Date.now(),
+      generation: o.generation || 0,
     };
   }
 
@@ -274,6 +363,9 @@
     MODEL_TERMS,
     UNRELATED_TERMS,
     IDENTITY_FIELDS,
+    PRODUCT_BY_PROVIDER,
+    VERIFIED_SOURCES,
+    toDetectedModel,
     scoreCandidate,
     pickBest,
     confidenceFromScore,

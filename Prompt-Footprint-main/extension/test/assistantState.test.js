@@ -28,7 +28,15 @@ test('every state the UI declares is reachable from nextState', () => {
     analyzing: { ...ready, analyzing: true },
     typing: { ...ready, typing: true },
     available: { ...ready, analytics: { tokensSaved: 40, percentReduction: 30 } },
-    concise: { ...ready, analytics: { tokensSaved: 1, percentReduction: 1 } },
+    // "Already concise" is now a claim about the PROMPT, made by the engine, not
+    // an inference from a small saving. Below the offer floor with no assessment
+    // saying the prompt is tight, the honest answer is "marginal".
+    marginal: { ...ready, analytics: { tokensSaved: 1, percentReduction: 1 } },
+    concise: {
+      ...ready,
+      analytics: { tokensSaved: 0, percentReduction: 0 },
+      concision: { concise: true, checks: {}, reasons: [] },
+    },
   };
   for (const [expected, input] of Object.entries(cases)) {
     assert.strictEqual(S.nextState(input), expected, `expected ${expected}`);
@@ -64,17 +72,50 @@ test('a result that failed validation is never presented as available', () => {
     analytics: { tokensSaved: 90, percentReduction: 60 },
     validation: { ok: false, issues: [{ severity: 'critical', text: 'do not' }] },
   };
-  assert.strictEqual(S.nextState(input), 'concise');
+  // Not offered — and NOT called concise either, because a validation failure is
+  // a statement about the optimizer's output, not about the user's prompt.
+  assert.strictEqual(S.nextState(input), 'marginal');
 });
 
 // ── Worth offering ─────────────────────────────────────────────────────────
 
-test('only a meaningful saving is worth interrupting someone for', () => {
+test('a real saving is offered, and rounding is not', () => {
   assert.strictEqual(S.isWorthOffering({ tokensSaved: 40, percentReduction: 30 }), true);
-  assert.strictEqual(S.isWorthOffering({ tokensSaved: 2, percentReduction: 40 }), false);
+  // 2 tokens off a short prompt is a real reduction and is now offered. The old
+  // floor (4 tokens AND 4%) meant a fifth of a 25-token prompt could disappear
+  // without the assistant mentioning it.
+  assert.strictEqual(S.isWorthOffering({ tokensSaved: 2, percentReduction: 8 }), true);
+  assert.strictEqual(S.isWorthOffering({ tokensSaved: 1, percentReduction: 40 }), false);
   assert.strictEqual(S.isWorthOffering({ tokensSaved: 40, percentReduction: 1 }), false);
   assert.strictEqual(S.isWorthOffering({ tokensSaved: 0, percentReduction: 0 }), false);
   assert.strictEqual(S.isWorthOffering(null), false);
+});
+
+test('"already concise" is only ever said when the engine assessed it', () => {
+  const small = { tokensSaved: 0, percentReduction: 0 };
+  // No assessment at all: the claim is not made.
+  assert.strictEqual(S.nextState({ ...ready, analytics: small }), 'marginal');
+  assert.strictEqual(S.isGenuinelyConcise(undefined), false);
+  assert.strictEqual(S.isGenuinelyConcise(null), false);
+  // An assessment that found outstanding opportunities: still not made, even
+  // though the applied saving is zero. This is the exact bug being fixed —
+  // "nothing was applied" was being reported as "nothing was there".
+  assert.strictEqual(
+    S.nextState({ ...ready, analytics: small, concision: { concise: false, reasons: ['3 filler phrases'] } }),
+    'marginal',
+  );
+  assert.strictEqual(
+    S.nextState({ ...ready, analytics: small, concision: { concise: true, reasons: [] } }),
+    'concise',
+  );
+});
+
+test('the concise claim does not depend on prompt length', () => {
+  // A 25-token prompt CAN be concise, and a 1,000-token one can fail to be.
+  const tiny = { tokensSaved: 0, percentReduction: 0, originalTokens: 25 };
+  const huge = { tokensSaved: 1, percentReduction: 0.1, originalTokens: 1000 };
+  assert.strictEqual(S.nextState({ ...ready, analytics: tiny, concision: { concise: true } }), 'concise');
+  assert.strictEqual(S.nextState({ ...ready, analytics: huge, concision: { concise: false } }), 'marginal');
 });
 
 // ── Debounce ───────────────────────────────────────────────────────────────
@@ -137,9 +178,12 @@ test('stored preferences are read back, and nonsense falls back to defaults', ()
   });
   assert.deepStrictEqual(s, {
     enabled: false, level: 'maximum', autoAnalyze: false,
-    showImpact: false, mode: 'local', animations: false,
+    showImpact: false, mode: 'local', animations: false, debugPanel: false,
   });
   assert.strictEqual(S.readSettings({ assistantLevel: 'nuclear' }).level, 'balanced');
+  // The debug panel is opt-in, and only an explicit `true` opts in.
+  assert.strictEqual(S.readSettings({ assistantDebugPanel: 'yes' }).debugPanel, false);
+  assert.strictEqual(S.readSettings({ assistantDebugPanel: true }).debugPanel, true);
 });
 
 test('enhanced mode requires BOTH the mode choice and the cloud opt-in', () => {

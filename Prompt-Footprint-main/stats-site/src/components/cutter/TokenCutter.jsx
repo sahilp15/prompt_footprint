@@ -296,6 +296,7 @@ export default function TokenCutter() {
               <ComparisonView
                 diff={diff}
                 optimized={result.optimized}
+                refinements={result.refinements}
                 focusedId={focusedId}
                 onFocus={setFocusedId}
               />

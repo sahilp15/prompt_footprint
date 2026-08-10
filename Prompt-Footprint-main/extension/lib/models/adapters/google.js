@@ -43,6 +43,20 @@
 
   const REGION_SELECTORS = ['input-container', 'rich-textarea', 'main', 'header', '.input-area'];
 
+  /**
+   * Gemini expresses reasoning as a MODE chip next to the composer rather than
+   * as an effort scale. Deep Think is the awkward one: it is both a named model
+   * in the picker and a reasoning mode, so it is read in both places and
+   * reconciled in `refine`.
+   */
+  const REASONING_SELECTORS = [
+    '[data-test-id*="thinking" i]',
+    '[data-test-id*="reasoning" i]',
+    'button[aria-label*="thinking" i]',
+    'button[aria-label*="reasoning" i]',
+    'button[aria-label*="deep think" i]',
+  ];
+
   const TOOL_SELECTORS = [
     'toolbox-drawer button',
     'button[aria-pressed]',
@@ -80,7 +94,14 @@
 
     findModelControls(scope) {
       const doc = scope || document;
-      return SH.queryAll(doc, PICKER_SELECTORS).concat(SH.queryAll(doc, MENU_SELECTORS));
+      return SH.queryAll(doc, PICKER_SELECTORS)
+        .concat(SH.queryAll(doc, MENU_SELECTORS))
+        .concat(SH.queryAll(doc, REASONING_SELECTORS));
+    },
+
+    /** The thinking / Deep Think mode, read independently of the model. */
+    readReasoning(scope) {
+      return SH.readReasoningControl(scope || document, REASONING_SELECTORS, MENU_SELECTORS, 'google');
     },
 
     observeRoots(scope) {
@@ -155,6 +176,7 @@
         surface: this.readSurface(doc, url),
         tools: this.readToolModes(doc),
         conversationKey: this.readConversationKey(url),
+        reasoning: this.readReasoning(doc),
         effectiveModel: o.effectiveModel || null,
         now: o.now,
       });

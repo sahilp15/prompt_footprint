@@ -22,7 +22,7 @@ test('shipped dictionary accepts common words (incl. inflections from affixes)',
 });
 
 test('shipped dictionary flags a misspelling not in the curated map', () => {
-  // "occassion" is not in promptOptimizer's COMMON_TYPOS, so this exercises the
+  // "occassion" is not in the writing lexicon's COMMON_TYPOS, so this exercises the
   // real dictionary + suggestion path.
   const out = S.checkSpelling('this occassion', typo);
   const hit = out.find((s) => s.original === 'occassion');

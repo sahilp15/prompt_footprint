@@ -81,7 +81,17 @@
         <span class="bar-chevron" aria-hidden="true">${ICONS.chevron}</span>
       </div>
 
+      <div class="model-pill" id="model-pill" hidden>
+        <span class="model-dot" aria-hidden="true"></span>
+        <span class="model-name" id="model-name"></span>
+      </div>
+
       <div class="panel" id="panel" hidden>
+        <div class="savings" id="savings" hidden>
+          <div class="savings-headline" id="savings-headline"></div>
+          <div class="savings-detail" id="savings-detail"></div>
+        </div>
+
         <div class="metrics" id="metrics"></div>
 
         <div class="note" id="note" hidden></div>
@@ -98,6 +108,17 @@
         </div>
 
         <div class="explain" id="explain"></div>
+
+        <div class="ledger" id="ledger" hidden>
+          <div class="ledger-col">
+            <div class="ledger-title">Removed</div>
+            <ul class="ledger-list" id="ledger-removed"></ul>
+          </div>
+          <div class="ledger-col">
+            <div class="ledger-title">Preserved</div>
+            <ul class="ledger-list" id="ledger-preserved"></ul>
+          </div>
+        </div>
 
         <div class="preserved" id="preserved">
           <span aria-hidden="true">${ICONS.shield}</span>
@@ -136,10 +157,18 @@
             <span class="switch"><input type="checkbox" id="set-mode"><span></span></span>
           </label>
           <div class="setting-note" id="set-mode-note"></div>
+          <label class="setting">Model-detection debug panel
+            <span class="switch"><input type="checkbox" id="set-debug"><span></span></span>
+          </label>
           <div class="actions">
             <button class="act quiet" id="set-reset" type="button">Reset preferences</button>
             <button class="act quiet" id="set-off" type="button">Turn assistant off</button>
           </div>
+        </div>
+
+        <div class="debug" id="debug" hidden>
+          <div class="debug-title">Model detection</div>
+          <div class="debug-rows" id="debug-rows"></div>
         </div>
 
         <div class="foot">
@@ -171,6 +200,9 @@
    *   getConfig / setConfig   the existing pf_config layer
    *   requestEnhanced(text)   optional; resolves { text, status }
    *   onReplaced(savings)     called once per accepted replacement
+   *   getModel()              current model observation, or null
+   *   present                 PFModelPresent (model wording)
+   *   subscribeModel(fn)      registers a model-change callback; returns teardown
    */
   function createAssistant(deps) {
     const d = deps || {};
@@ -180,6 +212,11 @@
     const format = d.format;
     const log = d.log || function () {};
     const platform = d.platform || 'chatgpt';
+    // Model detection is CENTRALIZED: the assistant never queries the page for a
+    // model. It is handed an observation and told when it changes, which is what
+    // stops two components disagreeing about what is selected — and what makes
+    // the change path a single function instead of a rescan.
+    const present = d.present || null;
     // Projects avoided INPUT tokens onto the whole interaction. Without it the
     // panel can only speak in tokens: the engine's own impact figure is a
     // token-linear number, and showing it as "energy saved" would claim that
@@ -213,6 +250,9 @@
     let pendingWrite = null;          // { intended } — awaiting the editor's echo
     let driftedAt = 0;                // last refused replace, for the inline note
     let lastRenderedSaved = 0;
+    let observation = null;           // what model the page currently has selected
+    let modelPillText = '';           // last text rendered, so we only transition on change
+    let modelChangedAt = 0;           // for the debug panel's "last change"
 
     const guard = S.createRequestGuard();
     const debouncer = S.createDebouncer(() => { typing = false; analyze(); }, S.DEBOUNCE_MS);
@@ -328,6 +368,7 @@
         measure();
       });
 
+      on(el['set-debug'], 'change', () => save({ debugPanel: el['set-debug'].checked }));
       on(el['set-auto'], 'change', () => save({ autoAnalyze: el['set-auto'].checked }));
       on(el['set-impact'], 'change', () => save({ showImpact: el['set-impact'].checked }));
       on(el['set-motion'], 'change', () => save({ animations: el['set-motion'].checked }));
@@ -390,6 +431,7 @@
       el['set-auto'].checked = settings.autoAnalyze;
       el['set-impact'].checked = settings.showImpact;
       el['set-motion'].checked = settings.animations;
+      el['set-debug'].checked = settings.debugPanel;
       el['set-mode'].checked = settings.mode === 'enhanced';
       el['set-mode-note'].textContent = settings.mode === 'enhanced'
         ? 'Your prompt is sent to your configured proxy for a stronger rewrite. Local checks still validate the result.'
@@ -562,6 +604,86 @@
       else debouncer.cancel();
     }
 
+    // ── Model ───────────────────────────────────────────────────────────────
+
+    /**
+     * Adopt a new model observation.
+     *
+     * Called once at start and then only from the detector's change event —
+     * never on a timer, and never by scraping the page from here. Three things
+     * happen, in this order, and the order matters:
+     *
+     *   1. the pill updates immediately, so the user sees the switch land;
+     *   2. anything in flight is cancelled, because a result computed for the
+     *        previous model describes a model they have moved away from;
+     *   3. the prompt is re-analyzed against the new target.
+     *
+     * Step 3 is a re-analysis rather than a re-render because the target model
+     * feeds the optimizer's final readability check — a switch to a model we
+     * cannot identify legitimately produces a slightly less dense rewrite.
+     */
+    function setModel(next) {
+      if (destroyed) return;
+      const changed = !!next && (!observation ||
+        observation.canonicalModel !== next.canonicalModel ||
+        observation.selectedLabel !== next.selectedLabel ||
+        observation.reasoningMode !== next.reasoningMode ||
+        observation.routing !== next.routing);
+      observation = next || null;
+      if (!changed) { renderModel(); return; }
+
+      modelChangedAt = Date.now();
+      renderModel();
+      if (!analysis) { render(); return; }
+      guard.cancelAll();
+      analyze();
+    }
+
+    /**
+     * The optimizer's view of the target model.
+     *
+     * Only what the final readability check needs. `known` is the load-bearing
+     * field: an unmapped label is a real, named selection but not one we have
+     * calibrated compression against, so the optimizer keeps a little more
+     * explicit structure. It never changes which information survives.
+     */
+    function targetModel() {
+      if (!observation) return null;
+      const o = observation;
+      return {
+        provider: o.provider || 'unknown',
+        canonicalModel: o.canonicalModel || null,
+        label: o.selectedLabel || null,
+        tier: o.tier || null,
+        reasoningClass: o.reasoningMode || null,
+        known: !!o.canonicalModel,
+      };
+    }
+
+    /** The pill, updated in place with a subtle transition — never a toast. */
+    function renderModel() {
+      if (!el['model-pill']) return;
+      const text = present && observation ? present.pillLabel(observation) : null;
+      if (!text) {
+        el['model-pill'].hidden = true;
+        modelPillText = '';
+        return;
+      }
+      el['model-pill'].hidden = false;
+      if (text === modelPillText) return;
+      modelPillText = text;
+      el['model-name'].textContent = text;
+      // A class the stylesheet animates for one beat. Re-triggered by removing
+      // it, forcing a reflow, and re-adding — otherwise a second change inside
+      // the animation window would not play.
+      if (settings.animations) {
+        el['model-pill'].classList.remove('is-changed');
+        void el['model-pill'].offsetWidth;
+        el['model-pill'].classList.add('is-changed');
+      }
+      if (expanded && settings.debugPanel) renderDebug();
+    }
+
     // ── Analysis ────────────────────────────────────────────────────────────
 
     async function analyze() {
@@ -596,6 +718,7 @@
           level: settings.level,
           platform,
           memory: d.memory || engine.emptyMemory(),
+          targetModel: targetModel(),
         });
       } catch (err) {
         if (!guard.isCurrent(token)) return;
@@ -872,6 +995,9 @@
         mode: settings.mode,
         analytics,
         validation: analysis && analysis.validation,
+        // The engine's own assessment of whether this prompt is genuinely as
+        // short as it can usefully be. Without it, "Already concise" is not said.
+        concision: analysis && analysis.concision,
         replaced: Date.now() < successUntil,
         canUndo: !!undoRecord,
       });
@@ -881,6 +1007,12 @@
       if (!host) return;
       const next = computeState();
       uiState = next;
+
+      // The pill lives inside the host and is hidden with it, so it is kept in
+      // step even while nothing is on screen. Doing it here rather than after
+      // the visibility check means the model is already correct the moment the
+      // assistant appears, instead of showing the previous one for a frame.
+      renderModel();
 
       if (!settings.enabled || !S.isIndicatorVisible(next) ||
           (dismissedFor !== null && dismissedFor === text && next !== 'undo' && next !== 'replaced')) {
@@ -927,6 +1059,17 @@
           el.headline.textContent = 'Already concise';
           el.sub.hidden = false;
           el.sub.innerHTML = `<span class="num">${tokens}</span> tokens`;
+          break;
+        // Something IS compressible here, just not enough to interrupt for. The
+        // separate wording matters: calling this "Already concise" is what made
+        // the assistant look like it was not reading the prompt.
+        case 'marginal':
+          el.headline.textContent = saved > 0 ? 'Little left to cut' : 'Nothing worth cutting';
+          el.sub.hidden = false;
+          el.sub.innerHTML = saved > 0
+            ? `<span class="num">${tokens}</span> tokens · ${saved} removable`
+            : `<span class="num">${tokens}</span> tokens`;
+          el['quick-optimize'].hidden = expanded || saved <= 0;
           break;
         case 'replaced':
           el.headline.textContent = 'Prompt replaced';
@@ -1012,14 +1155,20 @@
       renderNote(state);
 
       if (hasResult) {
+        renderSavings();
         el.metrics.innerHTML = metricsHtml();
         el['pane-original'].textContent = analysis.original;
         el['pane-optimized'].textContent = optimizedText;
         el['count-original'].textContent = `${analytics.originalTokens} tokens`;
         el['count-optimized'].textContent = `${analytics.optimizedTokens} tokens`;
         el.explain.innerHTML = explanationHtml();
+        renderLedger();
         renderPreserved();
+      } else {
+        el.savings.hidden = true;
+        el.ledger.hidden = true;
       }
+      renderDebug();
 
       // Disabled the moment the prompt drifts from the analyzed text, so the
       // stale-replacement case is prevented rather than merely caught.
@@ -1031,20 +1180,58 @@
       measure();
     }
 
+    /**
+     * The headline reduction, in the plainest possible terms.
+     *
+     *     412 → 246 tokens
+     *     166 input tokens removed · 40% shorter
+     *
+     * Deliberately says "input tokens", not "tokens": the number is a fact about
+     * the prompt, and nothing here is allowed to imply that a 40% shorter prompt
+     * is a 40% smaller interaction. That claim, with its uncertainty, lives in
+     * the metrics grid below.
+     */
+    function renderSavings() {
+      const saved = analytics.tokensSaved || 0;
+      if (saved <= 0) { el.savings.hidden = true; return; }
+      el.savings.hidden = false;
+      el['savings-headline'].innerHTML =
+        `<span class="num was">${analytics.originalTokens}</span>` +
+        '<span class="arrow" aria-hidden="true">→</span>' +
+        `<span class="num now">${analytics.optimizedTokens}</span> tokens`;
+      const model = present && observation ? present.pillLabel(observation) : null;
+      el['savings-detail'].innerHTML =
+        `<strong>${saved}</strong> input token${saved === 1 ? '' : 's'} removed` +
+        `<span class="dot">·</span><strong>${Math.round(analytics.percentReduction)}%</strong> shorter` +
+        (model ? `<span class="dot">·</span><span class="for-model">for ${esc(model)}</span>` : '');
+    }
+
     function metricsHtml() {
       const cells = [
         { label: 'Original', value: `${analytics.originalTokens}`, gain: false },
         { label: 'Optimized', value: `${analytics.optimizedTokens}`, gain: false },
         { label: 'Input tokens avoided', value: `${analytics.tokensSaved}`, gain: analytics.tokensSaved > 0 },
-        { label: 'Input reduction', value: `${Math.round(analytics.percentReduction)}%`, gain: analytics.tokensSaved > 0 },
+        { label: 'Input tokens reduced', value: `${Math.round(analytics.percentReduction)}%`, gain: analytics.tokensSaved > 0 },
       ];
-      // Two separate claims, deliberately labelled differently: how much of the
-      // INPUT went away, and how much of the whole INTERACTION that is likely to
-      // be. Output length, hidden reasoning, tools, and retries do not shrink
-      // because the prompt got shorter.
+      // THREE separate claims, deliberately labelled differently, because they
+      // are three different magnitudes and conflating them is the mistake the
+      // environmental methodology exists to prevent:
+      //
+      //   input tokens reduced          a fact about the prompt (token counting)
+      //   input-processing reduction    that fact's share of the interaction's
+      //                                 energy — prefill is a minority of it
+      //   total interaction impact      the same, net of the fact that output
+      //                                 length, hidden reasoning, tools, and
+      //                                 retries do not shrink with the prompt
+      //
+      // "36% fewer tokens = 36% less energy" is not a claim this panel can make,
+      // so the second and third rows are ranges and are labelled as estimates.
       const projection = settings.showImpact ? currentProjection() : null;
       if (projection) {
-        cells.push({ label: 'Est. interaction reduction', value: projection.formatted, gain: true });
+        if (projection.inputProcessing) {
+          cells.push({ label: 'Est. input-processing reduction', value: projection.inputProcessing, gain: true });
+        }
+        cells.push({ label: 'Projected total interaction', value: projection.formatted, gain: true });
         if (projection.energy && format) {
           cells.push({ label: 'Projected energy avoided', value: format.energy(Math.max(0, projection.energy.central)).compact, gain: true });
         }
@@ -1078,9 +1265,63 @@
         .slice(0, 6)
         .map(([title, n]) => `<span class="chip">${esc(title)}${n > 1 ? ` ×${n}` : ''}</span>`)
         .join('');
-      const n = applied.length;
-      return `<div>${n} change${n === 1 ? '' : 's'} applied — wording only, never your instructions.</div>` +
+      const extra = (analysis.refinements || [])
+        .filter((p) => !p.rejected)
+        .reduce((n, p) => n + p.edits.length, 0);
+      const n = applied.length + extra;
+      const rounds = (analysis.refinements || []).filter((p) => !p.rejected).length;
+      return `<div>${n} change${n === 1 ? '' : 's'} applied — wording only, never your instructions.` +
+             (rounds ? ` Found over ${rounds + 1} compression passes.` : '') + '</div>' +
              `<div class="chips">${chips}</div>`;
+    }
+
+    /**
+     * The two lists that make aggressive compression trustworthy: what went, and
+     * what was checked as still present.
+     *
+     * Built from the engine's own summary, which is derived from the applied
+     * edits and the validator's tallies — so neither column can describe work
+     * that did not happen. The Preserved column is empty unless the validator
+     * ran and passed, rather than falling back to a reassuring default.
+     */
+    function renderLedger() {
+      const summary = analysis.changeSummary;
+      if (!summary || (!summary.removed.length && !summary.preserved.length)) {
+        el.ledger.hidden = true;
+        return;
+      }
+      el.ledger.hidden = false;
+      const items = (list, empty) => (list.length
+        ? list.slice(0, 6).map((i) => `<li>${esc(i.count > 1 ? `${i.count} ${i.label}` : i.label)}</li>`).join('')
+        : `<li class="ledger-empty">${empty}</li>`);
+      el['ledger-removed'].innerHTML = items(summary.removed, 'nothing');
+      el['ledger-preserved'].innerHTML = items(
+        summary.preserved,
+        summary.verified ? 'nothing to check' : 'not verified',
+      );
+    }
+
+    /**
+     * The developer view. Off by default, and never shown to someone who has not
+     * asked for it — but when a detection bug is reported, this is the panel
+     * that makes it diagnosable from a screenshot.
+     */
+    function renderDebug() {
+      if (!el.debug) return;
+      const on = !!settings.debugPanel && !!present && typeof present.debugRows === 'function';
+      el.debug.hidden = !on;
+      if (!on) return;
+      const rows = present.debugRows(observation, {
+        observedRoots: typeof d.observedRoots === 'function' ? d.observedRoots() : null,
+      });
+      const stamp = modelChangedAt
+        ? new Date(modelChangedAt).toTimeString().slice(0, 8)
+        : 'no change this session';
+      el['debug-rows'].innerHTML = rows.map((r) => (
+        `<div class="debug-row"><span class="debug-k">${esc(r.label)}</span>` +
+        `<span class="debug-v">${esc(r.value)}</span></div>`
+      )).join('') +
+        `<div class="debug-row"><span class="debug-k">Change seen at</span><span class="debug-v">${esc(stamp)}</span></div>`;
     }
 
     /**
@@ -1128,7 +1369,15 @@
       } else if (state === 'offline') {
         set('You are offline, so enhanced mode is unavailable. Local optimization still works.', false);
       } else if (state === 'concise') {
-        set('This prompt is already efficient. Nothing worth cutting at this level.', false);
+        set('This prompt is already efficient — no repetition, no filler, and nothing left to merge.', false);
+      } else if (state === 'marginal') {
+        // Say WHY, using the engine's own list of what it still sees. A bare
+        // "nothing worth cutting" is the message that made this feature feel
+        // like it was not looking.
+        const reasons = (analysis && analysis.concision && analysis.concision.reasons) || [];
+        set(reasons.length
+          ? `Still compressible — ${esc(reasons.slice(0, 3).join(', '))} — but not enough to be worth a replacement at this level. Try Maximum.`
+          : 'Only a token or two to gain here.', false);
       } else if (enhancement && !enhancement.applied) {
         set(esc(enhancement.status), false);
       } else if (!settings.autoAnalyze) {
@@ -1429,9 +1678,22 @@
       if (!mount()) { started = false; return false; }
       await refreshSettings();
       startObservers();
+      // Adopt the model the detector already has, then subscribe. Doing it in
+      // this order means the first render shows the real model rather than an
+      // empty pill that fills in a moment later.
+      if (typeof d.getModel === 'function') {
+        try { observation = d.getModel(); } catch (_) { observation = null; }
+      }
+      if (typeof d.subscribeModel === 'function') {
+        try {
+          const stop = d.subscribeModel((next) => setModel(next));
+          if (typeof stop === 'function') cleanups.push(stop);
+        } catch (_) { /* detection is an enhancement, never a requirement */ }
+      }
       detect();
       render();
-      log('assistant: started —', engine ? 'engine ready' : 'ENGINE MISSING');
+      log('assistant: started —', engine ? 'engine ready' : 'ENGINE MISSING',
+          '| model:', observation ? (observation.canonicalModel || observation.selectedLabel) : 'not detected');
       return true;
     }
 
@@ -1478,8 +1740,11 @@
       undo,
       setExpanded,
       setLevel,
+      setModel,
       // Inspection surface for tests and debugging — never used by the UI.
       get state() { return uiState; },
+      get model() { return observation; },
+      get modelPill() { return modelPillText; },
       get expanded() { return expanded; },
       get settings() { return settings; },
       get composer() { return composerEl; },

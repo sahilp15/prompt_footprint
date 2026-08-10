@@ -75,13 +75,31 @@ export interface RedundancyOptions {
 }
 
 /**
- * Sentences that restate an earlier sentence. The *later* occurrence is
- * proposed for removal so the prompt keeps its original opening.
+ * Sentences that restate an earlier sentence.
+ *
+ * Two directions, because repetition runs both ways in real prompts:
+ *
+ *   • FORWARD — the later sentence adds nothing the earlier one did not say.
+ *     The later copy goes, so the prompt keeps its original opening.
+ *   • BACKWARD — the later sentence says everything the earlier one did AND
+ *     more ("Keep it engaging." … "Keep it engaging for a general audience.").
+ *     Here the EARLIER sentence is the redundant one; removing the later would
+ *     throw away the extra detail. This case is why a forward-only scan reports
+ *     verbose prompts as concise: neither sentence is a plain duplicate of the
+ *     other, but one of them is still pure cost.
+ *
+ * The containment floor is 0.75 rather than 0.8. At 0.8 a single incidental
+ * word ("the report" vs "that report") in a six-word restatement drops the
+ * score below the line, which is exactly the near-miss that made the old
+ * detector quiet on prompts a reader would call obviously repetitive.
  */
 export function findDuplicateSegments(
   segments: Segment[],
   text: string,
-  { threshold = 0.8, minWords = 3 }: RedundancyOptions = {},
+  // Two content words, not three. "Look for bugs." repeated verbatim is a
+  // duplicate by any reading, and a three-word floor was quietly excluding
+  // exactly the short imperative sentences prompts repeat most often.
+  { threshold = 0.75, minWords = 2 }: RedundancyOptions = {},
 ): RawEdit[] {
   const edits: RawEdit[] = []
   const candidates = segments.filter(
@@ -92,41 +110,239 @@ export function findDuplicateSegments(
   const ents = candidates.map((s) => entityKeys(s.text))
   const removed = new Set<number>()
 
+  /** Drop `victim`, keeping `keeper`, with the reason spelled out. */
+  const propose = (victim: number, covered: number, mutual: number, backward: boolean): void => {
+    const seg = candidates[victim]
+    let start = seg.start
+    while (start > 0 && /[ \t]/.test(text[start - 1])) start -= 1
+    const nearIdentical = covered >= 0.99 && mutual >= 0.6
+    removed.add(victim)
+    edits.push({
+      start,
+      end: seg.end,
+      replacement: '',
+      category: 'repeated-instruction',
+      title: 'Repeated instruction',
+      reason: backward
+        ? 'A later sentence says everything this one says, and more.'
+        : mutual >= 0.9
+          ? 'This sentence repeats an earlier one almost word for word.'
+          : `Everything this sentence says was already said earlier (${Math.round(covered * 100)}% overlap).`,
+      // A backward removal is the more surprising edit — it deletes the sentence
+      // the user wrote FIRST — so it scores lower and is held back to `maximum`.
+      // A plain forward duplicate is offered from `balanced`: dropping a sentence
+      // that says nothing new is the definition of what that tier is for, and
+      // gating it at `maximum` is a large part of why Balanced used to leave
+      // visibly repetitive prompts almost untouched.
+      score: nearIdentical ? 0.88 : backward ? 0.72 : 0.76,
+      minLevel: backward ? 'maximum' : 'balanced',
+      safe: nearIdentical && !backward,
+    })
+  }
+
   for (let i = 0; i < candidates.length; i += 1) {
     if (removed.has(i)) continue
     for (let j = i + 1; j < candidates.length; j += 1) {
       if (removed.has(j)) continue
 
-      const covered = containment(words[i], words[j])
-      if (covered < threshold) continue
-      // If the later sentence carries information the earlier one does not,
-      // it is a refinement, not a repeat. Leave it alone.
-      if (hasUniqueEntity(ents[j], ents[i])) continue
-
+      const forward = containment(words[i], words[j])
+      const backward = containment(words[j], words[i])
       const mutual = similarity(words[i], words[j])
-      const nearIdentical = covered >= 0.99 && mutual >= 0.6
 
-      const later = candidates[j]
-      // Swallow the whitespace in front so removal doesn't leave a double space.
-      let start = later.start
-      while (start > 0 && /[ \t]/.test(text[start - 1])) start -= 1
+      // The later sentence adds nothing: drop it.
+      if (forward >= threshold && !hasUniqueEntity(ents[j], ents[i])) {
+        propose(j, forward, mutual, false)
+        continue
+      }
+      // The later sentence subsumes the earlier one: drop the earlier one, but
+      // only when it contributes no entity of its own and both are the same kind
+      // of statement — otherwise "Write a summary." followed by "Write a summary
+      // of the Q3 report." would lose the standalone task line it is refining.
+      if (
+        backward >= 0.95 &&
+        candidates[i].role === candidates[j].role &&
+        !hasUniqueEntity(ents[i], ents[j]) &&
+        words[j].size > words[i].size
+      ) {
+        propose(i, backward, mutual, true)
+        break
+      }
+    }
+  }
 
-      removed.add(j)
+  return edits
+}
+
+/**
+ * Clause-level repetition inside a sentence.
+ *
+ * "Write a blog post about climate change. The post should be about climate
+ * change and around 800 words." is not two duplicate SENTENCES — the second one
+ * carries a word limit the first does not — so the sentence-level scan
+ * correctly leaves it alone. It is still repetitive, and the repetition is
+ * exactly one clause wide.
+ *
+ * Coordinated clauses are split on `and` / `but` / `;` and each is tested for
+ * containment against everything already said. A clause is removable only when
+ * it introduces no entity and no constraint of its own, which is what keeps
+ * "and around 800 words" — the whole reason the sentence survived — in place.
+ */
+export function findRedundantClauses(
+  segments: Segment[],
+  constraints: Constraint[],
+  { threshold = 0.9, minWords = 3 }: RedundancyOptions = {},
+): RawEdit[] {
+  const edits: RawEdit[] = []
+  const seen = new Set<string>()
+  const seenEntities = new Set<string>()
+
+  const addSeen = (s: string): void => {
+    for (const w of contentWords(s)) seen.add(w)
+    for (const k of entityKeys(s)) seenEntities.add(k)
+  }
+
+  for (const seg of segments) {
+    if (seg.protectedSegment || seg.role === 'meta' || seg.role === 'example') { addSeen(seg.text); continue }
+
+    const clauses = splitClauses(seg.text, seg.start)
+    if (clauses.length < 2) { addSeen(seg.text); continue }
+
+    for (const clause of clauses) {
+      const own = contentWords(clause.text)
+      if (own.size < minWords) { addSeen(clause.text); continue }
+
+      const covered = containment(seen, own)
+      // An `imperative` entity is minted by the modal ("should be about climate
+      // change"), not by the content. When every content word was already said,
+      // the modal is the only new thing in the clause — which is what makes it a
+      // restatement rather than a new requirement. Negations are never waived.
+      const ownEntities = [...entityKeys(clause.text)]
+        .filter((k) => !(k.startsWith('imperative|') && covered >= threshold))
+      const carriesEntity = ownEntities.some((k) => !seenEntities.has(k))
+      // A must/must-not constraint blocks the cut UNLESS the thing it requires is
+      // already stated in the surviving text — "the post should be about climate
+      // change" after "write a blog post about climate change" adds a constraint
+      // key but no requirement. That is the same test the validator applies, so
+      // a clause allowed through here cannot fail validation for this reason.
+      const carriesConstraint = constraints.some((c) => {
+        if (c.start >= clause.end || c.end <= clause.start) return false
+        if (c.kind !== 'inclusion' && c.kind !== 'exclusion') return true
+        // Constraint keys keep function words that `contentWords` drops, so the
+        // comparison has to allow for that — otherwise a single "about" in the
+        // key makes a fully-restated requirement look like a new one.
+        const words = c.key.split(':').slice(1).join(':').split(' ').filter(Boolean)
+        return !words.length || !words.every((w) => seen.has(w) || STOPWORDS.has(w))
+      })
+
+      if (covered < threshold || carriesConstraint || carriesEntity) {
+        addSeen(clause.text)
+        continue
+      }
+
       edits.push({
-        start,
-        end: later.end,
+        start: clause.cutStart,
+        end: clause.end,
         replacement: '',
         category: 'repeated-instruction',
-        title: 'Repeated instruction',
-        reason:
-          mutual >= 0.9
-            ? 'This sentence repeats an earlier one almost word for word.'
-            : `Everything this sentence says was already said earlier (${Math.round(covered * 100)}% overlap).`,
-        score: nearIdentical ? 0.88 : 0.76,
-        minLevel: nearIdentical ? 'balanced' : 'maximum',
-        safe: nearIdentical,
+        title: 'Repeated context',
+        reason: 'This clause repeats something the prompt already said, and adds no new detail.',
+        score: 0.78,
+        minLevel: 'balanced',
+        safe: false,
       })
     }
+  }
+
+  return edits
+}
+
+interface Clause {
+  text: string
+  start: number
+  end: number
+  /** Where the cut begins — includes the conjunction that introduced it. */
+  cutStart: number
+}
+
+/** Coordinated clauses of a sentence, with the joining word folded into the cut. */
+function splitClauses(sentence: string, offset: number): Clause[] {
+  const out: Clause[] = []
+  const re = /\s*(?:,\s*)?(?:\band\b|\bbut\b|;)\s+/gi
+  let cursor = 0
+  let m: RegExpExecArray | null
+  let joinerStart = -1
+
+  while ((m = re.exec(sentence)) !== null) {
+    if (m.index <= cursor) continue
+    out.push({
+      text: sentence.slice(cursor, m.index),
+      start: offset + cursor,
+      end: offset + m.index,
+      cutStart: offset + (joinerStart >= 0 ? joinerStart : cursor),
+    })
+    joinerStart = m.index
+    cursor = m.index + m[0].length
+  }
+  if (cursor > 0 && cursor < sentence.length) {
+    out.push({
+      text: sentence.slice(cursor),
+      start: offset + cursor,
+      end: offset + sentence.length,
+      cutStart: offset + (joinerStart >= 0 ? joinerStart : cursor),
+    })
+  }
+  return out
+}
+
+/**
+ * A trailing clause that explains WHY the user wants something.
+ *
+ * "…keep it short, because I would prefer something easier to read" states a
+ * preference the instruction before it already encodes. Justifications are
+ * meta-commentary: they change nothing about the output, and they are among the
+ * most reliable large savings in a conversational prompt.
+ *
+ * Removed only when the clause carries no constraint, no entity the prompt does
+ * not already have, and no negation — so "because I must not exceed 500 words"
+ * and "because the client is Northwind" both survive untouched.
+ */
+export function findRedundantJustifications(
+  segments: Segment[],
+  constraints: Constraint[],
+  text: string,
+): RawEdit[] {
+  const edits: RawEdit[] = []
+  const JUSTIFICATION = /[,;]?\s+(?:because|since|as|given that)\s+(?:i|we)\s+(?:would |'?d |just |really )*(?:prefer|like|want|need|find|think|feel)\b/i
+
+  for (const seg of segments) {
+    if (seg.protectedSegment || seg.role === 'example') continue
+    const m = JUSTIFICATION.exec(seg.text)
+    if (!m) continue
+
+    const start = seg.start + m.index
+    const body = seg.text.slice(m.index).replace(/[.!?]+\s*$/, '')
+    // Keep the sentence's terminator; only the clause goes.
+    const end = seg.start + m.index + body.length
+    if (end <= start) continue
+
+    if (constraints.some((c) => c.start < end && c.end > start)) continue
+    if (/\b(?:not|never|no|without|must|only|except|unless)\b/i.test(body)) continue
+
+    const before = text.slice(0, start)
+    const known = entityKeys(before)
+    if ([...entityKeys(body)].some((k) => !known.has(k))) continue
+
+    edits.push({
+      start,
+      end,
+      replacement: '',
+      category: 'meta-commentary',
+      title: 'Stated preference',
+      reason: 'Explaining why you want it does not change what the model produces — the instruction already does.',
+      score: 0.74,
+      minLevel: 'balanced',
+      safe: false,
+    })
   }
 
   return edits
@@ -247,7 +463,7 @@ export function findMergeableSentences(segments: Segment[]): RawEdit[] {
 
     const aWords = a.text.trim().split(/\s+/).length
     const bWords = b.text.trim().split(/\s+/).length
-    if (aWords > 12 || bWords > 12) continue
+    if (aWords > 16 || bWords > 16) continue
 
     const aBody = a.text.trim().replace(/[.!?]+$/, '')
     const bBody = b.text.trim().replace(/^\s*(?:also|and|additionally)[,\s]+/i, '')
@@ -268,6 +484,82 @@ export function findMergeableSentences(segments: Segment[]): RawEdit[] {
       safe: false,
     })
     i += 1 // don't chain a merge into the next pair
+  }
+
+  return edits
+}
+
+/**
+ * Consecutive instructions that repeat the same verb phrase.
+ *
+ * "Look for bugs. Look for performance issues. Look for security issues." says
+ * the verb three times to carry three objects. Folding them into one list keeps
+ * every object — which is where all the information is — and drops the repeats.
+ *
+ * This is the transform that gives Maximum its character: it does not delete
+ * anything the user asked for, it states it once. Guarded hard, because a bad
+ * merge is a bad prompt: identical verb phrase, no negation anywhere in the run
+ * (merging "Do not X" with "Do not Y" would change one prohibition into two
+ * under a single scope), no protected content, and short objects only.
+ */
+export function findParallelImperatives(segments: Segment[]): RawEdit[] {
+  const edits: RawEdit[] = []
+  const NEGATED = /\b(?:not|never|no|without|except|unless|avoid)\b/i
+
+  /** Leading verb phrase (1–3 words) and its object, for a plain imperative. */
+  const split = (raw: string): { verb: string; object: string } | null => {
+    const body = raw.trim().replace(/[.!?]+$/, '').trim()
+    if (!body || NEGATED.test(body)) return null
+    const m = /^([A-Za-z]+(?:\s+(?:for|at|to|on|out|up|about|through|into))?(?:\s+the)?)\s+(.{2,60})$/.exec(body)
+    if (!m) return null
+    const object = m[2].trim()
+    if (object.split(/\s+/).length > 6) return null
+    if (/[,;:]/.test(object)) return null
+    return { verb: m[1].trim(), object }
+  }
+
+  let i = 0
+  while (i < segments.length - 1) {
+    const first = segments[i]
+    const head = first.protectedSegment ? null : split(first.text)
+    if (!head) { i += 1; continue }
+
+    const run = [first]
+    const objects = [head.object]
+    let j = i + 1
+    while (j < segments.length) {
+      const next = segments[j]
+      if (next.protectedSegment || next.blockIndex !== first.blockIndex || next.role !== first.role) break
+      const part = split(next.text)
+      if (!part || part.verb.toLowerCase() !== head.verb.toLowerCase()) break
+      run.push(next)
+      objects.push(part.object)
+      j += 1
+    }
+
+    if (run.length < 2) { i += 1; continue }
+
+    const last = objects.pop() as string
+    // Two objects take no comma ("A and B"); three or more take the serial one.
+    const merged = objects.length === 1
+      ? `${head.verb} ${objects[0]} and ${last}.`
+      : `${head.verb} ${objects.join(', ')}, and ${last}.`
+    const end = run[run.length - 1].end
+    const span = run.reduce((n, s) => n + (s.end - s.start), 0)
+    if (merged.length < span) {
+      edits.push({
+        start: first.start,
+        end,
+        replacement: merged,
+        category: 'sentence-merge',
+        title: 'Merged parallel instructions',
+        reason: `“${head.verb}” is repeated ${run.length} times for ${run.length} things. One list says the same.`,
+        score: 0.7,
+        minLevel: 'maximum',
+        safe: false,
+      })
+    }
+    i = j
   }
 
   return edits

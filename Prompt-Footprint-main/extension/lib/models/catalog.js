@@ -168,6 +168,21 @@
 
     const id = p.aliases[alias];
     const meta = p.models[id];
+
+    // A bare tier word ("Sol", "Flash", "Pro") is only a safe alias for as long
+    // as there is one generation of it. The moment "GPT-5.7 Sol" ships, matching
+    // it on "sol" would resolve a brand-new model to last version's entry —
+    // confidently, silently, and with that model's energy prior attached.
+    //
+    // So a label that states a version must agree with the family it resolved
+    // to. When it does not, the answer is null: the label is preserved as an
+    // unmapped selection and the estimate falls back to the provider level,
+    // which is the honest handling of a model we have never seen.
+    if (meta && meta.family) {
+      const stated = /\d+(?:\.\d+)?/.exec(norm);
+      if (stated && !meta.family.includes(stated[0])) return null;
+    }
+
     return {
       canonicalModel: id,
       matchedAlias: alias,

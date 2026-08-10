@@ -4,7 +4,7 @@
 // so they can be unit-tested under Node. `overlay/assistant.js` owns the pixels;
 // this file owns the decisions:
 //
-//   • which of the eleven UI states applies right now
+//   • which of the twelve UI states applies right now
 //   • whether an optimization is worth recommending at all
 //   • the debounce that stops analysis running on every keystroke
 //   • the request guard that discards a result whose prompt has since changed
@@ -22,18 +22,31 @@
   const MIN_VISIBLE_CHARS = 16;
   /** Analysis waits for a pause in typing, not a keystroke. */
   const DEBOUNCE_MS = 600;
-  /** A saving has to be worth interrupting someone for. Both floors must clear. */
-  const MIN_SAVED_TOKENS = 4;
-  const MIN_SAVED_PERCENT = 4;
+  /**
+   * The floor for offering a replacement.
+   *
+   * It was 4 tokens AND 4%, which on a 25-token prompt meant a real saving had
+   * to be a fifth of the whole thing before the assistant would mention it —
+   * and everything below that was announced as "Already concise", which is a
+   * different and much stronger claim than "not worth a click".
+   *
+   * Two tokens and 1.5% is the point where a reduction stops being rounding.
+   * Everything under it is now reported honestly as either genuinely concise or
+   * marginally compressible, based on the engine's assessment rather than on
+   * this number.
+   */
+  const MIN_SAVED_TOKENS = 2;
+  const MIN_SAVED_PERCENT = 1.5;
 
-  // The eleven states the UI is specified to have. Exported so the renderer and
+  // The twelve states the UI is specified to have. Exported so the renderer and
   // the tests agree on the vocabulary.
   const STATES = [
     'empty',        // composer is empty (or too short to say anything about)
     'typing',       // user is mid-burst; last result is stale
     'analyzing',    // engine is running
     'available',    // a worthwhile optimization exists
-    'concise',      // analyzed, nothing meaningful to cut
+    'marginal',     // something is compressible, but not enough to interrupt for
+    'concise',      // analyzed, and genuinely nothing meaningful left to cut
     'failed',       // the engine threw
     'unsupported',  // no composer could be identified on this page
     'offline',      // enhanced mode wanted, but the browser is offline
@@ -60,6 +73,9 @@
     showImpact: true,
     mode: 'local',
     animations: true,
+    // Off by default: the model-detection debug panel is for diagnosing a
+    // detection bug, not for everyday use, and it must not clutter the panel.
+    debugPanel: false,
   };
 
   /** Project a `pf_config` object onto the assistant's settings, with defaults. */
@@ -76,6 +92,7 @@
         ? 'enhanced'
         : 'local',
       animations: c.assistantAnimations !== false,
+      debugPanel: c.assistantDebugPanel === true,
     };
   }
 
@@ -89,6 +106,7 @@
     if (typeof p.showImpact === 'boolean') out.assistantShowImpact = p.showImpact;
     if (MODES.includes(p.mode)) out.assistantMode = p.mode;
     if (typeof p.animations === 'boolean') out.assistantAnimations = p.animations;
+    if (typeof p.debugPanel === 'boolean') out.assistantDebugPanel = p.debugPanel;
     return out;
   }
 
@@ -101,6 +119,7 @@
       assistantShowImpact: DEFAULTS.showImpact,
       assistantMode: DEFAULTS.mode,
       assistantAnimations: DEFAULTS.animations,
+      assistantDebugPanel: DEFAULTS.debugPanel,
     };
   }
 
@@ -109,10 +128,7 @@
   /**
    * True when an optimization is worth recommending.
    *
-   * The bar is deliberately high. An assistant that offers to save two tokens on
-   * a one-line prompt trains the user to ignore it, so a small win is reported
-   * as "Already concise" instead. A result the validator did not pass is never
-   * offered at all.
+   * A result the validator did not pass is never offered at all, at any size.
    */
   function isWorthOffering(analytics, validation) {
     if (!analytics) return false;
@@ -120,6 +136,22 @@
     const saved = analytics.tokensSaved || 0;
     const pct = analytics.percentReduction || 0;
     return saved >= MIN_SAVED_TOKENS && pct >= MIN_SAVED_PERCENT;
+  }
+
+  /**
+   * Is "Already concise" an honest thing to say about this prompt?
+   *
+   * The engine's assessment is the authority — it is the thing that ran the
+   * detectors and knows what it chose not to apply. This function exists only to
+   * make the fallback explicit: with no assessment available, the claim is NOT
+   * made. Silence about a prompt is fine; congratulating someone on writing
+   * that the optimizer never actually examined is not.
+   *
+   * Length is deliberately absent. A 25-token prompt of pure throat-clearing is
+   * not concise, and a 1,000-token specification with nothing spare in it is.
+   */
+  function isGenuinelyConcise(concision) {
+    return !!(concision && concision.concise === true);
   }
 
   // ── State selection ───────────────────────────────────────────────────────
@@ -130,7 +162,7 @@
    *
    * input: {
    *   engineReady, composerFound, text, typing, analyzing, error,
-   *   online, mode, analytics, validation, replaced, canUndo
+   *   online, mode, analytics, validation, concision, replaced, canUndo
    * }
    */
   function nextState(input) {
@@ -151,7 +183,12 @@
     if (s.analyzing) return 'analyzing';
     if (s.typing) return 'typing';
     if (!s.analytics) return 'typing';
-    return isWorthOffering(s.analytics, s.validation) ? 'available' : 'concise';
+    if (isWorthOffering(s.analytics, s.validation)) return 'available';
+    // Below the offer floor there are two genuinely different situations, and
+    // collapsing them into one message is what made the assistant untrustworthy:
+    // "Already concise" was being said about prompts where the optimizer had
+    // found repetition and filler and simply not applied enough of it.
+    return isGenuinelyConcise(s.concision) ? 'concise' : 'marginal';
   }
 
   /** Whether the collapsed indicator should be on screen in a given state. */
@@ -227,6 +264,7 @@
     settingsPatch,
     resetPatch,
     isWorthOffering,
+    isGenuinelyConcise,
     nextState,
     isIndicatorVisible,
     createDebouncer,

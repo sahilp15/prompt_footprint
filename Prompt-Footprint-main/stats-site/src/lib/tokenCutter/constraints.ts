@@ -61,6 +61,22 @@ const RULES: Rule[] = [
     key: (m) => `format:${normalizeFormat(m[1])}`,
   },
   {
+    // "Use bullet points", "give me a table", "format it as JSON". Without this
+    // the SECOND way a user says "use bullets" carries no constraint key, so the
+    // redundancy pass cannot see it as a restatement of the first — which is why
+    // duplicated formatting instructions used to survive untouched.
+    kind: 'format',
+    label: 'Output format',
+    re: /\b(?:use|give me|write|return|provide|present it as|structure it as|format it as|formatted as)\s+(?:an?\s+|the\s+|it\s+(?:as|in)\s+(?:an?\s+)?)?(json|yaml|xml|csv|markdown|table|bullet points?|bulleted list|numbered list|numbered steps|outline|plain text|prose)\b/gi,
+    key: (m) => `format:${normalizeFormat(m[1])}`,
+  },
+  {
+    kind: 'format',
+    label: 'Output format',
+    re: /\b(bullet[- ]point|bulleted|numbered|tabular|markdown|json|yaml)\s+(?:format|list|form|style)\b/gi,
+    key: (m) => `format:${normalizeFormat(m[1])}`,
+  },
+  {
     kind: 'audience',
     label: 'Audience',
     re: /\b(?:for|aimed at|targeted at|written for|audience(?: is)?:?)\s+(?:an?\s+|the\s+)?((?:non-?technical|technical|beginner|expert|senior|junior|executive|general|academic|student|developer|engineer|designer|marketing|customer|child|5[- ]year[- ]old)[\w -]{0,24})\b/gi,
@@ -100,9 +116,10 @@ function normalizeUnit(unit: string): string {
 
 function normalizeFormat(fmt: string): string {
   const f = fmt.toLowerCase().replace(/^(?:an?|the)\s+/, '').trim()
-  if (/^bullet/.test(f) || f === 'bulleted list') return 'bullets'
+  if (/^bullet/.test(f) || f === 'bulleted list' || f === 'bulleted') return 'bullets'
   if (/^numbered/.test(f)) return 'numbered-list'
   if (f === 'paragraph' || f === 'paragraphs') return 'prose'
+  if (f === 'tabular') return 'table'
   return f
 }
 
