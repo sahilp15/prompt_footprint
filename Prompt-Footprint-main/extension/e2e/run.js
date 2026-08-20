@@ -19,8 +19,11 @@
 //
 //   npm install --no-save playwright
 //   npx playwright install chromium
-//   node e2e/run.js                     # both platforms
+//   node e2e/run.js                     # every platform and every suite
 //   node e2e/run.js --shots ./shots     # also write screenshots
+//
+// PF_CHROMIUM=/path/to/chrome overrides the browser, for environments that
+// already have one installed at a revision Playwright did not download.
 //
 // The fixture is served BY FULFILLING requests to the real hosts, because the
 // content script deliberately refuses to run anywhere else. Nothing is
@@ -555,12 +558,134 @@ async function runClaudeModelDetection() {
   }
 }
 
+/**
+ * The token analyzer, in a real browser.
+ *
+ * The node:test suite proves the counter, the document analyzer, and the
+ * breakdown. Only this proves them against Chrome's own `File`, `DataTransfer`,
+ * and `DecompressionStream` — the last of which is what inflates a PDF's
+ * content streams, and has no Node-independent equivalent to fall back on.
+ */
+async function runTokenAnalyzer() {
+  console.log('\nToken analyzer');
+  const { page, errors, cleanup } = await open('chatgpt.html', 'chatgpt.com', 'https://chatgpt.com/c/tokens');
+  const editor = '#prompt-textarea';
+  const bar = page.locator('#pf-assistant-root #bar');
+  const text = (sel) => page.locator(`#pf-assistant-root ${sel}`).textContent();
+  const total = async () => Number((await text('#context-total')).replace(/[^0-9]/g, ''));
+  try {
+    await typeInto(page, editor, 'Summarize this report and identify the risks');
+    await page.waitForTimeout(900);
+    await bar.click();
+    await page.waitForTimeout(400);
+
+    check('names the provider and model, not just a number',
+      /GPT-5\.6 Sol — detected/.test(await text('#context-model')), await text('#context-model'));
+    const bare = await total();
+    check('a short prompt counts as a short prompt', bare > 0 && bare < 30, String(bare));
+
+    await page.click('#devbar button:nth-child(7)');           // attach pdf
+    await page.waitForTimeout(1200);
+    const withPdf = await total();
+    check('attaching a PDF makes the count jump', withPdf > bare * 100, `${bare} -> ${withPdf}`);
+    const rows = await text('#context-rows');
+    check('the PDF is named, with its page count', /q3-annual-report\.pdf/.test(rows) && /6 pages/.test(rows), rows);
+    check('text and document/visual processing are shown separately',
+      /text \d/.test(rows) && /document\/visual/.test(rows), rows);
+    check('the total is labelled an estimate, never exact',
+      /Estimated/.test(await text('#context-accuracy')) && !/exact/i.test(await text('#context-accuracy')),
+      await text('#context-accuracy'));
+    check('platform context we cannot see is named but not numbered',
+      /system prompt/i.test(await text('#context-unmeasured')), await text('#context-unmeasured'));
+    await shot(page, '30-analyzer-pdf');
+
+    // Pasting: the count must move immediately, and the paste must not be
+    // counted twice once it is composer text.
+    const paste = 'The quarterly summary covers every region and lists each risk. '.repeat(300);
+    await page.evaluate((body) => {
+      const el = document.getElementById('prompt-textarea');
+      const dt = new DataTransfer();
+      dt.setData('text/plain', body);
+      el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+      el.innerHTML = `<p>Summarize this report and identify the risks</p><p>${body}</p>`;
+      el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    }, paste);
+    await page.waitForTimeout(900);
+    const withPaste = await total();
+    check('a large paste is counted', withPaste > withPdf + 3000, `${withPdf} -> ${withPaste}`);
+    const pasteRows = await text('#context-rows');
+    check('and broken out as pasted content', /Pasted content/.test(pasteRows), pasteRows);
+    check('the lines sum to the headline (nothing counted twice)',
+      await page.evaluate(() => {
+        const root = document.getElementById('pf-assistant-root').shadowRoot;
+        const shown = Number(root.getElementById('context-total').textContent.replace(/[^0-9]/g, ''));
+        const rowsSum = Array.from(root.querySelectorAll('.context-row-value'))
+          .map((n) => Number(n.textContent.replace(/[^0-9]/g, '')) || 0)
+          .reduce((a, b) => a + b, 0);
+        return shown === rowsSum;
+      }));
+
+    // Removing the attachment must take its tokens with it — all of them, and
+    // only them.
+    await page.click('#devbar button:nth-child(8)');           // detach pdf
+    await page.waitForTimeout(1200);
+    const removed = await total();
+    check('removing the PDF removes exactly its tokens',
+      Math.abs((withPaste - removed) - withPdf + bare) < 50, `${withPaste} -> ${removed}`);
+    check('and the file is gone from the breakdown',
+      !/q3-annual-report\.pdf/.test(await text('#context-rows')));
+
+    // A model switch re-costs everything with the other tokenizer. The panel is
+    // collapsed first: expanded, it covers the fixture's dev controls.
+    await bar.click();
+    await page.waitForTimeout(400);
+    await page.click('#devbar button:nth-child(6)');           // Auto
+    await page.waitForTimeout(1400);
+    await bar.click();
+    await page.waitForTimeout(400);
+    check('Auto never resolves into a model in the analyzer',
+      /Auto — exact routed model unavailable/.test(await text('#context-model')), await text('#context-model'));
+    await shot(page, '31-analyzer-auto');
+
+    check('no uncaught errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+  } finally {
+    await cleanup();
+  }
+}
+
+/** The same analyzer on Claude, where the tokenizer is a different one. */
+async function runClaudeTokenAnalyzer() {
+  console.log('\nToken analyzer — Claude');
+  const { page, errors, cleanup } = await open('claude.html', 'claude.ai', 'https://claude.ai/chat/tokens');
+  const text = (sel) => page.locator(`#pf-assistant-root ${sel}`).textContent();
+  try {
+    await typeInto(page, '.ProseMirror', CLAUDE_PROMPT);
+    await page.waitForTimeout(1300);
+    await page.locator('#pf-assistant-root #bar').click();
+    await page.waitForTimeout(400);
+    check('names the Claude model in the analyzer',
+      /Claude Opus 5 — detected/.test(await text('#context-model')), await text('#context-model'));
+    const claudeTotal = Number((await text('#context-total')).replace(/[^0-9]/g, ''));
+    check('counts the prompt with Claude’s tokenizer, not one generic ratio',
+      claudeTotal > CLAUDE_PROMPT.length / 3,
+      `${claudeTotal} tokens for ${CLAUDE_PROMPT.length} characters`);
+    check('and shows a share of Claude’s documented context window',
+      /% of context/.test(await page.locator('#pf-assistant-root #context-window').textContent()));
+    await shot(page, '32-analyzer-claude');
+    check('no uncaught errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+  } finally {
+    await cleanup();
+  }
+}
+
 (async () => {
   await runChatGPT();
   await runClaude();
   await runModelEditor();
   await runModelDetection();
   await runClaudeModelDetection();
+  await runTokenAnalyzer();
+  await runClaudeTokenAnalyzer();
   const passed = results.filter((r) => r.ok).length;
   console.log(`\n${passed}/${results.length} checks passed`);
   process.exit(passed === results.length ? 0 : 1);

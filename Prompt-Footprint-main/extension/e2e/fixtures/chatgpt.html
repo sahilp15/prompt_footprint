@@ -45,6 +45,8 @@
     <button onclick="swapComposer()">new chat</button>
     <button onclick="switchModel()">switch model</button>
     <button onclick="toggleAuto()">auto</button>
+    <button onclick="attachPdf()">attach pdf</button>
+    <button onclick="detachPdf()">detach pdf</button>
   </div>
   <div id="sidebar"><div>Chats</div></div>
   <div id="app">
@@ -68,6 +70,7 @@
       <form data-type="unified-composer">
         <div id="composer-background">
           <div id="attachments"><div class="att">q3-report.pdf</div></div>
+          <div id="real-attachments"></div>
           <div id="prompt-textarea" contenteditable="true" data-lexical-editor="true"
                role="textbox" data-placeholder="Ask anything"></div>
           <div class="row">
@@ -89,6 +92,67 @@
   function toggleAuto() {
     const b = document.querySelector('[data-testid="model-switcher-dropdown-button"]');
     b.textContent = b.textContent.trim() === 'Auto' ? 'GPT-5.6 Sol' : 'Auto';
+  }
+
+  // ── Attachments ──────────────────────────────────────────────────────────
+  // Attaching a file the way the product does it: a real `drop` carrying a real
+  // File, followed by a chip in the composer. Both halves matter — the drop is
+  // the only moment an extension is handed the bytes, and the chip is the only
+  // evidence that the file is still attached.
+  //
+  // The PDF is built here rather than fetched so the fixture stays offline and
+  // its contents are inspectable: six pages, a real /Count, and uncompressed
+  // content streams carrying `Tj` text operators.
+  function buildPdf(pageCount) {
+    const line = 'The quarterly report covers operations across every region and '
+      + 'highlights the principal risks identified by the audit committee.';
+    const objects = new Map();
+    const pageIds = [], contentIds = [];
+    for (let i = 0; i < pageCount; i += 1) { pageIds.push(4 + 2 * i); contentIds.push(5 + 2 * i); }
+    objects.set(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    objects.set(2, '<< /Type /Pages /Kids [' + pageIds.map((id) => id + ' 0 R').join(' ')
+      + '] /Count ' + pageCount + ' >>');
+    objects.set(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+    for (let i = 0; i < pageCount; i += 1) {
+      objects.set(pageIds[i], '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] '
+        + '/Resources << /Font << /F1 3 0 R >> >> /Contents ' + contentIds[i] + ' 0 R >>');
+      const body = 'BT /F1 12 Tf 72 720 Td 14 TL\n(Page ' + (i + 1) + ' heading) Tj T*\n('
+        + line + ') Tj T*\n(' + line + ') Tj T*\nET\n';
+      objects.set(contentIds[i], '<< /Length ' + body.length + ' >>\nstream\n' + body + '\nendstream');
+    }
+    let out = '%PDF-1.7\n';
+    const offsets = new Map();
+    const nums = [...objects.keys()].sort((a, b) => a - b);
+    for (const n of nums) { offsets.set(n, out.length); out += n + ' 0 obj\n' + objects.get(n) + '\nendobj\n'; }
+    const xref = out.length;
+    const top = nums[nums.length - 1] + 1;
+    out += 'xref\n0 ' + top + '\n0000000000 65535 f \n';
+    for (let n = 1; n < top; n += 1) {
+      out += offsets.has(n) ? String(offsets.get(n)).padStart(10, '0') + ' 00000 n \n'
+        : '0000000000 65535 f \n';
+    }
+    out += 'trailer\n<< /Size ' + top + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
+    const bytes = new Uint8Array(out.length);
+    for (let i = 0; i < out.length; i += 1) bytes[i] = out.charCodeAt(i) & 0xff;
+    return bytes;
+  }
+
+  function attachPdf() {
+    const file = new File([buildPdf(6)], 'q3-annual-report.pdf', { type: 'application/pdf' });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById('prompt-textarea')
+      .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const chip = document.createElement('div');
+    chip.className = 'att';
+    chip.setAttribute('data-testid', 'composer-file-chip');
+    chip.setAttribute('title', file.name);
+    chip.textContent = file.name;
+    document.getElementById('real-attachments').appendChild(chip);
+  }
+
+  function detachPdf() {
+    document.getElementById('real-attachments').innerHTML = '';
   }
 
   // Mimic ChatGPT swapping the composer node when you open a new conversation.

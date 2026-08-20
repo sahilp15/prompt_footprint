@@ -206,10 +206,12 @@ test('writeText drives a textarea through the native setter and fires input',
 test('writeText falls back to execCommand for a plain contenteditable',
   { skip: !dom.available }, () => {
     // Nothing here owns a model, so nobody cancels our beforeinput and the
-    // native command is the correct tool. It is the LAST resort, not the first.
-    const page = dom.createPage(dom.CHATGPT_HTML);
+    // native command is the correct tool. It is the LAST resort, not the first —
+    // and it is offered ONLY on a box like this one, never on Lexical or
+    // ProseMirror, where it would edit the DOM behind the editor's back.
+    const page = dom.createPage(dom.PLAIN_HTML);
     try {
-      const el = page.document.getElementById('prompt-textarea');
+      const el = page.document.getElementById('prompt-box');
       el.innerHTML = '<p>old text</p>';
       el.focus();
       assert.strictEqual(C.writeText(el, 'new text'), true);
@@ -237,7 +239,9 @@ test('writeText updates the editor MODEL, not just the DOM', { skip: !dom.availa
       'the model must carry the new prompt — this is what gets sent');
     assert.strictEqual(editor.inSync, true, 'nobody wrote behind the editor’s back');
     assert.strictEqual(C.readText(el), 'Summarize this report.');
-    // execCommand is never reached: the editor claimed the edit first.
+    // execCommand is never reached, and must never be: it fires no
+    // `beforeinput`, so this editor would not have heard about the change. The
+    // editor claimed a `beforeinput` we offered it instead.
     assert.deepStrictEqual(page.commands, []);
   } finally {
     page.restore();
@@ -355,9 +359,9 @@ test('writeText fails honestly rather than corrupting the editor',
 
 test('writeText leaves a collapsed caret at the end, not a full selection',
   { skip: !dom.available }, () => {
-    const page = dom.createPage(dom.CHATGPT_HTML);
+    const page = dom.createPage(dom.PLAIN_HTML);
     try {
-      const el = page.document.getElementById('prompt-textarea');
+      const el = page.document.getElementById('prompt-box');
       el.innerHTML = '<p>old text here</p>';
       el.focus();
       C.writeText(el, 'brand new text');

@@ -44,6 +44,12 @@
   const DETECT_THROTTLE_MS = 250;
   /** Safety net for layout changes no observer reports (CSS transitions, etc.). */
   const ANCHOR_TICK_MS = 500;
+  /**
+   * How long to wait before confirming a write an editor claimed but had not
+   * reconciled. Long enough for Lexical's and ProseMirror's commit-then-render
+   * cycle, short enough that a repair happens before the user can press send.
+   */
+  const WRITE_VERIFY_MS = 60;
 
   const ICONS = {
     // The PromptFootprint mark: a leaf built from a single stroke.
@@ -87,6 +93,20 @@
       </div>
 
       <div class="panel" id="panel" hidden>
+        <div class="context" id="context" hidden>
+          <div class="context-head">
+            <span class="context-model" id="context-model"></span>
+            <span class="context-window" id="context-window" hidden></span>
+          </div>
+          <div class="context-total">
+            <span class="context-num" id="context-total"></span>
+            <span class="context-total-label" id="context-total-label">User-supplied input</span>
+          </div>
+          <ul class="context-rows" id="context-rows"></ul>
+          <div class="context-accuracy" id="context-accuracy"></div>
+          <div class="context-unmeasured" id="context-unmeasured"></div>
+        </div>
+
         <div class="savings" id="savings" hidden>
           <div class="savings-headline" id="savings-headline"></div>
           <div class="savings-detail" id="savings-detail"></div>
@@ -222,6 +242,13 @@
     // token-linear number, and showing it as "energy saved" would claim that
     // cutting half the input halves the interaction, which it does not.
     const projectSavings = typeof d.projectSavings === 'function' ? d.projectSavings : null;
+    // The token analyzer. `contextModel` composes the composer text, the pasted
+    // runs, and the attachments into one breakdown; `present` names the model
+    // and the accuracy. Both are injected so the assistant can be driven from a
+    // test without a page around it — and so the analyzer stays a separate
+    // concern from the optimizer, which is what lets it be correct about files
+    // the optimizer never sees.
+    const contextModel = d.context || null;
 
     // ── Instance state ──────────────────────────────────────────────────────
     let host = null;
@@ -250,6 +277,7 @@
     let pendingWrite = null;          // { intended } — awaiting the editor's echo
     let driftedAt = 0;                // last refused replace, for the inline note
     let lastRenderedSaved = 0;
+    let breakdown = null;             // the token analyzer's current answer
     let observation = null;           // what model the page currently has selected
     let modelPillText = '';           // last text rendered, so we only transition on change
     let modelChangedAt = 0;           // for the debug panel's "last change"
@@ -265,6 +293,7 @@
     let toastTimer = null;
     let flashTimer = null;
     let pasteTimer = null;
+    let verifyTimer = null;
     let anchorRaf = 0;
     let countRaf = 0;
     let anchorEl = null;              // the composer's visible surface (cached)
@@ -534,6 +563,7 @@
       observeComposerSize();
       // Rebinding mid-draft (a re-render) must not lose the analysis, so read
       // the new element and only re-analyze when the text actually differs.
+      refreshBreakdown();
       const nextText = composerLib.readText(composerEl);
       if (nextText !== text) {
         text = nextText;
@@ -598,6 +628,7 @@
       typing = true;
       analyzing = false;
       engineError = null;
+      refreshBreakdown();         // cheap, and must not wait for the optimizer
       render();
 
       if (settings.autoAnalyze) debouncer.schedule();
@@ -634,6 +665,10 @@
 
       modelChangedAt = Date.now();
       renderModel();
+      // Every line of the breakdown is model-specific — the tokenizer, the PDF
+      // accounting, the image geometry, the context window. A switch re-costs
+      // all of them from cache, without re-reading a single file.
+      refreshBreakdown();
       if (!analysis) { render(); return; }
       guard.cancelAll();
       analyze();
@@ -684,14 +719,105 @@
       if (expanded && settings.debugPanel) renderDebug();
     }
 
+    // ── The token analyzer ──────────────────────────────────────────────────
+    //
+    // Separate from `analyze()` on purpose. `analyze()` runs the optimizer,
+    // which is expensive and debounced to a typing pause; the analyzer answers
+    // "how big is this request" and must keep up with every keystroke, every
+    // attachment, and every model switch. Making it a debounced side effect of
+    // the optimizer is what used to make the count lag behind the composer.
+
+    function refreshBreakdown() {
+      if (!contextModel) return null;
+      try {
+        breakdown = contextModel.compose(composerEl ? composerLib.readText(composerEl) : '');
+      } catch (err) {
+        log('assistant: breakdown failed —', err && err.message);
+        breakdown = null;
+      }
+      return breakdown;
+    }
+
+    /**
+     * The headline number.
+     *
+     * The whole point of the analyzer: when a file is attached, the number the
+     * user sees is the WHOLE observable request, not the text box. A 40-page PDF
+     * and "summarize this" is not nine tokens.
+     */
+    function observableTokens() {
+      if (breakdown && breakdown.total) return breakdown.total;
+      if (analytics) return analytics.originalTokens || 0;
+      if (breakdown) return breakdown.total;
+      return engine && engine.estimateTokens ? engine.estimateTokens(text) : 0;
+    }
+
+    function renderContext() {
+      const box = el.context;
+      if (!box) return;
+      if (!breakdown || (!breakdown.total && !breakdown.parts.length)) {
+        box.hidden = true;
+        return;
+      }
+      box.hidden = false;
+
+      el['context-model'].textContent = present && typeof present.tokenModelLine === 'function'
+        ? present.tokenModelLine(observation)
+        : (present && observation ? present.pillLabel(observation) : 'Model not detected');
+
+      el['context-total'].textContent = breakdown.total.toLocaleString();
+      el['context-total-label'].textContent = breakdown.headlineLabel;
+
+      // A context-window share is shown ONLY when the model's own documented
+      // window is known. A percentage of a guessed denominator is worse than no
+      // percentage: it makes a real numerator look invented.
+      const windowEl = el['context-window'];
+      if (breakdown.contextPercent != null) {
+        windowEl.hidden = false;
+        const pct = breakdown.contextPercent;
+        windowEl.textContent = `${pct < 0.1 ? '<0.1' : pct.toFixed(1)}% of context`;
+        windowEl.title = breakdown.contextNote || '';
+      } else {
+        windowEl.hidden = true;
+      }
+
+      el['context-rows'].innerHTML = breakdown.parts.map((part) => {
+        const value = part.pending ? '…' : part.tokens.toLocaleString();
+        // A PDF's two halves are shown together, because "extract the text" is
+        // roughly a third of what a PDF costs and the split is the actionable
+        // part — pasting the text instead avoids the visual half.
+        const split = part.kind === 'pdf' && (part.textTokens || part.visualTokens)
+          ? `<span class="context-split">text ${part.textTokens.toLocaleString()}` +
+            ` · document/visual ~${part.visualTokens.toLocaleString()}</span>`
+          : '';
+        const pages = part.pages ? `<span class="context-pages">${part.pages} pages</span>` : '';
+        return `<li class="context-row${part.unreadable ? ' is-unknown' : ''}">` +
+          `<span class="context-row-label" title="${esc(part.detail || '')}">${esc(part.label)}${pages}</span>` +
+          `<span class="context-row-value">${part.unreadable ? 'not counted' : value}</span>` +
+          split +
+          '</li>';
+      }).join('');
+
+      el['context-accuracy'].textContent = present && typeof present.accuracyLine === 'function'
+        ? present.accuracyLine(breakdown)
+        : 'Estimated';
+
+      // The disclosure that keeps the headline honest. Everything ChatGPT and
+      // Claude add that a browser extension cannot see is named, and none of it
+      // is given a number.
+      el['context-unmeasured'].textContent = 'Not included (not visible to a browser extension): '
+        + (breakdown.unmeasured || []).join(', ') + '.';
+    }
+
     // ── Analysis ────────────────────────────────────────────────────────────
 
     async function analyze() {
       if (destroyed || !settings.enabled) return;
-      if (!composerEl) { render(); return; }
+      if (!composerEl) { refreshBreakdown(); render(); return; }
 
       text = composerLib.readText(composerEl);
       const subject = text;
+      refreshBreakdown();
 
       if (subject.trim().length < S.MIN_VISIBLE_CHARS) {
         guard.cancelAll();
@@ -871,19 +997,33 @@
       // The write dispatches input events synchronously; the flag covers exactly
       // that window so our own edit is never mistaken for the user typing.
       writingProgrammatically = true;
-      let ok = false;
+      let result = { ok: false };
       try {
-        ok = composerLib.writeText(composerEl, intended);
+        result = composerLib.replaceText
+          ? composerLib.replaceText(composerEl, intended, { log })
+          : { ok: composerLib.writeText(composerEl, intended), verified: true };
       } finally {
         writingProgrammatically = false;
         replacing = false;
       }
 
-      if (!ok) {
-        engineError = 'Could not update the message box. Copy the optimized prompt instead.';
+      if (!result.ok) {
+        engineError = result.damaged
+          ? 'Could not update the message box, and this editor would not let it be undone. Check your prompt before sending.'
+          : 'Could not update the message box. Copy the optimized prompt instead.';
+        log('assistant: replacement failed —', result.kind, 'appended:', !!result.appended);
         render();
         return false;
       }
+      if (result.appended) {
+        log('assistant: an editor strategy appended and was repaired —', result.kind);
+      }
+
+      // An editor that owns its document model may commit in a microtask, so a
+      // synchronous read cannot always confirm the result. Confirm it after that
+      // has drained, and repair rather than trust: "the editor said it took the
+      // edit" is precisely the assumption that produced the append bug.
+      if (result.verified === false) scheduleWriteVerification(intended);
 
       // The host editor may apply the change in its own microtask, and may
       // normalize whitespace while doing it. `pendingWrite` lets the resulting
@@ -922,6 +1062,39 @@
       return true;
     }
 
+    /**
+     * Confirm — and if necessary repair — a write the editor had not yet
+     * reconciled when `replaceText` returned.
+     *
+     * Runs on a timer rather than a microtask because the editors commit their
+     * update, then reconcile the DOM, then dispatch `input`; a microtask can
+     * land in the middle of that. `writingProgrammatically` is raised again so
+     * the repair's own events are not read as the user typing.
+     */
+    function scheduleWriteVerification(intended) {
+      clearTimeout(verifyTimer);
+      verifyTimer = setTimeout(() => {
+        verifyTimer = null;
+        if (destroyed || !composerEl || !composerEl.isConnected) return;
+        if (!composerLib.verifyText) return;
+        // The user may have started typing in the meantime; their edit wins.
+        const now = composerLib.readText(composerEl);
+        if (now !== text && !pendingWrite) return;
+        writingProgrammatically = true;
+        let check = { ok: true, repaired: false };
+        try {
+          check = composerLib.verifyText(composerEl, intended, { log });
+        } finally {
+          writingProgrammatically = false;
+        }
+        if (check.repaired) log('assistant: composer repaired after a lagging editor write');
+        if (!check.ok) {
+          engineError = 'Could not update the message box. Copy the optimized prompt instead.';
+          render();
+        }
+      }, WRITE_VERIFY_MS);
+    }
+
     function undo() {
       if (!undoRecord || replacing) return false;
       const target = undoRecord.el && undoRecord.el.isConnected ? undoRecord.el : composerEl;
@@ -930,14 +1103,17 @@
 
       replacing = true;
       writingProgrammatically = true;
-      let ok = false;
+      let result = { ok: false };
       try {
-        ok = composerLib.writeText(target, original);
+        result = composerLib.replaceText
+          ? composerLib.replaceText(target, original, { log })
+          : { ok: composerLib.writeText(target, original), verified: true };
       } finally {
         writingProgrammatically = false;
         replacing = false;
       }
-      if (!ok) return false;
+      if (!result.ok) return false;
+      if (result.verified === false) scheduleWriteVerification(original);
 
       pendingWrite = { intended: original };
       text = original;
@@ -1000,6 +1176,11 @@
         concision: analysis && analysis.concision,
         replaced: Date.now() < successUntil,
         canUndo: !!undoRecord,
+        // Files keep the indicator up even when the prompt text is too short to
+        // analyze — see PFAssistantState.nextState.
+        attachedTokens: breakdown
+          ? breakdown.parts.filter((p) => p.kind !== 'text').reduce((n, p) => n + (p.tokens || 0), 0)
+          : 0,
       });
     }
 
@@ -1008,11 +1189,13 @@
       const next = computeState();
       uiState = next;
 
-      // The pill lives inside the host and is hidden with it, so it is kept in
-      // step even while nothing is on screen. Doing it here rather than after
-      // the visibility check means the model is already correct the moment the
-      // assistant appears, instead of showing the previous one for a frame.
+      // The pill and the token breakdown live inside the host and are hidden
+      // with it, so both are kept in step even while nothing is on screen.
+      // Doing it here rather than after the visibility check means they are
+      // already correct the moment the assistant appears — and the moment the
+      // panel is expanded — instead of showing the previous state for a frame.
       renderModel();
+      renderContext();
 
       if (!settings.enabled || !S.isIndicatorVisible(next) ||
           (dismissedFor !== null && dismissedFor === text && next !== 'undo' && next !== 'replaced')) {
@@ -1030,8 +1213,11 @@
     function renderBar(state) {
       const saved = analytics ? analytics.tokensSaved || 0 : 0;
       const pct = analytics ? Math.round(analytics.percentReduction || 0) : 0;
-      const tokens = analytics ? analytics.originalTokens || 0
-        : (engine && engine.estimateTokens ? engine.estimateTokens(text) : 0);
+      const tokens = observableTokens();
+      // When attachments are in play the bar names what it is counting, so the
+      // number cannot be read as "the text box".
+      const hasFiles = !!(breakdown && breakdown.attachments && breakdown.attachments.length);
+      const unit = hasFiles ? 'tokens in' : 'tokens';
 
       el.headline.classList.toggle('is-pending', state === 'analyzing');
       el.pct.hidden = true;
@@ -1043,7 +1229,7 @@
           el.headline.textContent = 'Analyzing…';
           break;
         case 'typing':
-          el.headline.innerHTML = `<span class="num">${tokens}</span> tokens`;
+          el.headline.innerHTML = `<span class="num">${tokens.toLocaleString()}</span> ${unit}`;
           break;
         case 'available': {
           el.headline.innerHTML = `Save <span class="num" id="saved-num">${saved}</span> tokens`;
@@ -1058,7 +1244,7 @@
         case 'concise':
           el.headline.textContent = 'Already concise';
           el.sub.hidden = false;
-          el.sub.innerHTML = `<span class="num">${tokens}</span> tokens`;
+          el.sub.innerHTML = `<span class="num">${tokens.toLocaleString()}</span> ${unit}`;
           break;
         // Something IS compressible here, just not enough to interrupt for. The
         // separate wording matters: calling this "Already concise" is what made
@@ -1070,6 +1256,11 @@
             ? `<span class="num">${tokens}</span> tokens · ${saved} removable`
             : `<span class="num">${tokens}</span> tokens`;
           el['quick-optimize'].hidden = expanded || saved <= 0;
+          break;
+        case 'attachments':
+          el.headline.innerHTML = `<span class="num">${tokens.toLocaleString()}</span> tokens in`;
+          el.sub.hidden = false;
+          el.sub.textContent = attachmentSummary();
           break;
         case 'replaced':
           el.headline.textContent = 'Prompt replaced';
@@ -1084,9 +1275,19 @@
           el.headline.textContent = 'Offline — local mode';
           break;
         default:
-          el.headline.innerHTML = `<span class="num">${tokens}</span> tokens`;
+          el.headline.innerHTML = `<span class="num">${tokens.toLocaleString()}</span> ${unit}`;
       }
       el.bar.setAttribute('aria-label', `PromptFootprint: ${el.headline.textContent}`);
+    }
+
+    /** "2 files · report.pdf, notes.md" — what is making the number big. */
+    function attachmentSummary() {
+      const files = (breakdown && breakdown.attachments) || [];
+      if (!files.length) return '';
+      const names = files.map((f) => f.name).slice(0, 2).join(', ');
+      return files.length > 2
+        ? `${files.length} attachments · ${names}, +${files.length - 2} more`
+        : `${files.length === 1 ? '1 attachment' : `${files.length} attachments`} · ${names}`;
     }
 
     function ecoLine(tokens) {
@@ -1707,6 +1908,7 @@
       clearTimeout(toastTimer);
       clearTimeout(flashTimer);
       clearTimeout(pasteTimer);
+      clearTimeout(verifyTimer);
       cancelAnimationFrame(countRaf);
       cancelAnimationFrame(anchorRaf);
       while (cleanups.length) {
@@ -1741,6 +1943,19 @@
       setExpanded,
       setLevel,
       setModel,
+      /**
+       * Attachments changed (added, removed, or finished parsing).
+       *
+       * Pushed in rather than polled: the tracker already knows the moment it
+       * happens, and a poll would either lag behind a removal or burn a timer
+       * on a page where nothing is ever attached.
+       */
+      contextChanged() {
+        if (destroyed) return;
+        refreshBreakdown();
+        render();
+      },
+      get breakdown() { return breakdown; },
       // Inspection surface for tests and debugging — never used by the UI.
       get state() { return uiState; },
       get model() { return observation; },

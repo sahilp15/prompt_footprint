@@ -228,6 +228,115 @@
     return rows.map(([label, value]) => ({ label, value }));
   }
 
+  // ── Naming what we actually know, for the token analyzer ──────────────────
+  //
+  // The token analyzer needs a different sentence from the environmental panel.
+  // That panel answers "what will this cost the planet"; this one answers "whose
+  // tokenizer am I counting with, and how sure are you". Those have different
+  // failure modes, and the one that matters here is claiming a model we cannot
+  // prove — because the tokenizer follows from the model, so a confidently wrong
+  // model produces a confidently wrong count.
+  //
+  // The four honest states, in the order they are checked:
+  //
+  //   routed          "ChatGPT Auto — exact routed model unavailable"
+  //   detected        "Claude Sonnet 5 — detected"
+  //   named-unmapped  "GPT-7.2 Nimbus — detected, not in the registry"
+  //   unknown         "OpenAI model — estimated tokenization"
+
+  const PRODUCT_NAME = {
+    chatgpt: 'ChatGPT',
+    'custom-gpt': 'ChatGPT (custom GPT)',
+    'claude-web': 'Claude',
+    'gemini-web': 'Gemini',
+    gem: 'Gemini (Gem)',
+  };
+
+  /**
+   * Provider -> product -> detected label -> family -> tokenizer, as a chain.
+   *
+   * Returned as data rather than a formatted string so the panel, the debug
+   * rows, and the tests all read the same values. Every field is either
+   * something the page told us or `null`; nothing here is inferred.
+   */
+  function detectionChain(obs, breakdown) {
+    const o = obs || {};
+    const b = breakdown || {};
+    const meta = o.canonicalModel ? CAT.modelMeta(o.provider, o.canonicalModel) : null;
+    let state = 'unknown';
+    if (o.routing === 'auto') state = 'routed';
+    else if (o.canonicalModel) state = 'detected';
+    else if (o.selectedLabel) state = 'named-unmapped';
+
+    return {
+      provider: PROVIDER_NAME[o.provider] || PROVIDER_NAME.unknown,
+      providerId: o.provider || 'unknown',
+      product: PRODUCT_NAME[o.surface] || PROVIDER_NAME[o.provider] || 'Unknown product',
+      uiLabel: o.selectedLabel || null,
+      canonicalModel: o.canonicalModel || null,
+      family: meta ? meta.family : null,
+      tokenizer: b.tokenizer || null,
+      method: b.method || null,
+      confidence: b.confidence || null,
+      state,
+    };
+  }
+
+  /**
+   * The one line naming the model, written so it can never overstate.
+   *
+   * Auto is the case this exists for. ChatGPT's router does not expose which
+   * model handled a request, so "Auto" is the complete truth and resolving it
+   * into a model name would be a fabrication — one that would then silently
+   * select a tokenizer and a context window.
+   */
+  function tokenModelLine(obs) {
+    const o = obs || {};
+    if (o.effectiveModel) {
+      const meta = CAT.modelMeta(o.provider, o.effectiveModel);
+      return `${meta ? meta.label : o.effectiveModel} — reported by the provider`;
+    }
+    if (o.routing === 'auto') {
+      const product = PRODUCT_NAME[o.surface] || PROVIDER_NAME[o.provider] || 'This product';
+      return `${product} Auto — exact routed model unavailable`;
+    }
+    if (o.canonicalModel) {
+      const meta = CAT.modelMeta(o.provider, o.canonicalModel);
+      return `${meta ? meta.label : o.canonicalModel} — detected`;
+    }
+    if (o.selectedLabel) return `${o.selectedLabel} — detected, not in the registry`;
+    const provider = PROVIDER_NAME[o.provider];
+    return provider && o.provider !== 'unknown'
+      ? `${provider.replace(/^ChatGPT$/, 'OpenAI')} model — estimated tokenization`
+      : 'Model not detected — generic estimate';
+  }
+
+  /**
+   * The accuracy line under the breakdown.
+   *
+   * Names the WEAKEST thing in the total, because that is what decides how much
+   * the number can be trusted — and a PDF's visual half is almost always it.
+   */
+  function accuracyLine(breakdown) {
+    const b = breakdown || {};
+    const parts = b.parts || [];
+    const pdf = parts.find((p) => p.kind === 'pdf');
+    const unreadable = parts.filter((p) => p.unreadable);
+    const opaque = parts.find((p) => p.kind === 'opaque' || p.kind === 'unknown');
+
+    if (unreadable.length) {
+      return `Estimated — ${unreadable.length} attachment${unreadable.length === 1 ? '' : 's'} `
+        + 'could not be read and are not included';
+    }
+    if (pdf) return 'Estimated — PDF totals include document and visual processing';
+    if (opaque) return 'Estimated — a compressed document is estimated from its size, not read';
+    if (b.confidence === 'high') {
+      return `Estimated — counted locally with the ${b.tokenizer || 'detected'} tokenizer`;
+    }
+    if (b.method === 'generic-estimate') return 'Rough estimate — provider not identified';
+    return 'Estimated — model not identified exactly, so the tokenizer is a best match';
+  }
+
   /** Why the number just moved — shown after a model/mode change. */
   function changeExplanation(previous, current, prevEstimate, nextEstimate) {
     if (!previous) return null;
@@ -264,6 +373,10 @@
     PROVIDER_NAME,
     SURFACE_NAME,
     SOURCE_NAME,
+    PRODUCT_NAME,
+    detectionChain,
+    tokenModelLine,
+    accuracyLine,
     escapeHtml,
     modelLabel,
     pillLabel,

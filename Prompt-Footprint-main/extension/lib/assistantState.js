@@ -42,6 +42,7 @@
   // the tests agree on the vocabulary.
   const STATES = [
     'empty',        // composer is empty (or too short to say anything about)
+    'attachments',  // nothing to optimize in the text, but files are attached
     'typing',       // user is mid-burst; last result is stale
     'analyzing',    // engine is running
     'available',    // a worthwhile optimization exists
@@ -171,7 +172,14 @@
     if (!s.composerFound) return 'unsupported';
 
     const text = typeof s.text === 'string' ? s.text : '';
-    if (text.trim().length < MIN_VISIBLE_CHARS) return 'empty';
+    if (text.trim().length < MIN_VISIBLE_CHARS) {
+      // "Summarize this" plus a 40-page PDF is fourteen characters of prompt and
+      // tens of thousands of tokens of request. Hiding the indicator because the
+      // TEXT is short is precisely the assumption the token analyzer exists to
+      // break, so attached files keep it on screen — reporting the size, with
+      // nothing to say about optimizing it.
+      return (s.attachedTokens > 0) ? 'attachments' : 'empty';
+    }
 
     // A completed replacement outranks live analysis for a moment so the user
     // sees their action confirmed rather than the panel immediately re-analyzing.

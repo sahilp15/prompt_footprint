@@ -168,6 +168,48 @@
       date: '2026',
       note: 'The model name appears inside/under the text box and is the UI switch point.',
     },
+    // Model line-ups and tokenization. Added for the provider-aware token
+    // analyzer; see lib/tokens/constants.js, which cites the same documents.
+    S22: {
+      id: 'S22',
+      label: 'OpenAI Help Center — Model release notes',
+      url: 'https://help.openai.com/en/articles/9624314-model-release-notes',
+      kind: 'docs',
+      date: '2026-08',
+      note: 'The current ChatGPT picker: Auto/Instant/Thinking/Pro, the GPT-5.x line-up, and the Legacy Models tab.',
+    },
+    S23: {
+      id: 'S23',
+      label: 'openai/tiktoken — model-to-encoding table',
+      url: 'https://github.com/openai/tiktoken/blob/main/tiktoken/model.py',
+      kind: 'docs',
+      date: '2026-08',
+      note: 'MODEL_PREFIX_TO_ENCODING; "gpt-5" resolves to o200k_base, which is how gpt-5.6-* is counted.',
+    },
+    S24: {
+      id: 'S24',
+      label: 'Claude Docs — Models overview',
+      url: 'https://platform.claude.com/docs/en/about-claude/models/overview',
+      kind: 'docs',
+      date: '2026-08',
+      note: 'Context windows, and the characters/words-per-token anchors the Claude tokenizer calibration uses.',
+    },
+    S25: {
+      id: 'S25',
+      label: 'Claude Docs — PDF support and Vision',
+      url: 'https://platform.claude.com/docs/en/build-with-claude/pdf-support',
+      kind: 'docs',
+      date: '2026-08',
+      note: 'Per-page PDF token band, page-as-image processing, and the 28px visual-patch formula.',
+    },
+    S26: {
+      id: 'S26',
+      label: 'OpenAI Help Center — Optimizing file uploads in ChatGPT',
+      url: 'https://help.openai.com/en/articles/10029836-optimizing-file-uploads-in-chatgpt-enterprise',
+      kind: 'docs',
+      date: '2026-08',
+      note: 'ChatGPT stuffs ~110k tokens of uploaded text into context and indexes the remainder.',
+    },
     S21: {
       id: 'S21',
       label: 'Johnson — The Compression Paradox in LLM Inference',

@@ -38,9 +38,34 @@
   const discovery = (typeof PFModelDiscovery !== 'undefined')
     ? PFModelDiscovery.createRegistry({ log })
     : null;
+  // ── The token analyzer ─────────────────────────────────────────────────---
+  // Attachments and pasted content are input too. The tracker captures files the
+  // user attaches (and notices when they remove them); the context model turns
+  // the composer text, the pasted runs, and the attachments into one breakdown.
+  // Both are model-aware: everything is re-costed when the picker changes,
+  // without re-reading a byte of any file.
+  const attachmentTracker = (typeof PFAttachmentTracker !== 'undefined')
+    ? PFAttachmentTracker.createTracker({
+      document,
+      adapter,
+      getTarget: () => tokenTarget(),
+      getSurface: () => (observation && observation.surface) || adapter.id,
+      onChange: onAttachmentsChanged,
+      log,
+    })
+    : null;
+  const contextModel = (typeof PFContext !== 'undefined')
+    ? PFContext.createContext({
+      getTarget: () => tokenTarget(),
+      getSurface: () => (observation && observation.surface) || adapter.id,
+      tracker: attachmentTracker,
+    })
+    : null;
+
   let detector = null;
   let observation = null;
   let draftEstimate = null;         // projection for the prompt being typed
+  let draftBreakdown = null;        // the token analyzer's breakdown of it
   let lastChangeExplanation = null; // why the projection moved, for the panel
   let draftTimer = null;
 
@@ -150,6 +175,11 @@
     // Freeze the model at SEND time. From here on this message belongs to this
     // model, whatever the picker does next.
     const snapshot = takeSendSnapshot(text, lastSubmitAt);
+    // The composer clears on send and so do its attachments; anything still
+    // tracked would be counted again against the next message.
+    if (attachmentTracker) attachmentTracker.reset('sent');
+    if (contextModel) contextModel.reset();
+    if (assistant && typeof assistant.contextChanged === 'function') assistant.contextChanged();
     pendingUserMessage = {
       id: `submit-${lastSubmitAt}`, text, startTime: lastSubmitAt,
       snapshotId: snapshot ? snapshot.id : null,
@@ -233,6 +263,67 @@
       if (draftTimer) clearTimeout(draftTimer);
       draftTimer = setTimeout(() => { draftTimer = null; recomputeDraft('typing'); }, 400);
     }, true);
+
+    // Pasted text is recorded so the breakdown can attribute it separately —
+    // NOT so it can be added on top. Once pasted it is composer text, and
+    // lib/tokens/context.js treats it as a subdivision of that total.
+    document.addEventListener('paste', (e) => {
+      if (!contextModel || !e.clipboardData) return;
+      let pasted = '';
+      try { pasted = e.clipboardData.getData('text/plain') || ''; } catch (_) { pasted = ''; }
+      if (contextModel.notePaste(pasted)) log('paste captured —', pasted.length, 'characters');
+    }, true);
+
+    if (attachmentTracker) attachmentTracker.start();
+  }
+
+  /**
+   * What the token counter needs to pick a tokenizer.
+   *
+   * Deliberately a narrow projection of the observation rather than the whole
+   * thing: the counter must never be able to reach for a field it should not be
+   * deciding on, and this is the list of things that legitimately change how
+   * text is counted.
+   */
+  function tokenTarget() {
+    const o = observation || {};
+    return {
+      provider: o.provider || (providerAdapter ? providerAdapter.provider : 'unknown'),
+      canonicalModel: o.effectiveModel || o.canonicalModel || null,
+      selectedLabel: o.selectedLabel || null,
+      routing: o.routing || 'unknown',
+      surface: o.surface || adapter.id,
+    };
+  }
+
+  /**
+   * Provider- and model-aware token count.
+   *
+   * Replaces the old global `estimateTokens` (characters / 4) at every call site
+   * that describes a prompt. That function counted Claude and ChatGPT
+   * identically, which on the current Claude tokenizer understates the input by
+   * roughly 60%.
+   */
+  function countTokens(text) {
+    if (typeof PFTokenCounter === 'undefined') return estimateTokens(text);
+    return PFTokenCounter.count(text, tokenTarget());
+  }
+
+  /** The full observable request: composer text, pasted runs, and attachments. */
+  function observableBreakdown() {
+    if (!contextModel) return null;
+    try {
+      return contextModel.compose(readDraftText());
+    } catch (e) {
+      log('token analyzer failed:', e && e.message);
+      return null;
+    }
+  }
+
+  function onAttachmentsChanged(reason) {
+    log('attachments changed (', reason, ')');
+    recomputeDraft('attachments');
+    if (assistant && typeof assistant.contextChanged === 'function') assistant.contextChanged();
   }
 
   /** Shared estimator input, built from the current observation. */
@@ -253,8 +344,13 @@
 
   function recomputeDraft(reason) {
     if (typeof PFEstimator === 'undefined') return;
-    const text = readDraftText();
-    const inputTokens = estimateTokens(text);
+    // The whole observable request — attachments included. Projecting the energy
+    // of "summarize this" while a 40-page PDF sits next to it was understating
+    // the interaction by orders of magnitude, for the same reason the token
+    // count was.
+    const breakdown = observableBreakdown();
+    const inputTokens = breakdown ? breakdown.total : countTokens(readDraftText());
+    draftBreakdown = breakdown;
     draftEstimate = PFEstimator.estimate(estimateInput({ inputTokens, phase: 'draft' }));
     draftEstimate.generation = detector ? detector.generation : 0;
     updateModelPanel();
@@ -277,6 +373,24 @@
       estimate: draftEstimate,
       inputTokens,
       savings,
+      // The popup shows the same breakdown the in-page panel does. Only counts
+      // and file NAMES cross this boundary — never file contents, and never the
+      // prompt text.
+      breakdown: draftBreakdown ? {
+        total: draftBreakdown.total,
+        low: draftBreakdown.low,
+        high: draftBreakdown.high,
+        confidence: draftBreakdown.confidence,
+        method: draftBreakdown.method,
+        tokenizer: draftBreakdown.tokenizer,
+        contextTokens: draftBreakdown.contextTokens,
+        contextPercent: draftBreakdown.contextPercent,
+        parts: draftBreakdown.parts.map((part) => ({
+          label: part.label, kind: part.kind, tokens: part.tokens,
+          confidence: part.confidence, pages: part.pages,
+          textTokens: part.textTokens, visualTokens: part.visualTokens,
+        })),
+      } : null,
       changeExplanation: lastChangeExplanation,
       generation: detector ? detector.generation : 0,
     };
@@ -360,6 +474,14 @@
         // we just started tracking. Only reset when nothing is being captured;
         // an active capture keeps running (it has its own settle/timeout).
         if (!pendingUserMessage && !responseWatch) {
+          // A new conversation is a new context: attachments, pasted runs, and
+          // the breakdown built from them all belong to the chat we just left.
+          // ChatGPT and Claude navigate without a reload, so nothing else clears
+          // this state.
+          if (attachmentTracker) attachmentTracker.reset('navigation');
+          if (contextModel) contextModel.reset();
+          recomputeDraft('navigation');
+          if (assistant && typeof assistant.contextChanged === 'function') assistant.contextChanged();
           updateFloatingStatus('saved');
         } else {
           log('URL changed during active capture — keeping capture alive:', location.href);
@@ -478,7 +600,10 @@
    */
   function takeSendSnapshot(text, sentAt) {
     if (!snapshots || typeof PFEstimator === 'undefined') return null;
-    const inputTokens = estimateTokens(text);
+    // Counted with the detected model's tokenizer, and including whatever was
+    // attached: what was sent is what should be recorded.
+    const breakdown = observableBreakdown();
+    const inputTokens = breakdown ? breakdown.total : countTokens(text);
     const estimate = PFEstimator.estimate(estimateInput({ inputTokens, phase: 'sent' }));
     return snapshots.create({
       conversationKey: observation ? observation.conversationKey : null,
@@ -616,6 +741,9 @@
       platform: adapter.id,
       responseTimeMs,
       multiplier,
+      // Count with the tokenizer of the model that actually served this turn,
+      // not with one generic ratio for every provider.
+      countTokens,
     });
     const est = completionEstimate(snapshotId, impact.promptTokens, impact.responseTokens);
     if (est) {
@@ -1226,6 +1354,10 @@
       // answer on the page and makes a model switch a single event rather than a
       // rescan in every component that cares.
       present: (typeof PFModelPresent !== 'undefined') ? PFModelPresent : null,
+      // The token analyzer. The assistant renders its breakdown; it does not
+      // own it, so the popup and the panel can never disagree about what the
+      // request currently contains.
+      context: contextModel,
       getModel: () => observation,
       subscribeModel,
       observedRoots: () => (detector ? detector.observedRoots.length : 0),
@@ -1323,6 +1455,7 @@
   // listeners, timers, and shadow host never outlive the document.
   window.addEventListener('pagehide', () => {
     if (assistant) { assistant.destroy(); assistant = null; }
+    if (attachmentTracker) attachmentTracker.destroy();
     // The detector owns observers, listeners, and timers; none of them may
     // outlive the document.
     if (detector) { detector.destroy(); detector = null; }

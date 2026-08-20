@@ -361,6 +361,140 @@
   100% { transform: scale(1); }
 }
 
+/* ── Token analyzer ────────────────────────────────────────────────────────
+   What the request is actually carrying, broken into its parts.
+
+   Deliberately the FIRST block in the panel and deliberately quiet: it uses the
+   surface tones rather than the accent wash, because it is a measurement, not
+   an offer. The accent belongs to the savings block below it, which is the one
+   thing on this panel asking the user to act. */
+
+.context {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-soft);
+}
+.context[hidden] { display: none; }
+
+.context-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.context-model {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-window {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.context-window[hidden] { display: none; }
+
+.context-total {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.context-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.context-total-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* One row per contributing part. The value column is monospaced and
+   tabular so the numbers line up and the biggest one is findable at a glance —
+   which is the entire job of this list. */
+.context-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.context-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+.context-row.is-unknown { color: var(--text-muted); font-style: italic; }
+
+.context-row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-pages {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.context-row-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* A PDF's two halves, on their own line under the file. Text and
+   document/visual processing are different magnitudes with different causes,
+   and merging them into one figure is what makes a PDF look like plain text. */
+.context-split {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding-left: 10px;
+}
+
+.context-accuracy {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.context-unmeasured {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
 /* ── Savings headline ──────────────────────────────────────────────────────
    The before/after the whole feature exists to show. */
 

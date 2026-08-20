@@ -42,6 +42,7 @@ function _normalizeOptions(options) {
     platform: o.platform || 'chatgpt',
     multiplier: typeof o.multiplier === 'number' ? o.multiplier : 1.0,
     responseTimeMs: o.responseTimeMs || 0,
+    countTokens: typeof o.countTokens === 'function' ? o.countTokens : null,
   };
 }
 
@@ -79,7 +80,15 @@ function calculateImpact(totalTokens, options) {
 function calculateQueryImpact(promptText, responseText, options) {
   const opts = _normalizeOptions(options);
   const profile = resolveProfile(opts.platform);
-  const { promptTokens, responseTokens, totalTokens } = _T.estimateQueryTokens(promptText, responseText);
+  // `countTokens` lets the caller supply a provider- and model-aware counter
+  // (lib/tokens/counter.js). Without one this falls back to the generic
+  // characters/4 approximation, which is right for nobody in particular — so
+  // content.js always passes one, and the fallback exists only so this module
+  // stays usable standalone and its own tests keep working.
+  const count = typeof opts.countTokens === 'function' ? opts.countTokens : null;
+  const promptTokens = count ? count(promptText) : _T.estimateTokens(promptText);
+  const responseTokens = count ? count(responseText) : _T.estimateTokens(responseText);
+  const totalTokens = promptTokens + responseTokens;
   const timeFactor = computeTimeFactor(responseTokens, opts.responseTimeMs, profile.baselineTokensPerSec);
   const m = opts.multiplier * timeFactor;
 

@@ -28,19 +28,100 @@ median**, not a model measurement. Nothing is ever displayed without its class.
 
 ## 1. Token estimation
 
-We never see provider token counts, so we approximate from text length:
+Providers do not expose their token counts to a browser extension, and both
+exact-counting endpoints (OpenAI's `usage`, Anthropic's `count_tokens`) require
+transmitting the user's prompt and documents. PromptFootprint counts everything
+on-device instead, and labels every result an estimate.
 
-```
-tokens = max(1, ceil(text.length / 4))
-```
+### Provider- and model-aware counting
 
-The cl100k_base tokenizer averages ~4 characters per token; code tokenizes
-denser (~3.5) and prose looser (~4.5), so 4 is a balanced midpoint.
+Counting is **not** one ratio for every provider. It is two steps:
 
-**Limitation:** ±~15% versus a true tokenizer, worse for non-English or heavily
-formatted text. Worse still across model generations — Claude Sonnet 5's
-tokenizer can produce ~30% more tokens for the same text than Sonnet 4.6, so raw
-token counts are **not comparable across generations** [S8].
+1. **Split** the text with the provider's real pre-tokenization rule. For OpenAI
+   that is the exact `pat_str` from `tiktoken`'s own source, for `cl100k_base`
+   and `o200k_base` [S23]. Pre-tokenization decides where token boundaries *can*
+   fall — no BPE merge crosses a piece boundary — so this step is not an
+   approximation.
+2. **Cost** each resulting piece against a profile calibrated to that
+   tokenizer's published figures. This step *is* an approximation: it stands in
+   for a merge table PromptFootprint does not ship (`o200k_base`'s vocabulary is
+   several megabytes and `tiktoken` downloads it at runtime; Anthropic has never
+   published theirs).
+
+| Tokenizer | Applies to | Calibration anchor | Measured |
+|---|---|---|---:|
+| `o200k_base` | every current OpenAI chat model, including the GPT-5.x families [S23] | ~4 characters/token | 4.05 |
+| `cl100k_base` | `gpt-4-*`, `gpt-3.5-turbo-*` [S23] | ~3.5 characters/token | 3.54 |
+| Claude, Opus 4.7 and later | Claude 5 family, Opus 4.7/4.8 | 1M tokens ≈ 2.5M characters ≈ 555k words [S24] | 2.42 |
+| Claude, before Opus 4.7 | Opus/Sonnet 4.6 and earlier, Haiku 4.5 | 1M tokens ≈ 3.4M characters ≈ 750k words [S24] | 3.37 |
+
+The consequence, and the reason one generic estimator was wrong: **the same
+English text is roughly 65% more tokens on Claude 5 than on a current OpenAI
+model.** A `text.length / 4` estimate understated Claude by about that much and
+was the same number for both.
+
+Model → tokenizer resolution follows `tiktoken`'s own longest-prefix table, so a
+model that ships after this was written (`gpt-5.7-…`) still resolves correctly
+as long as OpenAI keeps its naming. A model that resolves to nothing falls back
+to the provider's current default and the count is marked `model-estimate`
+rather than `local-tokenizer`.
+
+### What is counted
+
+The composer's text is not the request. The analyzer counts:
+
+* typed text;
+* **pasted runs**, broken out separately — as a *subdivision* of the composer's
+  own count, never added to it, so nothing is counted twice;
+* **text attachments** (`.txt`, `.md`, `.csv`, `.json`, source code, …), read and
+  tokenized in full rather than estimated from byte size;
+* **PDFs**, as two separate contributions (see below);
+* **images**, from each provider's published geometry rules;
+* **opaque documents** (`.docx`, `.pptx`, …) as a wide byte-derived band,
+  labelled low confidence, because they are not parsed.
+
+### PDFs
+
+A PDF is not plain text to either provider. Claude "converts each page of the
+document into an image" and extracts the page's text alongside it [S25], which is
+why Anthropic's own worked example is ~1,000 tokens for a 3-page PDF as text and
+~7,000 processed visually. So a PDF's cost is reported as two lines:
+
+* **extracted text** — inflated and tokenized locally where the content streams
+  can be read; otherwise Anthropic's documented 1,500–3,000 tokens/page band
+  [S25];
+* **document/visual processing** — per-page image cost, from the same vision
+  rules as a standalone image.
+
+On chatgpt.com a further limit applies: roughly the first 110k tokens of an
+uploaded document's text go into the context window and the remainder goes to a
+private search index, from which only relevant chunks are retrieved [S26]. The
+overflow is reported as indexed rather than counted as context.
+
+### Images
+
+Anthropic publishes an exact rule: `ceil(width / 28) × ceil(height / 28)` visual
+tokens, subject to the model's resolution tier (2576 px / 4784 tokens on Claude
+4.7 and later; 1568 px / 1568 tokens before) [S25]. PromptFootprint implements it
+directly and reproduces every row of Anthropic's published example table exactly.
+OpenAI's patch rule (32 px patches, a 1536-patch budget, an uncapped
+original-detail path on GPT-5.6 and later) yields a *range* rather than a figure,
+because which of those applies is not visible from the page.
+
+### What is deliberately NOT counted
+
+System prompts, tool schemas, conversation history, memory and custom
+instructions, retrieval results, and reasoning tokens all enter the model's
+context and none of them are visible to a browser extension. They are named in
+the UI as unmeasured, with no number attached, and the headline is labelled
+"observable input" rather than "input".
+
+**Limitation:** the counting step above is an approximation of a merge table, so
+expect a few percent of error on prose and more on unusual scripts or heavily
+formatted text. Counts are also **not comparable across model generations** —
+Claude's tokenizer changed at Opus 4.7 and the same text is ~30% more tokens
+after it [S24] — which is why the tokenizer is selected per model rather than per
+provider.
 
 ## 2. Verified anchors
 
@@ -265,6 +346,15 @@ real per-model telemetry. Use the ranges and the trends, not the decimals.
 - **[S13]–[S16]** OpenAI API model docs and ChatGPT model-availability help.
 - **[S17]–[S20]** Google DeepMind model cards and Gemini Apps help.
 - **[S21]** Johnson — *The Compression Paradox in LLM Inference* (2026 preprint).
+- **[S22]** OpenAI Help Center — *Model release notes* (the current ChatGPT picker).
+- **[S23]** `openai/tiktoken` — `tiktoken/model.py` (model → encoding) and
+  `tiktoken_ext/openai_public.py` (the pre-tokenization patterns).
+- **[S24]** Claude Docs — *Models overview* (context windows, and the
+  characters/words-per-token anchors the Claude calibration uses).
+- **[S25]** Claude Docs — *PDF support* and *Vision* (per-page token band,
+  page-as-image processing, the 28 px visual-patch formula).
+- **[S26]** OpenAI Help Center — *Optimizing file uploads in ChatGPT*
+  (~110k tokens stuffed into context, the remainder indexed).
 
 Full titles, URLs, and dates are in `extension/lib/env/sources.js`, which is the
 single place any displayed figure resolves its citation from.

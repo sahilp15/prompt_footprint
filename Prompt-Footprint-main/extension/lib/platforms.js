@@ -41,6 +41,46 @@
     return el.dataset.pfId;
   }
 
+
+  // ── Attachments ──────────────────────────────────────────────────────────
+  // Where each product renders the chips for files the user has attached.
+  //
+  // Centralized here, with every adapter's list ordered current-first and
+  // ending in structural fallbacks, because these are the selectors most likely
+  // to churn: attachment UI is redesigned far more often than message markup.
+  // The attachment tracker never depends on any single one of them — it
+  // corroborates chips against the files it captured from the paste/drop/picker
+  // events, so a selector going stale degrades the display of files we did not
+  // capture rather than breaking the count.
+
+  // Fallbacks every product shares: a chip is something inside the composer
+  // that names a file and offers a way to remove it.
+  const GENERIC_ATTACHMENT_SELECTORS = [
+    '[data-testid*="attachment" i]',
+    '[data-testid*="file" i]',
+    '[class*="attachment" i]',
+    'button[aria-label*="Remove file" i]',
+    'button[aria-label*="Remove attachment" i]',
+  ];
+
+  // The visible name of an attachment chip, from whichever hook carries it.
+  // Title and aria-label are preferred over text because chips truncate long
+  // file names in their text but keep the full one in the accessible name.
+  function attachmentName(el) {
+    if (!el) return '';
+    const direct = el.getAttribute?.('title') || el.getAttribute?.('aria-label') ||
+      el.getAttribute?.('data-filename') || el.getAttribute?.('alt');
+    const inner = el.querySelector?.('[title], [aria-label], [data-filename]');
+    const nested = inner && (inner.getAttribute('title') || inner.getAttribute('aria-label') ||
+      inner.getAttribute('data-filename'));
+    const raw = direct || nested || el.textContent || '';
+    return String(raw)
+      .replace(/^\s*(remove|delete|download|preview)\s+(file\s+)?/i, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200);
+  }
+
   // ── ChatGPT ──────────────────────────────────────────────────────────────
   // Preserves the original detection behavior exactly: ChatGPT tags each
   // message with data-message-author-role and data-message-id.
@@ -55,6 +95,12 @@
     // presence is the most reliable "model is generating" signal.
     stopSelector: 'button[data-testid="stop-button"], button[aria-label*="Stop" i]',
     sendSelector: 'button[data-testid="send-button"], #composer-submit-button, button[aria-label*="Send" i]',
+    composerSurfaceSelector: 'form[data-type="unified-composer"], #composer-background, [data-testid="composer"]',
+    attachmentSelectors: [
+      '[data-testid="composer-file-chip"]',
+      '[data-testid*="composer-attachment" i]',
+      'form[data-type="unified-composer"] [role="button"][aria-label*="file" i]',
+    ].concat(GENERIC_ATTACHMENT_SELECTORS),
     getRole(el) {
       return el.getAttribute?.('data-message-author-role') || null;
     },
@@ -129,6 +175,12 @@
     inputSelector: 'div[contenteditable="true"].ProseMirror, div[contenteditable="true"]',
     stopSelector: 'button[aria-label*="Stop" i]',
     sendSelector: 'button[aria-label*="Send" i]',
+    composerSurfaceSelector: 'fieldset, [data-testid="chat-input-container"]',
+    attachmentSelectors: [
+      '[data-testid*="file-thumbnail" i]',
+      '[data-testid="file-chip"]',
+      'fieldset [data-testid*="attachment" i]',
+    ].concat(GENERIC_ATTACHMENT_SELECTORS),
     getRole(el) {
       if (el.matches?.(CLAUDE_USER)) return 'user';
       if (el.matches?.(CLAUDE_ASSISTANT)) return 'assistant';
@@ -214,6 +266,11 @@
     inputSelector: 'rich-textarea .ql-editor, div[contenteditable="true"][role="textbox"], div[contenteditable="true"]',
     stopSelector: 'button[aria-label*="Stop" i], [data-test-id="stop-button"]',
     sendSelector: 'button[aria-label*="Send" i], [data-test-id="send-button"], button.send-button',
+    composerSurfaceSelector: 'input-container, .input-area, [data-test-id="input-area"]',
+    attachmentSelectors: [
+      'uploader-file-preview',
+      '[data-test-id*="file" i]',
+    ].concat(GENERIC_ATTACHMENT_SELECTORS),
     getRole(el) {
       if (el.matches?.(GEMINI_USER) || el.closest?.(GEMINI_USER)) return 'user';
       if (el.matches?.(GEMINI_ASSISTANT) || el.closest?.(GEMINI_ASSISTANT)) return 'assistant';
@@ -272,7 +329,10 @@
     return stableMs >= settleMs;
   }
 
-  const PFPlatforms = { ADAPTERS, getActiveAdapter, extractText, assignPfId, isResponseComplete };
+  const PFPlatforms = {
+    ADAPTERS, getActiveAdapter, extractText, assignPfId, isResponseComplete,
+    GENERIC_ATTACHMENT_SELECTORS, attachmentName,
+  };
 
   if (root) root.PFPlatforms = PFPlatforms;
   if (typeof module !== 'undefined' && module.exports) module.exports = PFPlatforms;

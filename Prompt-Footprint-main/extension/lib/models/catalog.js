@@ -18,8 +18,8 @@
   'use strict';
 
   const CATALOG = {
-    schemaVersion: 1,
-    updatedAt: '2026-08-06',
+    schemaVersion: 2,
+    updatedAt: '2026-08-20',
     providers: {
       openai: {
         // label alias (normalized) -> canonical id
@@ -33,11 +33,39 @@
           terra: 'gpt-5.6-terra',
           'gpt-5.6 luna': 'gpt-5.6-luna',
           luna: 'gpt-5.6-luna',
+          // The rest of the line-up the ChatGPT picker still exposes, including
+          // the Legacy Models tab. Verified against OpenAI's model release
+          // notes, 2026-08-20. Each label keeps its own version so the
+          // version-agreement guard below can do its job.
+          'gpt-5.5 instant': 'gpt-5.5-instant',
+          'gpt-5.5': 'gpt-5.5-instant',
+          'gpt-5.4 thinking': 'gpt-5.4-thinking',
+          'gpt-5.4 pro': 'gpt-5.4-pro',
+          'gpt-5.4 mini': 'gpt-5.4-mini',
+          'gpt-5.4': 'gpt-5.4-thinking',
+          'gpt-5.3 instant': 'gpt-5.3-instant',
+          'gpt-5.3': 'gpt-5.3-instant',
+          'gpt-5.2 thinking': 'gpt-5.2-thinking',
+          'gpt-5.2': 'gpt-5.2-thinking',
         },
         models: {
           'gpt-5.6-sol': { label: 'GPT-5.6 Sol', family: 'gpt-5.6', tier: 'flagship', contextTokens: 1050000, maxOutputTokens: 128000, reasoningLevels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], sourceIds: ['S13', 'S14'] },
           'gpt-5.6-terra': { label: 'GPT-5.6 Terra', family: 'gpt-5.6', tier: 'balanced', reasoningLevels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], sourceIds: ['S13'] },
           'gpt-5.6-luna': { label: 'GPT-5.6 Luna', family: 'gpt-5.6', tier: 'efficient', reasoningLevels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], sourceIds: ['S13'] },
+          // No `contextTokens` on the entries below: OpenAI publishes context
+          // windows for API models, not for what a given ChatGPT plan allows,
+          // and the two differ. A context-window percentage is shown only where
+          // the number is documented, so these simply do not offer one.
+          'gpt-5.5-instant': { label: 'GPT-5.5 Instant', family: 'gpt-5.5', tier: 'efficient', reasoningLevels: ['none', 'low'], sourceIds: ['S22'] },
+          'gpt-5.4-thinking': { label: 'GPT-5.4 Thinking', family: 'gpt-5.4', tier: 'reasoning', reasoningLevels: ['low', 'medium', 'high'], sourceIds: ['S22'] },
+          'gpt-5.4-pro': { label: 'GPT-5.4 Pro', family: 'gpt-5.4', tier: 'research', reasoningLevels: ['pro'], sourceIds: ['S22'] },
+          // Not selectable in the picker — it is the fallback GPT-5.4 Thinking
+          // drops to at a rate limit, and the Free/Go Thinking toggle. Present
+          // so that seeing its name somewhere resolves rather than reading as an
+          // unknown model.
+          'gpt-5.4-mini': { label: 'GPT-5.4 mini', family: 'gpt-5.4', tier: 'efficient', reasoningLevels: ['low', 'medium'], sourceIds: ['S22'] },
+          'gpt-5.3-instant': { label: 'GPT-5.3 Instant', family: 'gpt-5.3', tier: 'efficient', reasoningLevels: ['none', 'low'], sourceIds: ['S22'] },
+          'gpt-5.2-thinking': { label: 'GPT-5.2 Thinking', family: 'gpt-5.2', tier: 'reasoning', legacy: true, reasoningLevels: ['low', 'medium', 'high'], sourceIds: ['S22'] },
         },
         // Product-picker labels that describe HOW a request is handled, not WHICH
         // model handles it. ChatGPT's picker is selected intent; the backend
@@ -60,12 +88,33 @@
           'claude fable 5': 'claude-fable-5',
           'mythos 5': 'claude-mythos-5',
           'claude mythos 5': 'claude-mythos-5',
+          // Haiku and the 4.x generation. They matter beyond naming: everything
+          // before Opus 4.7 uses the OLDER Claude tokenizer, on which the same
+          // text is roughly 30% fewer tokens. Resolving these correctly is what
+          // lets lib/tokens pick the right calibration.
+          'haiku 4.5': 'claude-haiku-4-5',
+          'claude haiku 4.5': 'claude-haiku-4-5',
+          'opus 4.8': 'claude-opus-4-8',
+          'claude opus 4.8': 'claude-opus-4-8',
+          'opus 4.7': 'claude-opus-4-7',
+          'claude opus 4.7': 'claude-opus-4-7',
+          'opus 4.6': 'claude-opus-4-6',
+          'claude opus 4.6': 'claude-opus-4-6',
+          'sonnet 4.6': 'claude-sonnet-4-6',
+          'claude sonnet 4.6': 'claude-sonnet-4-6',
         },
         models: {
-          'claude-sonnet-5': { label: 'Claude Sonnet 5', family: 'claude-5', tier: 'balanced', maxOutputTokens: 128000, thinking: 'supported-default', sourceIds: ['S7', 'S8', 'S12'] },
+          'claude-sonnet-5': { label: 'Claude Sonnet 5', family: 'claude-5', tier: 'balanced', contextTokens: 1000000, maxOutputTokens: 128000, thinking: 'supported-default', sourceIds: ['S7', 'S8', 'S12'] },
           'claude-opus-5': { label: 'Claude Opus 5', family: 'claude-5', tier: 'advanced', contextTokens: 1000000, maxOutputTokens: 128000, thinking: 'on-by-default', thinkingLockedAt: ['xhigh', 'max'], effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'], sourceIds: ['S7', 'S10'] },
           'claude-fable-5': { label: 'Claude Fable 5', family: 'claude-5', tier: 'frontier', contextTokens: 1000000, maxOutputTokens: 128000, thinking: 'always-on-adaptive', effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'], sourceIds: ['S7', 'S9', 'S10'] },
           'claude-mythos-5': { label: 'Claude Mythos 5', family: 'claude-5', tier: 'restricted-frontier', contextTokens: 1000000, maxOutputTokens: 128000, thinking: 'always-on-adaptive', sourceIds: ['S9'] },
+          // Context windows and max outputs below are from Anthropic's Models
+          // overview table, checked 2026-08-20.
+          'claude-haiku-4-5': { label: 'Claude Haiku 4.5', family: 'claude-4.5', tier: 'efficient', contextTokens: 200000, maxOutputTokens: 64000, thinking: 'supported-default', sourceIds: ['S7', 'S24'] },
+          'claude-opus-4-8': { label: 'Claude Opus 4.8', family: 'claude-4.8', tier: 'advanced', contextTokens: 1000000, maxOutputTokens: 128000, thinking: 'on-by-default', legacy: true, sourceIds: ['S7', 'S24'] },
+          'claude-opus-4-7': { label: 'Claude Opus 4.7', family: 'claude-4.7', tier: 'advanced', contextTokens: 1000000, maxOutputTokens: 128000, thinking: 'on-by-default', legacy: true, sourceIds: ['S7', 'S24'] },
+          'claude-opus-4-6': { label: 'Claude Opus 4.6', family: 'claude-4.6', tier: 'advanced', contextTokens: 1000000, maxOutputTokens: 128000, legacy: true, sourceIds: ['S7', 'S24'] },
+          'claude-sonnet-4-6': { label: 'Claude Sonnet 4.6', family: 'claude-4.6', tier: 'balanced', contextTokens: 1000000, maxOutputTokens: 128000, legacy: true, sourceIds: ['S7', 'S24'] },
         },
         modes: {
           'adaptive thinking': { routing: 'fixed', reasoning: 'adaptive' },
