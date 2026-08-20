@@ -272,6 +272,13 @@
     return {
       applyCount: 0,
       totalTokensSaved: 0,
+      // Σ of the ORIGINAL prompt token count for each recorded Apply. Without
+      // it "average reduction" has no honest denominator: dividing a saving by
+      // every token the user ever produced would report a share of the model's
+      // output, which the optimizer never touched. Records written before this
+      // field existed simply leave it at 0, and the dashboard omits the metric
+      // rather than guessing.
+      totalOriginalTokens: 0,
       totalEnergyWh: 0,
       totalWaterMl: 0,
       totalCo2G: 0,
@@ -289,20 +296,25 @@
   function mergeSavings(current, entry, day) {
     const s = { ...emptySavings(), ...(current || {}) };
     const tokens = entry.savedTokens || 0;
+    // Only counted when the caller actually knows it; a fallback here would
+    // silently fabricate the reduction-rate denominator.
+    const originalTokens = entry.originalTokens > 0 ? entry.originalTokens : 0;
     const energyWh = entry.savedEnergyWh || 0;
     const waterMl = entry.savedWaterMl || 0;
     const co2G = entry.savedCo2G || 0;
 
     s.applyCount += 1;
     s.totalTokensSaved += tokens;
+    s.totalOriginalTokens += originalTokens;
     s.totalEnergyWh += energyWh;
     s.totalWaterMl += waterMl;
     s.totalCo2G += co2G;
 
     const key = day || localDayKey();
-    const bucket = s.daily[key] || { count: 0, tokens: 0, energyWh: 0, waterMl: 0, co2G: 0 };
+    const bucket = s.daily[key] || { count: 0, tokens: 0, originalTokens: 0, energyWh: 0, waterMl: 0, co2G: 0 };
     bucket.count += 1;
     bucket.tokens += tokens;
+    bucket.originalTokens = (bucket.originalTokens || 0) + originalTokens;
     bucket.energyWh += energyWh;
     bucket.waterMl += waterMl;
     bucket.co2G += co2G;

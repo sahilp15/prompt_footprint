@@ -40,13 +40,13 @@
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
   transition:
     transform var(--dur) var(--ease-out),
     box-shadow var(--dur) var(--ease-out),
     border-color var(--dur) var(--ease-out);
 }
-.guide-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border); }
+.guide-card:hover { transform: translateY(-2px); box-shadow: none; border-color: var(--border); }
 
 .guide-card-icon {
   flex-shrink: 0;
@@ -55,8 +55,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 11px;
-  box-shadow: inset 0 0 0 1px currentColor;
+  border-radius: var(--r-2);
+  box-shadow: none;
 }
 
 .guide-card-name {
@@ -97,10 +97,10 @@
   border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--accent-green);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
   transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
-.guide-tip:hover { transform: translateX(3px); box-shadow: var(--shadow-md); }
+.guide-tip:hover { transform: translateX(3px); box-shadow: none; }
 
 .guide-tip-icon { flex-shrink: 0; color: var(--accent-green); margin-top: 2px; }
 
@@ -177,7 +177,7 @@
   top: 8px;
   width: 5px;
   height: 5px;
-  border-radius: 1.5px;
+  border-radius: var(--r-1);
   background: var(--accent-green);
   opacity: 0.7;
 }
@@ -212,7 +212,7 @@
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
   font-size: 14px;
   line-height: 1.7;
   color: var(--text-secondary);
@@ -242,7 +242,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 .guide-table {
   width: 100%;
@@ -277,8 +277,7 @@
   margin-top: 18px;
   padding: 18px 20px;
   background:
-    radial-gradient(420px 120px at 50% 0%, rgba(91, 124, 58, 0.09), transparent 70%),
-    var(--bg-sunken);
+    var(--paper-raised);
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
   font-family: var(--font-mono);
@@ -301,10 +300,10 @@
   font-weight: 700;
   color: var(--accent-green-ink);
   text-decoration: none;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
   transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
 }
-.guide-pdf-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--accent-green); }
+.guide-pdf-link:hover { transform: translateY(-2px); box-shadow: none; border-color: var(--accent-green); }
 
 .guide-refs {
   margin: 8px 0 0;

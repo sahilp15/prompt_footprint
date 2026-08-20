@@ -18,7 +18,7 @@ const env = import.meta.env
 
 export const SITE = {
   name: 'PromptFootprint',
-  tagline: 'See the energy, water, and CO₂ behind every AI prompt.',
+  tagline: 'Cut the tokens you don’t need. Measure what your AI use costs.',
 
   // Production domain (already registered).
   url: env.VITE_SITE_URL || 'https://promptfootprint.app',

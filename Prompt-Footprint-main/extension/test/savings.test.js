@@ -187,3 +187,56 @@ test('savings dashboard data source: multiple accepted suggestions accumulate co
   const today = new Date().toISOString().slice(0, 10);
   assert.strictEqual(totals.daily[today].count, 2);
 });
+
+// ── Average reduction needs a denominator ──────────────────────────────────
+// The dashboard reports "average reduction" as tokens removed ÷ the ORIGINAL
+// prompt tokens those removals came out of. That denominator only exists if the
+// ledger records it, and it must never be invented: a record written without an
+// original count has to leave the total at zero so the dashboard can omit the
+// metric rather than divide by the wrong thing.
+
+test('savings ledger accumulates the original prompt token count per apply', async () => {
+  installChromeMock();
+  await Storage.addSavings({ savedTokens: 12, originalTokens: 60 });
+  await Storage.addSavings({ savedTokens: 8, originalTokens: 40 });
+
+  const totals = await Storage.getSavings();
+  assert.strictEqual(totals.totalTokensSaved, 20);
+  assert.strictEqual(totals.totalOriginalTokens, 100);
+  // 20 / 100 — the figure the dashboard shows as "avg. reduction".
+  assert.strictEqual(totals.totalTokensSaved / totals.totalOriginalTokens, 0.2);
+
+  const today = new Date().toISOString().slice(0, 10);
+  assert.strictEqual(totals.daily[today].originalTokens, 100);
+});
+
+test('an apply with no original count leaves the denominator at zero rather than guessing', async () => {
+  installChromeMock();
+  await Storage.addSavings({ savedTokens: 9 });
+  await Storage.addSavings({ savedTokens: 5, originalTokens: 0 });
+
+  const totals = await Storage.getSavings();
+  assert.strictEqual(totals.totalTokensSaved, 14);
+  assert.strictEqual(totals.totalOriginalTokens, 0);
+});
+
+test('records written before the ledger tracked originals still read back cleanly', async () => {
+  const backing = installChromeMock();
+  // A v1 ledger: no totalOriginalTokens, no per-day originalTokens.
+  backing.pf_savings = {
+    applyCount: 1,
+    totalTokensSaved: 30,
+    totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0,
+    daily: { '2026-01-01': { count: 1, tokens: 30, energyWh: 0, waterMl: 0, co2G: 0 } },
+  };
+
+  await Storage.addSavings({ savedTokens: 10, originalTokens: 50 });
+  const totals = await Storage.getSavings();
+
+  assert.strictEqual(totals.applyCount, 2);
+  assert.strictEqual(totals.totalTokensSaved, 40);
+  // Only the new record carries an original, so only it counts toward the rate.
+  assert.strictEqual(totals.totalOriginalTokens, 50);
+  // The old day is untouched, numbers intact.
+  assert.strictEqual(totals.daily['2026-01-01'].tokens, 30);
+});

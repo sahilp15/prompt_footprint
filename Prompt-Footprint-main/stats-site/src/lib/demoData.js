@@ -1,25 +1,25 @@
-// Deterministic demo data for the public showcase build (no backend, no user).
-// Numbers are realistic for the PromptFootprint model (energy ~1e-3 Wh/token,
-// scaled up slightly for Claude and for slower/longer responses).
+// Deterministic sample data for the public build (no backend, no user).
+// ---------------------------------------------------------------------------
+// Every environmental figure here comes from `impactForTokens` — the same
+// implementation the extension uses, held to it by test/parity.test.ts. This
+// file used to carry its own copy of the per-token constants, which is exactly
+// how a showcase drifts away from the product it is showing.
+//
+// The numbers are shaped to be realistic, and every surface that renders them
+// is required to label them SAMPLE DATA.
 
+import { impactForTokens } from './tokenCutter/tokens.ts';
 import { localDayKey } from './dates';
 
 const DAY = 24 * 60 * 60 * 1000;
 
-const PER_TOKEN = { energyWh: 0.00106, waterMl: 0.00354, co2G: 0.000375 };
-
-function impact(tokens, factor = 1) {
-  return {
-    energyWh: tokens * PER_TOKEN.energyWh * factor,
-    waterMl: tokens * PER_TOKEN.waterMl * factor,
-    co2G: tokens * PER_TOKEN.co2G * factor,
-  };
+function impact(tokens, platform) {
+  return impactForTokens(tokens, platform);
 }
 
 function makeQuery(id, promptTokens, responseTokens, platform, responseTimeMs) {
   const totalTokens = promptTokens + responseTokens;
-  const factor = platform === 'claude' ? 1.15 : 1.0;
-  const i = impact(totalTokens, factor);
+  const i = impact(totalTokens, platform);
   return {
     id,
     promptTokens,
@@ -33,10 +33,9 @@ function makeQuery(id, promptTokens, responseTokens, platform, responseTimeMs) {
   };
 }
 
-// Six sessions across the last week, mixing ChatGPT and Claude — plus the week
-// before, so the dashboard's week-over-week comparison has something to
-// compare against. The older week is deliberately a little heavier: the
-// showcase should read as usage trending down.
+// Two weeks of sessions across ChatGPT and Claude, so the dashboard's
+// period-over-period comparison has a real prior period. The older week is a
+// little heavier: the sample should read as usage trending down.
 const SESSION_SPECS = [
   { dayOffset: 0, platform: 'chatgpt', queries: [[60, 320, 4200], [45, 210, 2600], [120, 540, 7800]] },
   { dayOffset: 1, platform: 'claude', queries: [[90, 680, 9100], [55, 300, 3500]] },
@@ -56,7 +55,11 @@ const SESSION_SPECS = [
 
 function buildSessions(now = Date.now()) {
   return SESSION_SPECS.map((spec, si) => {
-    const start = now - spec.dayOffset * DAY - 3 * 60 * 60 * 1000;
+    // Hour varies per session so the ledger reads like a fortnight of real use
+    // rather than fourteen rows stamped at the same minute. Deterministic:
+    // derived from the index, never from a clock or a random source.
+    const hourOffset = 2 + ((si * 5) % 9);
+    const start = now - spec.dayOffset * DAY - hourOffset * 60 * 60 * 1000 - (si % 4) * 17 * 60 * 1000;
     const queries = spec.queries.map((q, qi) =>
       makeQuery(`demo-q-${si}-${qi}`, q[0], q[1], spec.platform, q[2])
     );
@@ -92,40 +95,62 @@ export function demoQueries(sessionId) {
   return s ? s.queries : [];
 }
 
-// Sample Apply-savings for the public showcase: two weeks of optimizer usage,
-// so the Savings page can show its own week-over-week movement.
+// Sample Apply-savings: two weeks of optimizer usage, each day carrying both
+// the tokens removed AND the original prompt total they came out of, so the
+// dashboard can report an average reduction against a real denominator.
+//
+// Two constraints the numbers have to respect, or the sample contradicts
+// itself on screen:
+//   · an optimization happens to a prompt, so the per-week optimization count
+//     can never exceed the per-week prompt count in SESSION_SPECS (8 of 12
+//     this week, 7 of 13 the week before);
+//   · `original` is always greater than `tokens`, and the implied per-day
+//     reduction stays in the 15–25% band the local optimizer really produces
+//     on wordy prompts.
 const SAVINGS_PER_DAY = [
-  // 13 days ago → yesterday → today (index 13 is today)
-  { count: 1, tokens: 16 },
-  { count: 0, tokens: 0 },
-  { count: 2, tokens: 34 },
-  { count: 1, tokens: 27 },
-  { count: 1, tokens: 19 },
-  { count: 2, tokens: 41 },
-  { count: 0, tokens: 0 },
-  { count: 2, tokens: 38 },
-  { count: 1, tokens: 22 },
-  { count: 3, tokens: 71 },
-  { count: 0, tokens: 0 },
-  { count: 2, tokens: 49 },
-  { count: 4, tokens: 96 },
-  { count: 1, tokens: 18 },
+  // ── the previous seven days ──
+  { count: 1, tokens: 22, original: 118 },
+  { count: 0, tokens: 0, original: 0 },
+  { count: 2, tokens: 41, original: 214 },
+  { count: 1, tokens: 19, original: 99 },
+  { count: 0, tokens: 0, original: 0 },
+  { count: 2, tokens: 47, original: 238 },
+  { count: 1, tokens: 26, original: 131 },
+  // ── the last seven days (final entry is today) ──
+  { count: 1, tokens: 24, original: 126 },
+  { count: 1, tokens: 18, original: 97 },
+  { count: 2, tokens: 44, original: 221 },
+  { count: 0, tokens: 0, original: 0 },
+  { count: 1, tokens: 29, original: 142 },
+  { count: 2, tokens: 62, original: 292 },
+  { count: 1, tokens: 21, original: 108 },
 ];
 
 export function demoSavings(now = Date.now()) {
   const daily = {};
-  const totals = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
-  const previous = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
+  const blank = () => ({
+    applyCount: 0, totalTokensSaved: 0, totalOriginalTokens: 0,
+    totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0,
+  });
+  const totals = blank();
+  const previous = blank();
 
   for (let i = 13; i >= 0; i--) {
     const key = localDayKey(now - i * DAY);
     const spec = SAVINGS_PER_DAY[13 - i];
-    const im = impact(spec.tokens);
-    const bucket = { count: spec.count, tokens: spec.tokens, energyWh: im.energyWh, waterMl: im.waterMl, co2G: im.co2G };
-    daily[key] = bucket;
+    const im = impact(spec.tokens, 'chatgpt');
+    daily[key] = {
+      count: spec.count,
+      tokens: spec.tokens,
+      originalTokens: spec.original,
+      energyWh: im.energyWh,
+      waterMl: im.waterMl,
+      co2G: im.co2G,
+    };
     const into = i >= 7 ? previous : totals;
     into.applyCount += spec.count;
     into.totalTokensSaved += spec.tokens;
+    into.totalOriginalTokens += spec.original;
     into.totalEnergyWh += im.energyWh;
     into.totalWaterMl += im.waterMl;
     into.totalCo2G += im.co2G;

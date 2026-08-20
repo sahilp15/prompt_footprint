@@ -1,0 +1,385 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PromptFootprint v2 — design tokens
+   ───────────────────────────────────────────────────────────────────────────
+   The product is a measuring instrument, so the surface is built like one:
+   paper, ink, ruled lines, and exactly two pigments that are allowed to mean
+   something. There are no gradients, no glows, and no shadows in the default
+   vocabulary — hierarchy comes from rules, spacing, weight, and scale.
+
+   Colour is never decoration. --forest marks a saving; --signal marks a
+   reading that is live or a value that grew. Anything that is neither is ink.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Paper ────────────────────────────────────────────────────────────── */
+  --paper: #f2f0e8;
+  /* A half-step down for ruled panels and table headers. */
+  --paper-raised: #eae8de;
+  /* One step further for the composer well and inset readouts. */
+  --paper-sunk: #e3e0d4;
+  /* Ink-on-paper inversion, used for the single dark band in the narrative. */
+  --paper-inverse: #171814;
+
+  /* ── Ink ──────────────────────────────────────────────────────────────── */
+  --ink: #171814;
+  --ink-soft: #40433c;
+  /* 4.9:1 on --paper — safe for 12px micro-labels. */
+  --ink-muted: #5f645a;
+  /* 3.3:1 — decorative/large only, never for body text. */
+  --ink-faint: #8b9086;
+  --ink-inverse: #f2f0e8;
+
+  /* ── Rules ────────────────────────────────────────────────────────────── */
+  --rule: rgba(23, 24, 20, 0.18);
+  --rule-soft: rgba(23, 24, 20, 0.09);
+  --rule-strong: rgba(23, 24, 20, 0.42);
+  --rule-inverse: rgba(242, 240, 232, 0.22);
+
+  /* ── Pigments ─────────────────────────────────────────────────────────── */
+  /* Saving, reduction, the "after" state. */
+  --forest: #35543f;
+  --forest-tint: rgba(53, 84, 63, 0.1);
+  /* Live measurement, the "before" state, an increase. */
+  --signal: #b64f27;
+  --signal-tint: rgba(182, 79, 39, 0.1);
+
+  /* Resource channels. Deliberately close to ink: these are readings, not
+     brand colours, and three loud hues would turn a ledger into a chart toy. */
+  --ch-energy: #8a6a1f;
+  --ch-water: #2c5a70;
+  --ch-carbon: #6b6250;
+
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  /* Industrial condensed for display, humanist utility for reading, technical
+     mono for every number and every label that names a unit. */
+  --font-display: 'Archivo Narrow', 'Arial Narrow', ui-sans-serif, sans-serif;
+  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-data: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Legacy aliases: the pages not rewritten in this pass (Awards, Settings,
+     Account, Token Cutter, How it Works) address type through these names, so
+     repointing them moves the whole product onto the new families at once. */
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-display);
+  --font-mono: var(--font-data);
+
+  /* ── Geometry ─────────────────────────────────────────────────────────── */
+  --r-0: 0px;
+  --r-1: 2px;
+  --r-2: 4px;
+  /* Reserved for the one surface a person physically types into. */
+  --r-composer: 12px;
+
+  --page-max: 1460px;
+  --page-pad: 40px;
+  --measure: 62ch;
+
+  /* ── Motion ───────────────────────────────────────────────────────────── */
+  /* Instrument easing: decisive out, no overshoot. Springs are for toys. */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.9, 0.2);
+  --t-micro: 150ms;   /* hover, press, focus */
+  --t-mode: 260ms;    /* a control changes what is displayed */
+  --t-reduce: 640ms;  /* text physically contracts */
+  --t-narrative: 760ms; /* a reading moves between two contexts */
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────
+   The v2 surfaces opt in with `.pf2`. Everything global here is either a reset
+   the whole app already wanted, or a token repoint that is safe app-wide. */
+
+.pf2 {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.55;
+  font-synthesis-weight: none;
+}
+
+.pf2 :where(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* Every number in this product is data. Lock the digit width everywhere so a
+   value that updates never reflows the layout it sits in. */
+.pf2 :where(.num, .u-num, table, .rail-value, .metric-figure) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Type scale ───────────────────────────────────────────────────────────
+   Three families, three jobs. The mono is not a "code font" here — it is the
+   engraved label on an instrument, so it only ever appears uppercase, tracked
+   out, and small, or as a number. */
+
+.u-micro {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  line-height: 1.2;
+}
+.u-micro-strong { color: var(--ink); }
+
+.u-label {
+  font-family: var(--font-data);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.u-lede {
+  font-size: clamp(18px, 1.5vw, 21px);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  max-width: var(--measure);
+}
+
+.u-body { max-width: var(--measure); color: var(--ink-soft); }
+
+.u-h1 {
+  font-size: clamp(52px, 7vw, 108px);
+  line-height: 0.9;
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+}
+.u-h2 {
+  font-size: clamp(38px, 5vw, 72px);
+  line-height: 0.94;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.u-h3 {
+  font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+/* A measurement, set as large as the composition can carry. */
+.u-figure {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 0.82;
+  font-size: clamp(64px, 11vw, 168px);
+}
+
+/* ── Layout ───────────────────────────────────────────────────────────────
+   12 columns on desktop, 6 on tablet, 4 on mobile. Sections claim spans off
+   this one grid, so nothing is centred into the same rectangle twice. */
+
+.pf2-page { width: 100%; overflow-x: clip; }
+
+.pf2-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0 28px;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  padding-inline: var(--page-pad);
+}
+/* Full-bleed variant for data surfaces that should be as wide as the window. */
+.pf2-grid.is-bleed { max-width: none; padding-inline: clamp(20px, 3vw, 56px); }
+
+@media (max-width: 1000px) {
+  .pf2-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0 20px; }
+  :root { --page-pad: 28px; }
+}
+@media (max-width: 640px) {
+  .pf2-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 16px; }
+  :root { --page-pad: 20px; }
+  .pf2 { font-size: 16px; }
+}
+
+/* ── Rules ────────────────────────────────────────────────────────────────
+   A hairline is the primary structural device, so it gets real names. */
+.u-rule-t { border-top: 1px solid var(--rule); }
+.u-rule-b { border-bottom: 1px solid var(--rule); }
+.u-rule-t-strong { border-top: 1px solid var(--rule-strong); }
+
+/* A section index: "01 / TIGHTEN" sitting on its own rule. */
+.pf2-index {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--rule-strong);
+}
+.pf2-index b { font-weight: 600; color: var(--ink); }
+
+/* ── Controls ─────────────────────────────────────────────────────────────
+   Instrument controls: a rule, a label, and a state. No pills, no fills that
+   do not mean something. */
+
+.pf2-btn {
+  --btn-ink: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--btn-ink);
+  font-family: var(--font-data);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--t-micro) var(--ease), color var(--t-micro) var(--ease),
+    border-color var(--t-micro) var(--ease);
+}
+.pf2-btn:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.pf2-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+.pf2-btn:disabled:hover { background: transparent; color: var(--btn-ink); border-color: var(--rule-strong); }
+
+.pf2-btn.is-primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.pf2-btn.is-primary:hover { background: var(--forest); border-color: var(--forest); }
+
+.pf2-btn.is-quiet { border-color: transparent; padding-inline: 8px; color: var(--ink-muted); }
+.pf2-btn.is-quiet:hover { background: transparent; color: var(--ink); border-color: transparent; text-decoration: underline; text-underline-offset: 4px; }
+
+.pf2-btn.is-sm { min-height: 34px; padding: 0 12px; font-size: 11px; }
+
+/* A two-or-more state switch. The active state is inked, not tinted.
+   A switch with five states will not fit a phone, so it scrolls inside its own
+   border rather than pushing the page sideways. */
+.pf2-switch {
+  display: inline-flex;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-1);
+}
+.pf2-switch::-webkit-scrollbar { display: none; }
+.pf2-switch > button {
+  flex: none;
+  white-space: nowrap;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--t-micro) var(--ease), color var(--t-micro) var(--ease);
+}
+.pf2-switch > button:last-child { border-right: 0; }
+.pf2-switch > button:hover { color: var(--ink); }
+.pf2-switch > button[aria-pressed='true'],
+.pf2-switch > button[aria-selected='true'] { background: var(--ink); color: var(--paper); }
+
+/* ── Measurement strip ────────────────────────────────────────────────────
+   One horizontal readout divided by thin vertical rules. This replaces every
+   place a "row of cards" would otherwise appear. */
+
+.pf2-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule);
+}
+.pf2-strip > * {
+  padding: 14px 20px 14px 0;
+  border-left: 1px solid var(--rule);
+  padding-left: 20px;
+}
+.pf2-strip > *:first-child { border-left: 0; padding-left: 0; }
+
+.pf2-cell-label {
+  display: block;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 7px;
+}
+.pf2-cell-value {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(24px, 2.4vw, 34px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+  line-height: 1;
+}
+.pf2-cell-unit {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  text-transform: none;
+}
+
+/* On a phone the strip becomes a compact two-column data table rather than a
+   column of one-line rows — same rules, same alignment, half the scrolling. */
+@media (max-width: 760px) {
+  .pf2-strip {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-columns: auto;
+  }
+  .pf2-strip > * { border-left: 0; padding: 12px 0; border-top: 1px solid var(--rule-soft); }
+  .pf2-strip > *:nth-child(even) { padding-left: 18px; border-left: 1px solid var(--rule-soft); }
+  .pf2-strip > *:nth-child(-n + 2) { border-top: 0; }
+}
+
+/* ── Focus ────────────────────────────────────────────────────────────────
+   Two-tone so the ring reads on paper and on the inverse band alike. */
+.pf2 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: var(--r-1);
+}
+
+.pf2 ::selection { background: rgba(53, 84, 63, 0.2); color: var(--ink); }
+
+/* ── Screen-reader text ───────────────────────────────────────────────── */
+.u-sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────
+   Not a blanket kill: each surface that animates ships a real alternative (a
+   diff swaps instead of collapsing, a stream completes instead of typing, a
+   chart crossfades instead of drawing). What is switched off here is only the
+   motion itself — never the information. */
+@media (prefers-reduced-motion: reduce) {
+  .pf2 *,
+  .pf2 *::before,
+  .pf2 *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

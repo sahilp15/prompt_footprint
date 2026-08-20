@@ -1,4 +1,4 @@
-import { ArrowUpRight, Award, ExternalLink, GitBranch, Medal, Sparkles, Trophy, Users } from 'lucide-react'
+import { ArrowUpRight, Award, ExternalLink, GitBranch, Medal, Trophy, Users } from 'lucide-react'
 import { AWARDS, awardStats, featuredAward } from '../data/awards'
 import { useCountUp, usePrefersReducedMotion, useReveal } from '../hooks/useMotion'
 import { SITE } from '../config/site'
@@ -58,7 +58,6 @@ function FeaturedAward({ award }) {
 
         <div className="aw-featured-body">
           <p className="aw-eyebrow">
-            <Sparkles size={13} aria-hidden="true" />
             <span>Highest placement</span>
           </p>
           <h2 id="aw-featured-title" className="aw-featured-title">{award.event}</h2>

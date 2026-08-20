@@ -1,22 +1,36 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Droplets, ArrowRight, Check, Menu, X, ExternalLink } from 'lucide-react'
 import { SITE, hasChromeStoreLink } from '../config/site'
 import { useScrollToSection } from './useScrollToSection'
 import './marketing.css'
 
-const SECTIONS = [
-  { id: 'features', label: 'Features' },
-  { id: 'how', label: 'How it works' },
-  { id: 'demo', label: 'Demo' },
-  { id: 'privacy', label: 'Privacy' },
-]
+/* The site's frame: a ruled bar, a ruled footer, and nothing between them that
+   is not a link or a reading. No logo lockup with a rounded tile, no glass. */
 
-// Hoisted so the scroll-spy effect below has a stable dependency.
+const SECTIONS = [
+  { id: 'tighten', index: '01', label: 'Tighten' },
+  { id: 'measure', index: '02', label: 'Measure' },
+  { id: 'accumulate', index: '03', label: 'Dashboard' },
+  { id: 'private', index: '05', label: 'Privacy' },
+  { id: 'method', index: '06', label: 'Method' },
+]
 const SECTION_IDS = SECTIONS.map((s) => s.id)
 
-// GitHub's mark isn't in this lucide version (brand icons were dropped), so we
-// inline it. Self-contained, matches the size/stroke conventions of the set.
+/**
+ * The wordmark. A footprint reduced to two rules and a measured gap — the mark
+ * is the measurement, which is the only idea the product has.
+ */
+export function Mark({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+      <path d="M2 3.5v11M16 3.5v11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="square" />
+      <path d="M2 9h5M11 9h5" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="7.4" y="6.4" width="3.2" height="5.2" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** GitHub's mark isn't in this lucide version, so it is inlined. */
 export function Github({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -25,31 +39,28 @@ export function Github({ size = 16 }) {
   )
 }
 
-// Primary download call-to-action. Until a real Chrome Web Store listing exists
-// (SITE.chromeStoreUrl), this renders as an intentional, styled "coming soon"
-// button: clearly not-yet-live, but not broken. Once the URL is set in
-// config/site.js it automatically becomes a real link that opens the listing.
-export function ChromeCTA({ size = 'lg', block = false }) {
+/**
+ * The install call to action. Until a real Chrome Web Store listing exists it
+ * renders as a clearly-disabled control rather than a dead link; once
+ * `SITE.chromeStoreUrl` is set it becomes the listing.
+ */
+export function ChromeCTA({ primary = true, size = '' }) {
   const live = hasChromeStoreLink()
-  const cls = `btn btn-primary btn-${size}${block ? ' btn-block' : ''}${live ? '' : ' btn-soon'}`
-
+  const cls = `pf2-btn${primary ? ' is-primary' : ''}${size === 'sm' ? ' is-sm' : ''}`
   if (live) {
     return (
       <a className={cls} href={SITE.chromeStoreUrl} target="_blank" rel="noopener noreferrer">
-        <span className="btn-shine" aria-hidden="true" />
-        Add to Chrome, it&apos;s free <ArrowRight size={18} />
+        Add to Chrome
       </a>
     )
   }
   return (
     <button className={cls} type="button" disabled aria-disabled="true">
-      Add to Chrome
-      <span className="btn-soon-tag">Coming soon</span>
+      Add to Chrome · soon
     </button>
   )
 }
 
-/** Raises the bar once the page has scrolled off the very top. */
 function useScrolled(threshold = 8) {
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
@@ -61,18 +72,13 @@ function useScrolled(threshold = 8) {
   return scrolled
 }
 
-/**
- * Scroll-spy for the header. Marks whichever section currently owns the band
- * just under the header, so the nav always says where you are. Degrades to "no
- * section active" wherever IntersectionObserver is missing.
- */
+/** Marks whichever section owns the band under the header. */
 function useActiveSection(ids) {
   const [active, setActive] = useState(null)
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return
+    if (typeof IntersectionObserver === 'undefined') return undefined
     const nodes = ids.map((id) => document.getElementById(id)).filter(Boolean)
-    if (!nodes.length) return
-
+    if (!nodes.length) return undefined
     const io = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -80,7 +86,7 @@ function useActiveSection(ids) {
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
         if (visible) setActive(visible.target.id)
       },
-      { rootMargin: '-25% 0px -60% 0px', threshold: [0, 0.15, 0.4] },
+      { rootMargin: '-20% 0px -65% 0px', threshold: [0, 0.15, 0.4] },
     )
     nodes.forEach((n) => io.observe(n))
     return () => io.disconnect()
@@ -92,12 +98,11 @@ export function SiteNav() {
   const scrollTo = useScrollToSection()
   const scrolled = useScrolled()
   const active = useActiveSection(SECTION_IDS)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [open, setOpen] = useState(false)
 
-  // Escape closes the sheet, and the page never scrolls behind it.
   useEffect(() => {
-    if (!menuOpen) return
-    const onKey = (e) => { if (e.key === 'Escape') setMenuOpen(false) }
+    if (!open) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('keydown', onKey)
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -105,16 +110,17 @@ export function SiteNav() {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = previous
     }
-  }, [menuOpen])
+  }, [open])
 
-  const go = (id) => { setMenuOpen(false); scrollTo(id) }
+  const go = (id) => { setOpen(false); scrollTo(id) }
 
   return (
     <header className={`mk-nav${scrolled ? ' is-scrolled' : ''}`}>
       <div className="mk-nav-inner">
         <Link to="/" className="mk-brand" aria-label="PromptFootprint home">
-          <span className="mk-brand-mark"><Droplets size={19} /></span>
+          <Mark />
           <span className="mk-brand-name">PromptFootprint</span>
+          <span className="u-micro mk-brand-kicker">AI efficiency meter</span>
         </Link>
 
         <nav className="mk-nav-links" aria-label="Sections">
@@ -126,41 +132,41 @@ export function SiteNav() {
               aria-current={active === s.id ? 'true' : undefined}
               onClick={(e) => { e.preventDefault(); go(s.id) }}
             >
+              <span className="mk-nav-index" aria-hidden="true">{s.index}</span>
               {s.label}
             </a>
           ))}
-          <Link to="/support" className="mk-nav-link">Support</Link>
         </nav>
 
         <div className="mk-nav-cta">
-          <Link className="mk-nav-demo" to="/app">Live demo</Link>
+          <Link className="pf2-btn is-quiet is-sm mk-nav-demo" to="/app">Dashboard</Link>
           <ChromeCTA size="sm" />
           <button
             type="button"
-            className="mk-nav-burger"
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((o) => !o)}
+            className="mk-nav-burger pf2-btn is-sm"
+            aria-label={open ? 'Close menu' : 'Open menu'}
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
           >
-            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            {open ? 'Close' : 'Menu'}
           </button>
         </div>
       </div>
 
-      {/* Mobile sheet. Below 720px the inline links are hidden, so this is the
-          only way to reach the sections — it has to carry all of them. */}
-      {menuOpen && (
+      {open && (
         <>
-          <button className="mk-sheet-scrim" aria-hidden="true" tabIndex={-1} onClick={() => setMenuOpen(false)} />
+          <button className="mk-sheet-scrim" aria-hidden="true" tabIndex={-1} onClick={() => setOpen(false)} />
           <div className="mk-sheet" role="dialog" aria-modal="true" aria-label="Menu">
             {SECTIONS.map((s) => (
               <a key={s.id} href={`#${s.id}`} className="mk-sheet-link" onClick={(e) => { e.preventDefault(); go(s.id) }}>
-                {s.label}
+                <span className="mk-nav-index" aria-hidden="true">{s.index}</span>{s.label}
               </a>
             ))}
-            <Link to="/support" className="mk-sheet-link" onClick={() => setMenuOpen(false)}>Support</Link>
-            <Link to="/app" className="mk-sheet-link" onClick={() => setMenuOpen(false)}>Live demo</Link>
-            <div className="mk-sheet-cta"><ChromeCTA size="lg" block /></div>
+            <Link to="/app" className="mk-sheet-link" onClick={() => setOpen(false)}>Dashboard</Link>
+            <Link to="/support" className="mk-sheet-link" onClick={() => setOpen(false)}>Support</Link>
+            <Link to="/privacy" className="mk-sheet-link" onClick={() => setOpen(false)}>Privacy Policy</Link>
+            <Link to="/terms" className="mk-sheet-link" onClick={() => setOpen(false)}>Terms of Use</Link>
+            <div className="mk-sheet-cta"><ChromeCTA /></div>
           </div>
         </>
       )}
@@ -169,67 +175,61 @@ export function SiteNav() {
 }
 
 export function SiteFooter() {
-  const year = 2026 // static: build runs without Date access; bump on release
-  const scrollTo = useScrollToSection()
+  const year = 2026 // static: the build runs without Date access; bump on release
   return (
     <footer className="mk-footer">
       <div className="mk-footer-inner">
         <div className="mk-footer-brand">
-          <div className="mk-brand">
-            <span className="mk-brand-mark"><Droplets size={18} /></span>
-            <span className="mk-brand-name">PromptFootprint</span>
-          </div>
-          <p className="mk-footer-tag">{SITE.tagline}</p>
-          <p className="mk-footer-badge"><Check size={13} /> Local-first · No accounts required · Open source</p>
-          <a className="mk-footer-gh-btn" href={SITE.githubUrl} target="_blank" rel="noopener noreferrer">
-            <Github size={15} /> Star it on GitHub <ExternalLink size={12} />
-          </a>
+          <span className="mk-brand"><Mark /><span className="mk-brand-name">PromptFootprint</span></span>
+          <p className="u-micro">{SITE.tagline}</p>
         </div>
 
-        <div className="mk-footer-cols">
+        <nav className="mk-footer-cols" aria-label="Site">
           <div className="mk-footer-col">
-            <h4>Product</h4>
-            <a href="#features" onClick={(e) => { e.preventDefault(); scrollTo('features') }}>Features</a>
-            <a href="#how" onClick={(e) => { e.preventDefault(); scrollTo('how') }}>How it works</a>
-            <Link to="/app">Live demo</Link>
+            <h4 className="u-micro">Product</h4>
+            <Link to="/app">Dashboard</Link>
+            <Link to="/app/cutter">Token Cutter</Link>
+            <Link to="/app/learn">Methodology</Link>
+            <Link to="/app/awards">Recognition</Link>
           </div>
           <div className="mk-footer-col">
-            <h4>Trust</h4>
+            <h4 className="u-micro">Trust</h4>
             <Link to="/privacy">Privacy Policy</Link>
             <Link to="/terms">Terms of Use</Link>
-            <a href="#privacy" onClick={(e) => { e.preventDefault(); scrollTo('privacy') }}>Data &amp; privacy</a>
+            <a href={`${SITE.githubUrl}/blob/main/METHODOLOGY.md`} target="_blank" rel="noopener noreferrer">Full method ↗</a>
           </div>
           <div className="mk-footer-col">
-            <h4>Support</h4>
+            <h4 className="u-micro">Support</h4>
             <Link to="/support">Help &amp; FAQ</Link>
             <Link to="/contact">Contact</Link>
-            <a href={SITE.issuesUrl} target="_blank" rel="noopener noreferrer">Report an issue</a>
+            <a href={SITE.issuesUrl} target="_blank" rel="noopener noreferrer">Report an issue ↗</a>
           </div>
           <div className="mk-footer-col">
-            <h4>Project</h4>
+            <h4 className="u-micro">Source</h4>
             <a href={SITE.githubUrl} target="_blank" rel="noopener noreferrer" className="mk-footer-gh">
-              <Github size={14} /> GitHub
+              <Github size={14} /> GitHub ↗
             </a>
-            <Link to="/app/awards">Recognition</Link>
-            <Link to="/app/learn">Methodology</Link>
+            {hasChromeStoreLink() && (
+              <a href={SITE.chromeStoreUrl} target="_blank" rel="noopener noreferrer">Chrome Web Store ↗</a>
+            )}
           </div>
-        </div>
+        </nav>
       </div>
-      <div className="mk-footer-legal">
+
+      <div className="mk-footer-legal u-micro">
         <span>© {year} PromptFootprint</span>
-        <span className="mk-dot">·</span>
         <span>{SITE.url.replace('https://', '')}</span>
-        <span className="mk-dot">·</span>
-        <span className="mk-footer-note">Estimates are approximations, not measurements.</span>
+        <span>Free · Local-first · Open source</span>
+        <span>Resource figures are estimated, not metered</span>
       </div>
     </footer>
   )
 }
 
-// Shared page wrapper for the non-landing marketing/legal pages.
+/** Shared wrapper for the non-landing pages (privacy, terms, support…). */
 export function MarketingPage({ children }) {
   return (
-    <div className="mk">
+    <div className="mk pf2 pf2-page">
       <SiteNav />
       <main className="mk-doc">{children}</main>
       <SiteFooter />

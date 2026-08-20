@@ -115,6 +115,9 @@ export async function fetchQueries(sessionId) {
 const EMPTY_SAVINGS = {
   applyCount: 0,
   totalTokensSaved: 0,
+  // Σ original prompt tokens across recorded Apply events — the denominator
+  // for average reduction. See extension/lib/storage.js emptySavings().
+  totalOriginalTokens: 0,
   totalEnergyWh: 0,
   totalWaterMl: 0,
   totalCo2G: 0,
@@ -136,13 +139,14 @@ export async function fetchSavings() {
 // per-day savings ledger the content script writes. Used for the delta pills.
 function priorWeekSavings(daily, now = Date.now()) {
   const DAY = 24 * 60 * 60 * 1000;
-  const out = { applyCount: 0, totalTokensSaved: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
+  const out = { applyCount: 0, totalTokensSaved: 0, totalOriginalTokens: 0, totalEnergyWh: 0, totalWaterMl: 0, totalCo2G: 0 };
   if (!daily) return out;
   for (let i = 13; i >= 7; i--) {
     const d = daily[localDayKey(now - i * DAY)];
     if (!d) continue;
     out.applyCount += d.count || 0;
     out.totalTokensSaved += d.tokens || 0;
+    out.totalOriginalTokens += d.originalTokens || 0;
     out.totalEnergyWh += d.energyWh || 0;
     out.totalWaterMl += d.waterMl || 0;
     out.totalCo2G += d.co2G || 0;

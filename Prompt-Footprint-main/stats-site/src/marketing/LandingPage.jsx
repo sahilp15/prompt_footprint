@@ -1,489 +1,486 @@
-import { useRef } from 'react'
-import { motion as Motion, useReducedMotion, useScroll, useTransform } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import {
-  Droplets, Zap, Leaf, Gauge, PenLine, ShieldCheck, Thermometer,
-  MousePointerClick, LineChart, Lock, Eye, ArrowRight, Check, Trophy,
-  Globe2, Sparkles, ExternalLink,
-} from 'lucide-react'
-import { SITE, demoUrl } from '../config/site'
+import { SITE } from '../config/site'
 import { SiteNav, SiteFooter, ChromeCTA, Github } from './MarketingChrome'
 import { useScrollToSection } from './useScrollToSection'
-import { useCountUp, useReveal } from '../hooks/useMotion'
-import { AWARDS, featuredAward } from '../data/awards'
-import { REGIONS } from '../lib/regions'
-import Globe from '../components/ui/globe-cdn'
+import { usePrefersReducedMotion } from '../hooks/useMotion'
+import ChatDemo from './demo/ChatDemo'
+import { useChatDemo } from './demo/useChatDemo'
+import { SAMPLE_PROMPT } from './demo/sample'
+import { analyzePrompt } from '../lib/tokenCutter/index.ts'
+import { buildDiff } from '../lib/tokenCutter/apply.ts'
+import { estimateTokens, countWords, IMPACT_CONSTANTS } from '../lib/tokenCutter/tokens.ts'
+import { demoSessions } from '../lib/demoData'
+import { AWARDS } from '../data/awards'
+import { formatValue } from '../lib/metrics'
+import DashboardSurface from '../dashboard/DashboardSurface'
 import './marketing.css'
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
+/* ── Facts, computed rather than written ────────────────────────────────────
+   Everything numeric on this page is derived at load time from the same engine
+   the product runs on. There is no figure here that a copywriter could change
+   without changing the code that produces it. */
+
+/** The sample prompt through the real local optimizer, once, at module load. */
+const SAMPLE = (() => {
+  const result = analyzePrompt(SAMPLE_PROMPT, { level: 'balanced', platform: 'chatgpt' })
+  const originalTokens = estimateTokens(SAMPLE_PROMPT)
+  const optimizedTokens = estimateTokens(result.optimized)
+  return {
+    original: SAMPLE_PROMPT,
+    optimized: result.optimized,
+    diff: buildDiff(SAMPLE_PROMPT, result.suggestions, new Set(result.defaultAccepted), result.protectedSpans),
+    originalTokens,
+    optimizedTokens,
+    tokensSaved: originalTokens - optimizedTokens,
+    percent: ((originalTokens - optimizedTokens) / originalTokens) * 100,
+    originalWords: countWords(SAMPLE_PROMPT),
+    optimizedWords: countWords(result.optimized),
+    edits: result.suggestions.filter((s) => !s.advisory).length,
+    constraintsKept: result.constraints.length,
+  }
+})()
+
+/** Per-1,000-token intensities, straight out of the shared model. */
+const PER_1K = {
+  energyWh: IMPACT_CONSTANTS.ENERGY_PER_TOKEN_WH * 1000,
+  waterMl: IMPACT_CONSTANTS.WATER_PER_TOKEN_ML * 1000,
+  co2G: IMPACT_CONSTANTS.CO2_PER_TOKEN_G * 1000,
+  claude: IMPACT_CONSTANTS.CLAUDE_RELATIVE_INTENSITY,
 }
 
-/**
- * Section entrance.
- *
- * `initial={false}` under reduced motion is what keeps the contract the rest
- * of the product follows: the element renders in its final state immediately
- * instead of waiting at opacity 0 for a scroll that may never come.
- */
-function Reveal({ children, delay = 0, className }) {
-  const reduced = useReducedMotion()
+/** The heaviest session in the sample set — section 02's single reading. */
+const SAMPLE_SESSION = (() => {
+  const sessions = demoSessions()
+  const s = sessions.reduce((best, x) => (x.totalTokens > best.totalTokens ? x : best), sessions[0])
+  const promptTokens = s.queries.reduce((n, q) => n + q.promptTokens, 0)
+  const responseTokens = s.queries.reduce((n, q) => n + q.responseTokens, 0)
+  return {
+    tokens: s.totalTokens,
+    prompts: s.queryCount,
+    promptTokens,
+    responseTokens,
+    platform: s.platform === 'claude' ? 'Claude' : 'ChatGPT',
+    energyWh: s.totalEnergyWh,
+  }
+})()
+
+/* ── Pieces ─────────────────────────────────────────────────────────────── */
+
+function SectionIndex({ num, title, id }) {
   return (
-    <Motion.div
-      className={className}
-      variants={fadeUp}
-      initial={reduced ? false : 'hidden'}
-      whileInView="show"
-      viewport={{ once: true, margin: '-60px' }}
-      transition={{ delay }}
-    >
-      {children}
-    </Motion.div>
-  )
-}
-
-/* ── Content ──────────────────────────────────────────────────────────────── */
-
-// Figures from the published model (see extension/lib/constants.js and
-// METHODOLOGY.md). Rendered as counters so the numbers announce themselves.
-const MODEL_FACTS = [
-  { id: 'energy', value: 1.06, decimals: 2, unit: 'Wh', label: 'per 1,000 tokens', caption: 'Electricity, from OpenAI’s 2025 disclosure', hex: '#C17F24' },
-  { id: 'water', value: 3.5, decimals: 1, unit: 'mL', label: 'per 1,000 tokens', caption: 'Fresh water evaporated for cooling', hex: '#2E6B8A' },
-  { id: 'co2', value: 0.38, decimals: 2, unit: 'g', label: 'CO₂ per 1,000 tokens', caption: 'At a mid-range grid intensity', hex: '#8B7355' },
-  { id: 'stored', value: 0, decimals: 0, unit: '', label: 'prompts stored', caption: 'Counting happens on your device', hex: '#5B7C3A' },
-]
-
-// Bento layout: `span` drives how many columns each card claims on desktop.
-const FEATURES = [
-  {
-    icon: Gauge,
-    span: 'wide',
-    title: 'Per-prompt impact, live',
-    body: 'A small overlay on ChatGPT and Claude shows the estimated energy, water, and CO₂ behind each message as you send it. No tab-switching, no setup.',
-    accent: 'amber',
-  },
-  {
-    icon: LineChart,
-    title: 'A dashboard that adds up',
-    body: 'Weekly trends, per-session breakdowns, and running totals. See how your usage changes over time instead of guessing.',
-    accent: 'blue',
-  },
-  {
-    icon: PenLine,
-    title: 'Shorter prompts, fewer tokens',
-    body: 'An offline writing checker cleans up drafts, and the optimizer suggests tighter phrasings, then totals the tokens you actually saved.',
-    accent: 'green',
-  },
-  {
-    icon: Thermometer,
-    title: 'Heatwave-aware estimates',
-    body: 'Cooling a data center costs more in hot weather. Opt in to a rough location and the estimate adjusts for local conditions, or stays a general figure.',
-    accent: 'red',
-  },
-  {
-    icon: Lock,
-    span: 'wide',
-    title: 'Private by default',
-    body: 'Your prompts and the models’ replies are never stored or uploaded. Counting happens on your device; the text stays in your browser.',
-    accent: 'green',
-  },
-  {
-    icon: Leaf,
-    title: 'Built to be understood',
-    body: 'Every number traces back to public disclosures and published research. The method, and its limits, are documented, not hidden.',
-    accent: 'green',
-  },
-]
-
-const STEPS = [
-  {
-    icon: MousePointerClick,
-    title: 'Add the extension',
-    body: 'Install from the Chrome Web Store. No account, no sign-up, nothing to configure to get started.',
-    aside: 'Works signed out, forever.',
-  },
-  {
-    icon: Zap,
-    title: 'Chat like you already do',
-    body: 'Open ChatGPT or Claude. PromptFootprint counts tokens from your messages and estimates the footprint in the background.',
-    aside: 'Only lengths are read — never the text.',
-  },
-  {
-    icon: LineChart,
-    title: 'Watch it add up',
-    body: 'Check the overlay for the current session, or open the dashboard for weekly trends, savings, and where your footprint comes from.',
-    aside: 'Then shrink it with the Token Cutter.',
-  },
-]
-
-/* ── Pieces ───────────────────────────────────────────────────────────────── */
-
-/** One counter in the model-facts band. Counts up when it scrolls into view. */
-function FactTile({ fact, index }) {
-  const [ref, visible] = useReveal({ threshold: 0.4 })
-  const animated = useCountUp(fact.value, visible, { duration: 1000 + index * 120 })
-
-  return (
-    <div
-      ref={ref}
-      className={`mk-fact${visible ? ' is-visible' : ''}`}
-      style={{ '--accent': fact.hex, '--reveal-delay': `${index * 80}ms` }}
-    >
-      <div className="mk-fact-value">
-        <span className="mk-fact-number">{animated.toFixed(fact.decimals)}</span>
-        {fact.unit && <span className="mk-fact-unit">{fact.unit}</span>}
-      </div>
-      <div className="mk-fact-label">{fact.label}</div>
-      <div className="mk-fact-caption">{fact.caption}</div>
+    <div className="pf2-index" id={id}>
+      <span className="u-micro u-micro-strong">{num}</span>
+      <span className="u-micro">{title}</span>
     </div>
   )
 }
 
-/**
- * A bento card that lights up under the pointer. The spotlight follows the
- * cursor through two CSS custom properties — no re-render, no state.
- */
-function FeatureCard({ feature }) {
-  const onMove = (e) => {
-    const r = e.currentTarget.getBoundingClientRect()
-    e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`)
-    e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`)
-  }
-  const Icon = feature.icon
-
+/** The retained/removed text, set large enough to actually read. */
+function DiffBlock({ diff, className = '' }) {
   return (
-    <article
-      className={`mk-bento mk-bento-${feature.accent}${feature.span === 'wide' ? ' mk-bento-wide' : ''}`}
-      onPointerMove={onMove}
-    >
-      <span className="mk-bento-spot" aria-hidden="true" />
-      <span className="mk-card-icon"><Icon size={20} aria-hidden="true" /></span>
-      <h3>{feature.title}</h3>
-      <p>{feature.body}</p>
-    </article>
+    <p className={`mk-diff ${className}`}>
+      {diff.map((part, i) => {
+        if (part.kind === 'removed') return <del key={i}>{part.text}</del>
+        if (part.kind === 'added') return <ins key={i}>{part.text}</ins>
+        return <span key={i}>{part.text}</span>
+      })}
+    </p>
   )
 }
 
-/* ── Page ─────────────────────────────────────────────────────────────────── */
+/* ── Page ───────────────────────────────────────────────────────────────── */
 
 export default function LandingPage() {
   const scrollTo = useScrollToSection()
-  const reduced = useReducedMotion()
-  const heroRef = useRef(null)
-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] })
+  const reduced = usePrefersReducedMotion()
+  // The demo's state lives here so its reading can become the page's headline
+  // metric without being measured twice.
+  const demo = useChatDemo({ reducedMotion: reduced })
 
-  // Gentle parallax: the copy drifts up a little faster than the globe, and
-  // both fade as the hero leaves. Disabled outright under reduced motion.
-  const copyY = useTransform(scrollYProgress, [0, 1], [0, reduced ? 0 : -70])
-  const globeY = useTransform(scrollYProgress, [0, 1], [0, reduced ? 0 : -26])
-  const heroFade = useTransform(scrollYProgress, [0, 0.85], [1, reduced ? 1 : 0.25])
-
-  const featured = featuredAward()
-  const totalCompetitors = AWARDS.reduce((n, a) => n + (a.participants || 0), 0)
+  // The bridge metric: what is removable now, or what was actually removed once
+  // the visitor has tightened something. Both are real readings of the text in
+  // the composer — neither is a stored constant.
+  const removed = demo.reduction
+  const headline = removed
+    ? { value: removed.saved, label: 'tokens removed', sub: `from this prompt · ${removed.percent.toFixed(1)}% shorter` }
+    : {
+      value: demo.analysis?.tokensSaved ?? 0,
+      label: 'tokens removable',
+      sub: demo.analysis
+        ? `from the prompt in the composer · ${demo.analysis.percent.toFixed(1)}% of it`
+        : 'measuring the prompt in the composer',
+    }
 
   return (
-    <div className="mk mk-landing">
+    <div className="mk mk-landing pf2 pf2-page">
       <SiteNav />
 
-      {/* ── Hero ─────────────────────────────────────────────── */}
-      <section className="mk-hero" ref={heroRef}>
-        <div className="mk-hero-glow" aria-hidden="true" />
-        <div className="mk-grid-lines" aria-hidden="true" />
+      {/* ══ 00 / LIVE TEST ══════════════════════════════════════════════ */}
+      <section className="mk-hero" id="demo">
+        <div className="pf2-grid mk-hero-grid">
+          <div className="mk-hero-copy">
+            <p className="u-micro mk-eyebrow">
+              PromptFootprint <span aria-hidden="true">/</span> AI efficiency meter
+            </p>
 
-        <Motion.div className="mk-hero-inner" style={{ opacity: heroFade }}>
-          <Motion.div
-            initial={reduced ? false : 'hidden'}
-            animate="show"
-            variants={fadeUp}
-            className="mk-hero-copy"
-            style={{ y: copyY }}
-          >
-            <span className="mk-eyebrow">
-              <Leaf size={14} /> For ChatGPT &amp; Claude
-              <span className="mk-eyebrow-sep" aria-hidden="true" />
-              <span className="mk-eyebrow-quiet">Chrome extension</span>
-            </span>
-
-            <h1 className="mk-h1">
-              See the <span className="mk-underline">energy, water, and CO₂</span> behind every AI prompt.
+            <h1 className="u-h1 mk-h1">
+              Cut the tokens<br />you don’t need.
             </h1>
 
-            <p className="mk-lede">
-              PromptFootprint estimates the environmental cost of your AI chats: live,
-              on your device, and without ever storing what you type. Understand your
-              footprint, then shrink it.
+            <p className="u-lede mk-hero-lede">
+              PromptFootprint tightens wordy prompts, tracks what you save, and shows the
+              estimated energy, water, and CO₂ behind your AI use.
+            </p>
+
+            <p className="u-micro mk-hero-spec">
+              Local-first <span aria-hidden="true">/</span> ChatGPT + Claude <span aria-hidden="true">/</span> Free
             </p>
 
             <div className="mk-hero-cta">
-              <ChromeCTA size="lg" />
-              <button type="button" className="btn btn-ghost btn-lg" onClick={() => scrollTo('demo')}>
-                See the dashboard <ArrowRight size={18} />
+              <button type="button" className="pf2-btn is-primary" onClick={() => scrollTo('demo')}>
+                Try it here
               </button>
+              <ChromeCTA primary={false} />
             </div>
 
-            <ul className="mk-hero-trust">
-              <li><Check size={15} /> Works without an account</li>
-              <li><Check size={15} /> No prompts stored or uploaded</li>
-              <li><Check size={15} /> Free &amp; open source</li>
-            </ul>
-
-            {featured && (
-              <Link to="/app/awards" className="mk-hero-award">
-                <Trophy size={14} aria-hidden="true" />
-                <span><strong>{featured.placement}</strong> · {featured.event}</span>
-                <ArrowRight size={13} aria-hidden="true" />
-              </Link>
-            )}
-          </Motion.div>
-
-          {/* The globe is the product's signature: eight major AI data-center
-              regions, slowly turning, draggable. The overlay mock-up floats in
-              front of it so the hero reads as depth rather than two columns. */}
-          <Motion.div
-            className="mk-hero-stage"
-            style={{ y: globeY }}
-            initial={reduced ? false : { opacity: 0, scale: 0.94 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-          >
-            <span className="mk-stage-rings" aria-hidden="true" />
-            <div className="mk-stage-globe">
-              <Globe />
-            </div>
-
-            <Motion.div
-              className="mk-capsule"
-              initial={reduced ? false : { opacity: 0, y: 22 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.45 }}
-            >
-              <div className="mk-capsule-head">
-                <Droplets size={15} /> This session
-                <span className="mk-live" aria-hidden="true"><i />live</span>
-              </div>
-              <div className="mk-capsule-grid">
-                <div className="mk-metric mk-metric-amber">
-                  <Zap size={15} /><span className="mk-metric-val">18.4</span><span className="mk-metric-unit">Wh</span>
-                </div>
-                <div className="mk-metric mk-metric-blue">
-                  <Droplets size={15} /><span className="mk-metric-val">62</span><span className="mk-metric-unit">mL</span>
-                </div>
-                <div className="mk-metric mk-metric-green">
-                  <Leaf size={15} /><span className="mk-metric-val">7.1</span><span className="mk-metric-unit">g CO₂</span>
-                </div>
-              </div>
-              <div className="mk-capsule-foot">
-                <span>≈ 3 min of a laptop</span>
-                <span className="mk-capsule-tag">42 prompts today</span>
-              </div>
-            </Motion.div>
-
-            <span className="mk-stage-caption">
-              <Globe2 size={13} aria-hidden="true" />
-              {REGIONS.length} major AI data-center regions · drag to spin
-            </span>
-          </Motion.div>
-        </Motion.div>
-      </section>
-
-      {/* ── The model, in numbers ────────────────────────────── */}
-      <section className="mk-facts">
-        <div className="mk-facts-inner">
-          <Reveal className="mk-facts-lead">
-            <p>
-              A single prompt looks weightless. Thousands of them aren’t.
-              <span> Here is what the model actually counts.</span>
-            </p>
-          </Reveal>
-          <div className="mk-facts-grid">
-            {MODEL_FACTS.map((f, i) => <FactTile fact={f} index={i} key={f.id} />)}
+            <Link className="mk-hero-link u-micro" to="/app">View the dashboard →</Link>
           </div>
-          <Reveal delay={0.1}>
-            <p className="mk-facts-note">
-              ChatGPT is the anchor, from OpenAI’s published sustainability figures;
-              Claude is estimated 15% above it because Anthropic publishes none.{' '}
-              <Link to="/app/learn">Read the methodology <ArrowRight size={13} /></Link>
-            </p>
-          </Reveal>
-        </div>
-      </section>
 
-      {/* ── Features ─────────────────────────────────────────── */}
-      <section className="mk-section" id="features">
-        <div className="mk-section-inner">
-          <Reveal className="mk-section-head">
-            <span className="mk-kicker">What it does</span>
-            <h2 className="mk-h2">Everything runs where your data already is: in your browser.</h2>
-          </Reveal>
-          <div className="mk-bento-grid">
-            {FEATURES.map((f, i) => (
-              <Reveal key={f.title} delay={i * 0.05} className={f.span === 'wide' ? 'mk-bento-cell mk-bento-cell-wide' : 'mk-bento-cell'}>
-                <FeatureCard feature={f} />
-              </Reveal>
-            ))}
+          <div className="mk-hero-stage">
+            <ChatDemo demo={demo} />
           </div>
         </div>
       </section>
 
-      {/* ── How it works ─────────────────────────────────────── */}
-      <section className="mk-section mk-section-alt" id="how">
-        <div className="mk-section-inner">
-          <Reveal className="mk-section-head">
-            <span className="mk-kicker">How it works</span>
-            <h2 className="mk-h2">Three steps. No dashboards to wire up.</h2>
-          </Reveal>
-          <ol className="mk-steps">
-            {STEPS.map((s, i) => {
-              const Icon = s.icon
-              return (
-                <Motion.li
-                  key={s.title}
-                  className="mk-step"
-                  variants={fadeUp}
-                  initial={reduced ? false : 'hidden'}
-                  whileInView="show"
-                  viewport={{ once: true, margin: '-60px' }}
-                  transition={{ delay: i * 0.08 }}
-                >
-                  <span className="mk-step-rail" aria-hidden="true" />
-                  <div className="mk-step-num"><span>{i + 1}</span></div>
-                  <span className="mk-card-icon"><Icon size={20} aria-hidden="true" /></span>
-                  <h3>{s.title}</h3>
-                  <p>{s.body}</p>
-                  <p className="mk-step-aside">{s.aside}</p>
-                </Motion.li>
-              )
-            })}
-          </ol>
+      {/* ══ Bridge: the demo's reading becomes the page's ═══════════════ */}
+      <section className="mk-bridge">
+        <div className="pf2-grid">
+          <div className="mk-bridge-figure">
+            {/* aria-live so the number is announced when it changes, since the
+                change is the point and it happens off to the side. */}
+            <p className="u-figure mk-bridge-value" aria-live="polite">
+              {headline.value.toLocaleString()}
+            </p>
+            <p className="u-h3 mk-bridge-label">{headline.label}</p>
+            <p className="u-micro mk-bridge-sub">{headline.sub}</p>
+          </div>
+          <div className="mk-bridge-copy">
+            <h2 className="u-h2">
+              One prompt is a moment.<br />
+              The dashboard shows the pattern.
+            </h2>
+            <p className="u-body">
+              A single tightened prompt is worth a few tokens. The reason to measure is what
+              happens across a week of them — which prompts got long, which days ran heavy,
+              and how much of your own wording you were repeating without noticing.
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* ── Live demo embed ──────────────────────────────────── */}
-      <section className="mk-section" id="demo">
-        <div className="mk-section-inner">
-          <Reveal className="mk-section-head">
-            <span className="mk-kicker">See it in action</span>
-            <h2 className="mk-h2">The dashboard, running on sample data.</h2>
-            <p className="mk-section-sub">
-              This is the real PromptFootprint dashboard, the same one that opens from
-              the extension, loaded with example data so you can click around before you install.
+      {/* ══ 01 / TIGHTEN ═══════════════════════════════════════════════ */}
+      <section className="mk-section">
+        <div className="pf2-grid">
+          <SectionIndex num="01" title="Tighten" id="tighten" />
+
+          <div className="mk-tighten-diff">
+            <p className="u-micro mk-caption">
+              The sample prompt, through the local optimizer · struck text is what came out
             </p>
-          </Reveal>
-          <Reveal delay={0.05}>
-            <div className="mk-demo">
-              <div className="mk-demo-chrome">
-                <span className="mk-dot-r" /><span className="mk-dot-y" /><span className="mk-dot-g" />
-                <span className="mk-demo-url">{SITE.url.replace('https://', '')}/#/app</span>
-                <span className="mk-demo-badge">Live demo · sample data</span>
+            <DiffBlock diff={SAMPLE.diff} className="is-large" />
+          </div>
+
+          <div className="mk-tighten-copy">
+            <h2 className="u-h2">Keep the intent.<br />Lose the extra tokens.</h2>
+            <p className="u-body">
+              The Energy Saver reads a draft, proposes the wording that carries no instruction,
+              and reports the difference before anything is sent. It does not shorten your
+              thinking — every requirement it finds in the prompt is checked again in the
+              result, and an edit that would drop one is rejected rather than shown.
+            </p>
+            <p className="u-body">
+              Context can be worth its tokens. Greetings, sign-offs and “I was wondering if you
+              could” are not the same thing as context.
+            </p>
+
+            <div className="pf2-strip mk-tighten-strip">
+              <div>
+                <span className="pf2-cell-label">Original words</span>
+                <span className="pf2-cell-value">{SAMPLE.originalWords}</span>
               </div>
-              <div className="mk-demo-frame">
-                <iframe
-                  title="PromptFootprint dashboard live demo"
-                  src={demoUrl()}
-                  loading="lazy"
-                />
+              <div>
+                <span className="pf2-cell-label">Original tokens</span>
+                <span className="pf2-cell-value">{SAMPLE.originalTokens}</span>
+              </div>
+              <div>
+                <span className="pf2-cell-label">Optimized tokens</span>
+                <span className="pf2-cell-value">{SAMPLE.optimizedTokens}</span>
+              </div>
+              <div>
+                <span className="pf2-cell-label">Tokens saved</span>
+                <span className="pf2-cell-value mk-value-saved">{SAMPLE.tokensSaved}</span>
               </div>
             </div>
-            <p className="mk-demo-note">
-              Prefer full screen?{' '}
-              <Link to="/app">Open the demo in its own tab <ArrowRight size={14} /></Link>
+
+            <p className="u-micro mk-note">
+              {SAMPLE.edits} edits · {SAMPLE.constraintsKept} stated requirements re-checked in the result ·
+              measured with the extension’s own estimator
             </p>
-          </Reveal>
+          </div>
         </div>
       </section>
 
-      {/* ── Privacy & trust ──────────────────────────────────── */}
-      <section className="mk-section mk-section-alt" id="privacy">
-        <div className="mk-section-inner mk-trust">
-          <Reveal className="mk-trust-copy">
-            <span className="mk-kicker">Privacy &amp; trust</span>
-            <h2 className="mk-h2">The honest default is on-device.</h2>
-            <p>
-              PromptFootprint was built local-first on purpose. The text of your prompts
-              and the models’ answers is read only to count its length. It is never
-              written to storage and never leaves your browser.
+      {/* ══ 02 / MEASURE ═══════════════════════════════════════════════ */}
+      <section className="mk-section mk-measure">
+        <div className="pf2-grid">
+          <SectionIndex num="02" title="Measure" id="measure" />
+
+          <div className="mk-measure-lead">
+            <p className="u-micro mk-caption">
+              One session · sample data
             </p>
-            <ul className="mk-check-list">
-              <li><ShieldCheck size={17} /> No prompts or replies stored or uploaded</li>
-              <li><Eye size={17} /> No analytics, no telemetry, no third-party trackers</li>
-              <li><Lock size={17} /> Optional features (AI writing help, sync, location) are off until you turn them on</li>
-              <li><Check size={17} /> Accounts are optional: the extension works fully signed out</li>
-            </ul>
-            <div className="mk-trust-links">
-              <Link to="/privacy" className="btn btn-ghost btn-sm">Read the Privacy Policy</Link>
-              <Link to="/terms" className="btn btn-ghost btn-sm">Terms of Use</Link>
-            </div>
-          </Reveal>
-          <Reveal delay={0.08} className="mk-trust-aside">
-            <div className="mk-quote-card">
-              <span className="mk-quote-mark" aria-hidden="true">“</span>
-              <p className="mk-quote">
-                Everything works on your device by default, and your prompts and the
-                models’ replies are never stored or uploaded.
-              </p>
-              <p className="mk-quote-src">From the PromptFootprint Privacy Policy</p>
-            </div>
-          </Reveal>
+            <p className="u-figure mk-measure-figure">{SAMPLE_SESSION.tokens.toLocaleString()}</p>
+            <p className="u-h3 mk-measure-label">tokens in this session</p>
+          </div>
+
+          <div className="mk-measure-ledger">
+            <dl>
+              <div><dt className="u-micro">Prompts</dt><dd>{SAMPLE_SESSION.prompts}</dd></div>
+              <div><dt className="u-micro">Input tokens</dt><dd>{SAMPLE_SESSION.promptTokens.toLocaleString()}</dd></div>
+              <div><dt className="u-micro">Response tokens</dt><dd>{SAMPLE_SESSION.responseTokens.toLocaleString()}</dd></div>
+              <div><dt className="u-micro">Platform</dt><dd className="is-text">{SAMPLE_SESSION.platform}</dd></div>
+              <div><dt className="u-micro">Est. energy</dt><dd>{formatValue(SAMPLE_SESSION.energyWh)}<i>Wh</i></dd></div>
+            </dl>
+            <p className="u-body mk-measure-copy">
+              Counting happens in the page, as you chat. PromptFootprint reads how long each
+              message is — never what it says — and writes the count, not the text. Most of a
+              session is the model’s answer, which is why the response column is usually the
+              larger one and why “tokens used” is not a synonym for “tokens wasted”.
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* ── Recognition ──────────────────────────────────────── */}
-      <section className="mk-section mk-awards-section">
-        <div className="mk-section-inner">
-          <Reveal className="mk-awards">
-            <div className="mk-awards-copy">
-              <span className="mk-kicker">Recognition</span>
-              <h2 className="mk-h2">Judged in international competition.</h2>
-              <p>
-                PromptFootprint has placed in {AWARDS.length} international competitions,
-                against a combined field of more than {totalCompetitors.toLocaleString()} entrants —
-                for making the hidden cost of everyday AI use visible, and reproducible.
-              </p>
-              <Link to="/app/awards" className="btn btn-ghost btn-sm">
-                See the recognition <ArrowRight size={15} />
-              </Link>
+      {/* ══ 03 / ACCUMULATE — the real dashboard, bleeding into the page ═ */}
+      <section className="mk-section mk-accumulate">
+        <div className="pf2-grid">
+          <SectionIndex num="03" title="Accumulate" id="accumulate" />
+          <div className="mk-accumulate-head">
+            <h2 className="u-h2">One prompt is hard to feel.<br />A week of them isn’t.</h2>
+            <p className="u-body">
+              This is the dashboard itself, not a screenshot of it — the same surface that opens
+              from the extension, running here on sample data. Everything is clickable.
+            </p>
+          </div>
+        </div>
+
+        <DashboardSurface embedded />
+
+        <div className="pf2-grid">
+          <p className="mk-accumulate-foot u-micro">
+            Sample data ·{' '}
+            <Link to="/app">Open the dashboard full screen →</Link>
+          </p>
+        </div>
+      </section>
+
+      {/* ══ 04 / TRANSLATE ═════════════════════════════════════════════ */}
+      <section className="mk-section mk-translate">
+        <div className="pf2-grid">
+          <SectionIndex num="04" title="Translate" id="translate" />
+
+          <div className="mk-translate-head">
+            <h2 className="u-h2">Tokens are abstract.<br />Resources aren’t.</h2>
+          </div>
+
+          <div className="mk-translate-copy">
+            <p className="u-body">
+              A token count tells you how much text moved. It does not tell you what running that
+              text cost. PromptFootprint converts one into the other with a published, per-token
+              model — so the number on the dashboard can be checked, argued with, and corrected.
+            </p>
+            <p className="u-body">
+              The ChatGPT figures are derived top-down from OpenAI’s 2025 sustainability
+              disclosure: annual energy, water, and carbon divided by an estimate of annual
+              tokens. Claude has no published equivalent, so it is expressed as the same anchor
+              scaled by {PER_1K.claude}× and labelled as an estimate wherever it appears.
+            </p>
+          </div>
+
+          <div className="mk-translate-figures">
+            <p className="u-micro mk-caption">Per 1,000 tokens · ChatGPT / GPT-4o anchor</p>
+            <div className="pf2-strip">
+              <div>
+                <span className="pf2-cell-label">Est. energy</span>
+                <span className="pf2-cell-value">{PER_1K.energyWh.toFixed(2)}<span className="pf2-cell-unit">Wh</span></span>
+              </div>
+              <div>
+                <span className="pf2-cell-label">Est. water</span>
+                <span className="pf2-cell-value">{PER_1K.waterMl.toFixed(2)}<span className="pf2-cell-unit">mL</span></span>
+              </div>
+              <div>
+                <span className="pf2-cell-label">Est. CO₂</span>
+                <span className="pf2-cell-value">{PER_1K.co2G.toFixed(3)}<span className="pf2-cell-unit">g</span></span>
+              </div>
+              <div>
+                <span className="pf2-cell-label">Prompts stored</span>
+                <span className="pf2-cell-value">0</span>
+              </div>
             </div>
-            <ul className="mk-awards-list">
-              {[...AWARDS].sort((a, b) => a.rank - b.rank).map((a) => (
-                <li className="mk-award" key={a.id}>
-                  <span className="mk-award-rank">{a.placement.split(' ')[0]}</span>
-                  <span className="mk-award-body">
-                    <span className="mk-award-event">{a.event}</span>
-                    <span className="mk-award-scope">{a.scope}</span>
-                  </span>
-                  <a className="mk-award-link" href={a.href} target="_blank" rel="noopener noreferrer" aria-label={`${a.event} on Devpost`}>
-                    <ExternalLink size={14} aria-hidden="true" />
-                  </a>
+
+            <div className="mk-limits">
+              <p className="u-micro u-micro-strong">What this model does not claim</p>
+              <ul>
+                <li>
+                  These are estimates from published totals, not meter readings. The real figure
+                  depends on the model that served the request, the data centre, and the grid
+                  behind it.
                 </li>
-              ))}
-            </ul>
-          </Reveal>
+                <li>
+                  Removing input tokens removes part of prefill, which is a minority of a short
+                  interaction’s energy. A 20% shorter prompt is not a 20% smaller footprint, and
+                  the dashboard never presents it as one.
+                </li>
+                <li>
+                  A 2026 preprint over 28,421 trials found input compression can also lengthen
+                  the response — enough that it is not a reliable energy optimization on its own.
+                  PromptFootprint reports tokens removed, which is measured, and labels the
+                  resource figure an equivalent.
+                </li>
+              </ul>
+              <Link className="pf2-btn is-sm" to="/app/learn">Read the method</Link>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── Final CTA ────────────────────────────────────────── */}
-      <section className="mk-section mk-final-section">
-        <div className="mk-section-inner">
-          <Reveal>
-            <div className="mk-final">
-              <span className="mk-final-glow" aria-hidden="true" />
-              <span className="mk-eyebrow mk-eyebrow-center">
-                <Sparkles size={13} /> Thirty seconds to install
-              </span>
-              <h2 className="mk-h2">Start seeing your AI footprint today.</h2>
-              <p>Free, private, and it starts counting the moment you open a chat.</p>
-              <div className="mk-hero-cta mk-center">
-                <ChromeCTA size="lg" />
-                <a className="btn btn-ghost btn-lg" href={SITE.githubUrl} target="_blank" rel="noopener noreferrer">
-                  <Github size={18} /> View on GitHub
-                </a>
-              </div>
-              <p className="mk-final-note">
-                Download now and take your first steps to a cleaner future!
+      {/* ══ 05 / PRIVATE BY DESIGN ═════════════════════════════════════ */}
+      <section className="mk-section mk-private">
+        <div className="pf2-grid">
+          <SectionIndex num="05" title="Private by design" id="private" />
+
+          <div className="mk-private-copy">
+            <h2 className="u-h2">Your prompt never leaves the page.</h2>
+            <p className="u-body">
+              PromptFootprint reads the text of your messages to measure their length and to run
+              the local checks. It does not store that text, and it does not send it anywhere.
+              The demo above follows the same rule: what you typed into it exists only in this
+              tab’s memory.
+            </p>
+            <div className="mk-private-links">
+              <Link className="pf2-btn is-sm" to="/privacy">Privacy Policy</Link>
+              <Link className="pf2-btn is-sm" to="/terms">Terms of Use</Link>
+            </div>
+          </div>
+
+          {/* The flow, drawn as a flow. Text, rules, and one crossed path — the
+              diagram is the claim, and it matches what the code does. */}
+          <figure className="mk-flow">
+            <figcaption className="u-micro mk-caption">Where each piece goes</figcaption>
+            <div className="mk-flow-body" role="img" aria-label="Data flow: your prompt stays in the browser. Token count, resource estimate, and local statistics are derived in the browser and stored on the device. Prompt text never reaches a server.">
+              <p className="mk-flow-node is-source">Your prompt</p>
+              <p className="mk-flow-arrow" aria-hidden="true">│</p>
+              <p className="mk-flow-node is-hub">Browser</p>
+              <ul className="mk-flow-branches">
+                <li><span aria-hidden="true">├──</span> Token count</li>
+                <li><span aria-hidden="true">├──</span> Resource estimate</li>
+                <li><span aria-hidden="true">└──</span> Local statistics <em>· on this device</em></li>
+              </ul>
+              <p className="mk-flow-blocked">
+                Prompt text <span className="mk-flow-x" aria-hidden="true">──✕──▶</span> Server
               </p>
             </div>
-          </Reveal>
+            <ul className="mk-flow-optional">
+              <li>
+                <span className="u-micro u-micro-strong">Account sync · optional, off</span>
+                Numbers and settings only — never prompt or reply text.
+              </li>
+              <li>
+                <span className="u-micro u-micro-strong">Heatwave estimate · optional, off</span>
+                A coordinate rounded to about 11 km, used to look up local weather.
+              </li>
+              <li>
+                <span className="u-micro u-micro-strong">AI writing help · optional, off</span>
+                The only feature that sends a draft off the device, and only after you supply
+                your own endpoint. Off by default, and not available on this site at all.
+              </li>
+            </ul>
+          </figure>
+        </div>
+      </section>
+
+      {/* ══ 06 / METHOD ════════════════════════════════════════════════ */}
+      <section className="mk-section mk-method">
+        <div className="pf2-grid">
+          <SectionIndex num="06" title="Method" id="method" />
+
+          <div className="mk-method-head">
+            <h2 className="u-h2">Method</h2>
+            <p className="u-micro">Estimator v2 · every figure traces to a source</p>
+            <div className="mk-method-links">
+              <Link className="pf2-btn" to="/app/learn">Read full method</Link>
+              <a
+                className="pf2-btn"
+                href={`${SITE.githubUrl}/blob/main/METHODOLOGY.md`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                METHODOLOGY.md ↗
+              </a>
+            </div>
+          </div>
+
+          <dl className="mk-spec">
+            <div>
+              <dt className="u-micro u-micro-strong">Measured</dt>
+              <dd>Token count per usage event, from text length · prompts and responses sent</dd>
+            </div>
+            <div>
+              <dt className="u-micro u-micro-strong">Estimated</dt>
+              <dd>Energy · water · CO₂, converted from that token count</dd>
+            </div>
+            <div>
+              <dt className="u-micro u-micro-strong">Inputs</dt>
+              <dd>
+                OpenAI 2025 sustainability disclosure · Jegham et al., <em>How Hungry is AI?</em> ·
+                Parasharami, token-level framework (Vanderbilt YSJ) · published PUE and grid figures
+              </dd>
+            </div>
+            <div>
+              <dt className="u-micro u-micro-strong">Stored</dt>
+              <dd>Aggregate token counts, session times, realized savings — on your device</dd>
+            </div>
+            <div>
+              <dt className="u-micro u-micro-strong">Not stored</dt>
+              <dd>Prompt text · assistant response text · precise location · analytics of any kind</dd>
+            </div>
+            <div>
+              <dt className="u-micro u-micro-strong">Reviewed</dt>
+              <dd>
+                Placed in {AWARDS.length} international competitions ·{' '}
+                <Link to="/app/awards">see the record</Link>
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      {/* ══ Close ══════════════════════════════════════════════════════ */}
+      <section className="mk-close">
+        <div className="pf2-grid">
+          <div className="mk-close-inner">
+            <h2 className="u-h1 mk-close-h">Use fewer tokens.<br />See the difference.</h2>
+            <div className="mk-close-cta">
+              <ChromeCTA />
+              <a className="pf2-btn" href={SITE.githubUrl} target="_blank" rel="noopener noreferrer">
+                <Github size={15} /> View source
+              </a>
+            </div>
+            <p className="u-micro mk-close-spec">
+              Free <span aria-hidden="true">/</span> Local-first <span aria-hidden="true">/</span> Open source
+              <span aria-hidden="true">/</span> No account required
+            </p>
+          </div>
         </div>
       </section>
 

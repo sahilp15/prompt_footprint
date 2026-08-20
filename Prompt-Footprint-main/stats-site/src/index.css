@@ -1,153 +1,134 @@
-@import "tailwindcss";
+@import "./styles/tokens.css";
 @import "./styles/dashboard.css";
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PromptFootprint design system
+   Legacy token bridge.
    ───────────────────────────────────────────────────────────────────────────
-   The product's identity is warm parchment and earth pigment: paper, moss,
-   amber, water-blue, clay. Everything below is a refinement of that palette
-   rather than a replacement — the surfaces gained depth, the accents gained
-   accessible "ink" variants for small text, and motion gained a shared set of
-   easing curves so every page decelerates the same way.
+   The v2 identity lives in styles/tokens.css. The pages that predate this
+   redesign — Method, Token Cutter, Recognition, Settings, Account — address
+   colour, depth, and geometry through the names below, so every name is kept
+   and repointed at a v2 value. That moves those pages onto paper, hairlines and
+   square corners in one edit, instead of leaving four screens looking like a
+   different product while their markup is rewritten.
 
-   Token groups
-     · surfaces      — the paper stack, from the page up to floating glass
-     · ink           — text, plus AA-safe variants of each accent
-     · accents       — the four metric colours (energy, water, carbon, growth)
-     · elevation     — warm-tinted shadows, five steps
-     · motion        — durations and easing curves
-     · geometry      — radii, layout widths, the spacing scale
-
-   Legacy names (--bg-*, --shadow, --transition, --radius…) all still resolve,
-   so existing components keep working untouched.
+   Two deliberate consequences:
+     · every card surface resolves to the page's own paper, so a "card" becomes
+       a ruled block,
+     · every shadow and every gradient resolves to none.
+   Both are the point, not a side effect.
    ══════════════════════════════════════════════════════════════════════════ */
 
 :root {
   /* ── Surfaces ──────────────────────────────────────────────────────────── */
-  --bg-primary: #faf7f0;
-  --bg-secondary: #f5f0e8;
-  --bg-tertiary: #ede8dc;
-  --bg-elevated: #e8e2d4;
-  --bg-card: #ffffff;
-  /* Sunken wells — chart plots, code, table headers. */
-  --bg-sunken: #f7f3ea;
-  /* Translucent surfaces for sticky bars and floating panels. */
-  --glass: rgba(255, 255, 255, 0.72);
-  --glass-strong: rgba(252, 250, 245, 0.88);
-  --glass-blur: saturate(180%) blur(20px);
+  --bg-primary: var(--paper);
+  --bg-secondary: var(--paper-raised);
+  --bg-tertiary: var(--paper-raised);
+  --bg-elevated: var(--paper-sunk);
+  /* Cards become ruled blocks on the same paper. */
+  --bg-card: transparent;
+  --bg-sunken: var(--paper-raised);
+  --glass: var(--paper);
+  --glass-strong: var(--paper);
+  --glass-blur: none;
 
   /* ── Ink ───────────────────────────────────────────────────────────────── */
-  --text-primary: #2c1810;
-  --text-secondary: #5c4a3a;
-  --text-muted: #8b7355;
-  /* `--text-muted` sits at 4.19:1 on parchment, just under AA. Use this for
-     any caption or metadata that has to clear the bar. */
-  --text-muted-ink: #7a6146;
-  --text-inverse: #fdfbf6;
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-soft);
+  --text-muted: var(--ink-muted);
+  --text-muted-ink: var(--ink-muted);
+  --text-inverse: var(--ink-inverse);
 
   /* ── Accents ───────────────────────────────────────────────────────────── */
-  --accent-green: #5b7c3a;
-  --accent-blue: #2e6b8a;
-  --accent-amber: #c17f24;
-  --accent-red: #a0522d;
-  /* Darkened for small text on tinted backgrounds — same hue, AA-safe. */
-  --accent-green-ink: #435c28;
-  --accent-blue-ink: #235571;
-  --accent-amber-ink: #8f5d18;
-  --accent-red-ink: #7f3f21;
-  /* Lifted for fills, rings, and gradient stops. */
-  --accent-green-lift: #7ba14f;
-  --accent-blue-lift: #4a90b3;
-  --accent-amber-lift: #dda44a;
-  --accent-red-lift: #c07048;
+  /* Two pigments and three restrained resource channels — see tokens.css. */
+  --accent-green: var(--forest);
+  --accent-blue: var(--ch-water);
+  --accent-amber: var(--ch-energy);
+  --accent-red: var(--signal);
+  --accent-green-ink: var(--forest);
+  --accent-blue-ink: var(--ch-water);
+  --accent-amber-ink: var(--ch-energy);
+  --accent-red-ink: var(--signal);
+  --accent-green-lift: var(--forest);
+  --accent-blue-lift: var(--ch-water);
+  --accent-amber-lift: var(--ch-energy);
+  --accent-red-lift: var(--signal);
 
-  /* Metric semantics — one place to retune the whole product's data colours. */
-  --metric-energy: var(--accent-amber);
-  --metric-water: var(--accent-blue);
-  --metric-carbon: #8b7355;
-  --metric-tokens: var(--accent-green);
-  --metric-sessions: var(--accent-red);
+  --metric-energy: var(--ch-energy);
+  --metric-water: var(--ch-water);
+  --metric-carbon: var(--ch-carbon);
+  --metric-tokens: var(--forest);
+  --metric-sessions: var(--signal);
 
   /* ── Borders ───────────────────────────────────────────────────────────── */
-  --border: #d4c5a9;
-  --border-subtle: #e8e0d0;
-  --border-strong: #c3b190;
-  --border-hairline: rgba(44, 24, 16, 0.06);
+  --border: var(--rule);
+  --border-subtle: var(--rule-soft);
+  --border-strong: var(--rule-strong);
+  --border-hairline: var(--rule-soft);
 
   /* ── Gradients ─────────────────────────────────────────────────────────── */
-  --grad-green: linear-gradient(135deg, var(--accent-green-lift), var(--accent-green));
-  --grad-amber: linear-gradient(135deg, var(--accent-amber-lift), var(--accent-amber));
-  --grad-blue: linear-gradient(135deg, var(--accent-blue-lift), var(--accent-blue));
-  /* The signature backdrop: three soft light sources over parchment. */
-  --grad-aurora:
-    radial-gradient(1200px 620px at 78% -12%, rgba(91, 124, 58, 0.13), transparent 62%),
-    radial-gradient(980px 540px at 4% 2%, rgba(46, 107, 138, 0.10), transparent 58%),
-    radial-gradient(760px 460px at 52% 108%, rgba(193, 127, 36, 0.10), transparent 62%);
-  /* A hairline that catches light along the top edge of raised cards. */
-  --sheen-top: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9) 22%, rgba(255, 255, 255, 0.9) 78%, transparent);
+  /* There are no gradients in this design. The names resolve to flat ink so
+     anything still asking for one gets a solid fill rather than a surprise. */
+  --grad-green: var(--forest);
+  --grad-amber: var(--ch-energy);
+  --grad-blue: var(--ch-water);
+  --grad-aurora: none;
+  --sheen-top: none;
 
   /* ── Elevation ─────────────────────────────────────────────────────────── */
-  /* Warm-tinted, two-layer: a tight contact shadow plus a soft ambient one. */
-  --shadow-xs: 0 1px 2px rgba(44, 24, 16, 0.05);
-  --shadow-sm: 0 1px 2px rgba(44, 24, 16, 0.05), 0 2px 6px rgba(44, 24, 16, 0.04);
-  --shadow-md: 0 2px 4px rgba(44, 24, 16, 0.05), 0 8px 20px rgba(44, 24, 16, 0.07);
-  --shadow-lg: 0 4px 8px rgba(44, 24, 16, 0.05), 0 18px 40px rgba(44, 24, 16, 0.10);
-  --shadow-xl: 0 8px 16px rgba(44, 24, 16, 0.06), 0 32px 68px rgba(44, 24, 16, 0.14);
-  /* Kept for components written against the original single token. */
-  --shadow: var(--shadow-md);
-  --ring-green: 0 0 0 3px rgba(91, 124, 58, 0.18);
-  --ring-focus: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-green);
+  /* Depth comes from rules and spacing. Every shadow resolves to none. */
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow: none;
+  --ring-green: none;
+  --ring-focus: 0 0 0 2px var(--paper), 0 0 0 4px var(--signal);
 
   /* ── Motion ────────────────────────────────────────────────────────────── */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --dur-fast: 140ms;
-  --dur: 220ms;
-  --dur-slow: 420ms;
-  --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-out: var(--dur) var(--ease-out);
+  --ease-out: var(--ease);
+  --ease-out-soft: var(--ease);
+  --ease-spring: var(--ease);
+  --dur-fast: var(--t-micro);
+  --dur: var(--t-mode);
+  --dur-slow: var(--t-narrative);
+  --transition: var(--t-micro) var(--ease);
+  --transition-out: var(--t-mode) var(--ease);
 
   /* ── Geometry ──────────────────────────────────────────────────────────── */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 28px;
+  --radius-xs: var(--r-1);
+  --radius-sm: var(--r-1);
+  --radius: var(--r-2);
+  --radius-lg: var(--r-2);
+  --radius-xl: var(--r-2);
+  --radius-2xl: var(--r-2);
+  /* Only genuinely round things stay round: a status dot, a toggle knob. */
   --radius-pill: 999px;
   --content-max: 1180px;
   --content-pad: 32px;
-
-  /* ── Type ──────────────────────────────────────────────────────────────── */
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Source Serif 4', serif;
-  --font-serif: 'Merriweather', serif;
 }
 
-@theme inline {
-  --color-bg-primary: var(--bg-primary);
-  --color-bg-secondary: var(--bg-secondary);
-  --color-bg-tertiary: var(--bg-tertiary);
-  --color-bg-card: var(--bg-card);
-  --color-text-primary: var(--text-primary);
-  --color-text-secondary: var(--text-secondary);
-  --color-text-muted: var(--text-muted);
-  --color-accent-green: var(--accent-green);
-  --color-accent-blue: var(--accent-blue);
-  --color-accent-amber: var(--accent-amber);
-  --color-accent-red: var(--accent-red);
-  --color-border: var(--border);
-  --color-border-subtle: var(--border-subtle);
-}
+/* ── Reset ────────────────────────────────────────────────────────────────
+   Explicit and small. Tailwind was carrying the preflight, and the app used
+   none of its utilities — so the framework was shipping a reset and a class
+   generator for nothing. A site about not spending what you do not need should
+   not be the exception. */
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 16px; scroll-behavior: smooth; }
+ul, ol { list-style: none; }
+img, svg, video, canvas { display: block; max-width: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { background: none; border: 0; }
+table { border-collapse: collapse; }
+:where(h1, h2, h3, h4, h5, h6) { font-size: inherit; font-weight: inherit; }
+[hidden] { display: none !important; }
 
 body {
-  font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -166,24 +147,23 @@ a { color: inherit; text-decoration: none; }
 
 /* One focus treatment everywhere, and only for keyboard users. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent-green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--r-1);
 }
 
-::selection { background: rgba(91, 124, 58, 0.22); color: var(--text-primary); }
+::selection { background: rgba(53, 84, 63, 0.2); color: var(--ink); }
 
 /* Slim, parchment-toned scrollbars on the surfaces that scroll. */
 @supports selector(::-webkit-scrollbar) {
   ::-webkit-scrollbar { width: 11px; height: 11px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--border) 80%, transparent);
+    background: color-mix(in srgb, var(--rule-strong) 60%, transparent);
     border: 3px solid transparent;
     background-clip: content-box;
-    border-radius: var(--radius-pill);
   }
-  ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--rule-strong); background-clip: content-box; }
 }
 
 @media (prefers-reduced-motion: reduce) {

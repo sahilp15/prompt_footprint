@@ -1267,6 +1267,10 @@
       // filled in with a number we do not believe.
       PFStorage.addSavings({
         savedTokens: result.savedTokens || 0,
+        // The prompt's token count BEFORE the replacement, so the dashboard can
+        // report an average reduction against the right denominator. Only sent
+        // when a draft estimate actually measured it.
+        originalTokens: draftEstimate ? draftEstimate.inputTokens || 0 : 0,
         savedEnergyWh: projection && projection.energySavedWh ? Math.max(0, projection.energySavedWh.central) : 0,
         savedWaterMl: projection && projection.waterSaved ? Math.max(0, projection.waterSaved.central) : 0,
         savedCo2G: projection && projection.carbonSaved ? Math.max(0, projection.carbonSaved.central) : 0,

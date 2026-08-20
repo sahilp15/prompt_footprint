@@ -1,32 +1,43 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import {
-  Droplets, Zap, BarChart3, Leaf, GraduationCap, Trophy, Scissors,
-  Settings as SettingsIcon, CircleUserRound, Sparkles,
-} from 'lucide-react'
-import WeeklyStats from './components/WeeklyStats'
-import SessionList from './components/SessionList'
-import Savings from './components/Savings'
-import Guide from './components/Guide'
-import TokenCutter from './components/cutter/TokenCutter'
-import Awards from './components/Awards'
-import Settings from './components/Settings'
+import DashboardSurface from './dashboard/DashboardSurface'
 import LandingPage from './marketing/LandingPage'
+import { Mark } from './marketing/MarketingChrome'
 import { Privacy, Terms, Support, Contact, Confirmed } from './marketing/Pages'
 import { isDemoMode } from './lib/api'
 import './App.css'
 
+// Split out of the entry bundle. The landing page and the dashboard are what a
+// first visit loads; the Token Cutter workspace, the method write-up, the
+// recognition page and settings are each a separate visit, and each drags in
+// its own icon set and UI. A site about not spending what you do not need has
+// no business shipping four screens nobody asked for.
+const TokenCutter = lazy(() => import('./components/cutter/TokenCutter'))
+const Guide = lazy(() => import('./components/Guide'))
+const Awards = lazy(() => import('./components/Awards'))
+const Settings = lazy(() => import('./components/Settings'))
+
+/** Placeholder while a split route arrives. Holds space; says what it is. */
+function RouteFallback() {
+  return (
+    <div className="route-loading" role="status">
+      <span className="u-micro">Loading…</span>
+    </div>
+  )
+}
+
+// Overview / Efficiency / Footprint / Sessions are tabs inside one dashboard —
+// they are four readings of the same period, not four pages. What stays a route
+// is what is genuinely a different tool.
 const NAV_ITEMS = [
-  { to: '', end: true, icon: BarChart3, label: 'Weekly Stats' },
-  { to: 'sessions', icon: Zap, label: 'Sessions' },
-  { to: 'savings', icon: Leaf, label: 'Savings' },
-  { to: 'cutter', icon: Scissors, label: 'Token Cutter' },
-  { to: 'learn', icon: GraduationCap, label: 'How it Works' },
-  { to: 'awards', icon: Trophy, label: 'Awards' },
-  { to: 'settings', icon: SettingsIcon, label: 'Settings' },
+  { to: '', end: true, label: 'Dashboard' },
+  { to: 'cutter', label: 'Token Cutter' },
+  { to: 'learn', label: 'Method' },
+  { to: 'awards', label: 'Recognition' },
+  { to: 'settings', label: 'Settings' },
 ]
 
-/** Raises the header once the page has moved, so it detaches from the content. */
+/** Rules the header off from the content once the page has moved. */
 function useScrolled(threshold = 6) {
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
@@ -38,85 +49,53 @@ function useScrolled(threshold = 6) {
   return scrolled
 }
 
-// The dashboard shell (top nav + the stats pages). It is mounted at two
-// different base paths depending on context, so its links are base-aware:
-//   • Extension options page  → base '' , lives at the hash root ('#/').
-//   • Public web build (demo) → base '/app', so the marketing site can own '#/'.
-// Passing base='' reproduces the original extension routes exactly.
+// The dashboard shell. Mounted at two base paths:
+//   • Extension options page  → base '' , at the hash root ('#/').
+//   • Public web build (demo) → base '/app', so the site can own '#/'.
 function Dashboard({ base = '' }) {
-  const demo = isDemoMode()
   const scrolled = useScrolled()
   const location = useLocation()
   const home = base || '/'
   const to = (p) => (p ? `${base}/${p}` : home)
 
   return (
-    <div className="app">
-      <div className="app-ambient" aria-hidden="true" />
-
+    <div className="app pf2">
       <nav className={`nav${scrolled ? ' is-scrolled' : ''}`}>
         <div className="nav-inner">
           <NavLink to={home} end className="nav-brand">
-            <span className="nav-mark"><Droplets size={18} /></span>
-            <span className="nav-wordmark">
-              <span className="nav-title">PromptFootprint</span>
-              <span className="nav-kicker">Dashboard</span>
-            </span>
+            <Mark size={17} />
+            <span className="nav-title">PromptFootprint</span>
           </NavLink>
 
           <div className="nav-links">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon
-              return (
-                <NavLink
-                  key={item.label}
-                  to={to(item.to)}
-                  end={item.end}
-                  className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                >
-                  <Icon size={16} aria-hidden="true" />
-                  <span>{item.label}</span>
-                </NavLink>
-              )
-            })}
-            <span className="nav-divider" aria-hidden="true" />
-            <NavLink
-              to={to('settings')}
-              className={({ isActive }) => `nav-account${isActive ? ' active' : ''}`}
-              title="Account"
-              aria-label="Account"
-            >
-              <CircleUserRound size={19} />
-            </NavLink>
+            {NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.label}
+                to={to(item.to)}
+                end={item.end}
+                className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+              >
+                {item.label}
+              </NavLink>
+            ))}
           </div>
         </div>
       </nav>
 
-      {demo && (
-        <div className="demo-banner">
-          <span className="demo-banner-inner">
-            <Sparkles size={14} aria-hidden="true" />
-            <span>
-              Showing <strong>sample data</strong>. Install the PromptFootprint extension
-              and open this dashboard from it to see your own footprint.
-            </span>
-          </span>
-        </div>
-      )}
-
-      {/* Keyed on the path so each route fades and lifts into place instead of
-          snapping. Purely additive — the animation's resting state is the
-          normal one, so a reduced-motion visitor simply sees the page. */}
       <main className="main" key={location.pathname}>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route index element={<WeeklyStats />} />
-          <Route path="sessions" element={<SessionList />} />
-          <Route path="savings" element={<Savings />} />
+          <Route index element={<DashboardSurface />} />
+          {/* Kept so links from earlier versions still land somewhere sensible:
+              each old page is now a tab on the one dashboard. */}
+          <Route path="sessions" element={<DashboardSurface initialTab="sessions" />} />
+          <Route path="savings" element={<DashboardSurface initialTab="efficiency" />} />
           <Route path="cutter" element={<TokenCutter />} />
           <Route path="learn" element={<Guide />} />
           <Route path="awards" element={<Awards />} />
           <Route path="settings" element={<Settings />} />
         </Routes>
+        </Suspense>
       </main>
     </div>
   )
@@ -125,9 +104,9 @@ function Dashboard({ base = '' }) {
 function App() {
   const demo = isDemoMode()
 
-  // In the extension the whole app IS the dashboard (behavior unchanged). On the
-  // public web build the marketing landing page owns the root and the dashboard
-  // moves under /app as a live, sample-data demo.
+  // In the extension the whole app IS the dashboard. On the public web build the
+  // landing page owns the root and the dashboard moves under /app as a live,
+  // sample-data demo.
   if (!demo) {
     return (
       <Routes>

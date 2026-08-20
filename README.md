@@ -50,10 +50,14 @@ Prompt-Footprint/
 │   │   └── dict/                 Compact English Hunspell dictionary (see dict/README.md)
 │   ├── test/              Unit tests (node:test)
 │   └── styles/            Shared design system CSS
-├── stats-site/            React + Vite dashboard; build output is copied to extension/dashboard
+├── stats-site/            React + Vite dashboard and public site; build output is copied to extension/dashboard
+│   ├── src/marketing/         Public site; src/marketing/demo/ is the interactive hero
+│   ├── src/dashboard/         Dashboard surface, custom SVG chart, session ledger
+│   ├── src/lib/efficiency.js  Definitions for every dashboard metric
 │   ├── src/lib/tokenCutter/   Token Cutter engine (local-first prompt optimizer)
 │   ├── src/components/cutter/ Token Cutter UI
-│   └── test/                  node:test suite for the engine
+│   ├── src/styles/tokens.css  Design tokens: paper, ink, rules, two pigments
+│   └── test/                  node:test suite for the engine and the metrics
 ├── supabase/              Optional accounts/sync: schema + RLS migration, config, RLS test
 └── server/                Legacy Express/Postgres backend (dormant; not used)
 ```

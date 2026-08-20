@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Sparkles, Keyboard, Shield, PencilLine, Server, Check } from 'lucide-react'
+import { Keyboard, Shield, PencilLine, Server, Check } from 'lucide-react'
 import { fetchConfig, saveConfig, resolveWritingProvider, isExtensionContext } from '../lib/api'
 import Account from './Account'
 import './Settings.css'
@@ -51,7 +51,7 @@ export default function Settings() {
       {/* ── AI writing help ─────────────────────────────────────────────── */}
       <section className="settings-section">
         <div className="settings-section-head">
-          <Sparkles size={18} /><h2>AI writing help</h2>
+          <PencilLine size={18} /><h2>AI writing help</h2>
           <span className={`settings-pill ${cloudOn ? 'on' : 'off'}`}>
             {cloudOn ? 'Cloud on' : 'Local only'}
           </span>

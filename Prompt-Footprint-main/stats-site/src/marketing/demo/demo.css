@@ -1,0 +1,457 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   The hero demo.
+   ───────────────────────────────────────────────────────────────────────────
+   Built to feel like the chat products people already use — a centred
+   conversation column, a restrained bar, a composer anchored at the bottom —
+   without borrowing anyone's marks. The one thing it adds is the measurement
+   rail down the side, which is the entire point.
+
+   It is embedded in the page rather than floating in a browser mock-up: ruled
+   edges, square corners, and the paper of the page showing through. The single
+   rounded surface is the composer, because that is the one thing a person
+   physically types into.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.pfd {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-1);
+  /* Fills the hero column; the thread scrolls inside rather than the page. */
+  height: min(74vh, 680px);
+  overflow: hidden;
+}
+
+/* ── Bar ─────────────────────────────────────────────────────────────────── */
+
+.pfd-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 14px;
+  min-height: 46px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-raised);
+  flex: none;
+}
+.pfd-model { display: inline-flex; align-items: center; gap: 9px; }
+.pfd-model-sep { width: 1px; height: 11px; background: var(--rule-strong); }
+.pfd-bar-tag { margin-left: auto; color: var(--ink-faint); }
+.pfd-bar-actions { display: flex; gap: 4px; flex: none; }
+
+@media (max-width: 560px) {
+  .pfd-bar-tag { display: none; }
+  .pfd-bar-actions { margin-left: auto; }
+}
+
+/* ── Body: conversation column + measurement rail ────────────────────────── */
+
+.pfd-body { display: flex; min-height: 0; flex: 1; }
+.pfd-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+
+.pfd-thread {
+  /* Shrinks before the composer does: opening the diff should eat into the
+     conversation area, not push Send out of the box. */
+  flex: 1 1 auto;
+  min-height: 72px;
+  overflow-y: auto;
+  padding: 26px clamp(16px, 4%, 40px);
+  scrollbar-width: thin;
+}
+
+/* Empty state: a large, quiet conversation area, as in the real thing. */
+.pfd-blank {
+  height: 100%;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--ink-faint);
+}
+.pfd-blank p:last-child { font-size: 15px; max-width: 34ch; color: var(--ink-muted); }
+
+/* ── Messages ────────────────────────────────────────────────────────────── */
+
+.pfd-msg {
+  max-width: 68ch;
+  margin: 0 auto 26px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.pfd-msg:last-child { border-bottom: 0; }
+.pfd-msg-role { display: block; margin-bottom: 9px; }
+.pfd-msg.is-user .pfd-msg-role { color: var(--signal); }
+.pfd-msg.is-user p {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  padding-left: 14px;
+  border-left: 2px solid var(--rule-strong);
+}
+.pfd-msg-meta { display: block; margin-top: 10px; padding-left: 16px; color: var(--ink-faint); }
+
+.pfd-reply p { font-size: 16px; line-height: 1.68; margin-bottom: 14px; color: var(--ink-soft); }
+.pfd-reply p:last-child { margin-bottom: 0; }
+.pfd-reply strong { color: var(--ink); font-weight: 600; }
+.pfd-thinking { min-height: 24px; }
+
+/* The stream's write-head. Blinks only while text is arriving. */
+.pfd-caret {
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  margin-left: 2px;
+  background: var(--signal);
+  vertical-align: text-bottom;
+  animation: pfd-blink 1s steps(2, start) infinite;
+}
+@keyframes pfd-blink { 50% { opacity: 0; } }
+
+/* ── Measurement rail ────────────────────────────────────────────────────── */
+
+.pfd-rail {
+  flex: none;
+  width: 168px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--rule);
+  background: var(--paper-raised);
+  padding: 14px 14px 12px;
+}
+.pfd-rail-head { display: flex; align-items: center; gap: 7px; }
+.pfd-rail-mark {
+  width: 7px; height: 7px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+}
+.pfd-rail.is-live .pfd-rail-mark {
+  background: var(--signal);
+  border-color: var(--signal);
+  animation: pfd-pulse 1.4s var(--ease) infinite;
+}
+@keyframes pfd-pulse { 50% { opacity: 0.28; } }
+
+.pfd-rail-progress {
+  height: 2px;
+  margin: 12px 0 16px;
+  background: var(--rule-soft);
+}
+.pfd-rail-progress i {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 140ms linear;
+}
+
+.pfd-rail-values { display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.pfd-rail-row dt { margin-bottom: 4px; }
+.pfd-rail-value {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 25px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.pfd-rail-row.is-lead .pfd-rail-value { font-size: 38px; }
+.pfd-rail-unit {
+  font-family: var(--font-data);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin-left: 4px;
+}
+.pfd-rail-foot { border-top: 1px solid var(--rule); padding-top: 10px; margin-top: 14px; }
+.pfd-rail-foot p + p { margin-top: 5px; }
+.pfd-rail-basis { color: var(--ink-faint); font-size: 9.5px; letter-spacing: 0.05em; }
+
+/* Mobile: the rail becomes a horizontal strip under the bar so it is still
+   read at a glance, and never becomes a sidebar squeezed to nothing. */
+@media (max-width: 880px) {
+  .pfd-body { flex-direction: column-reverse; }
+  .pfd-rail {
+    width: auto;
+    border-left: 0;
+    border-bottom: 1px solid var(--rule);
+    padding: 10px clamp(14px, 4%, 24px) 11px;
+  }
+  .pfd-rail-progress { margin: 8px 0 10px; }
+  .pfd-rail-values { flex-direction: row; gap: 0; }
+  .pfd-rail-row { flex: 1; min-width: 0; padding-left: 12px; border-left: 1px solid var(--rule); }
+  .pfd-rail-row:first-child { padding-left: 0; border-left: 0; }
+  /* Four readings across a phone: the labels have to stay on one line. */
+  .pfd-rail-row dt { font-size: 9.5px; letter-spacing: 0.06em; white-space: nowrap; }
+  .pfd-rail-value, .pfd-rail-row.is-lead .pfd-rail-value { font-size: 22px; }
+  .pfd-rail-foot { display: flex; gap: 14px; justify-content: space-between; margin-top: 10px; }
+  .pfd-rail-foot p + p { margin-top: 0; }
+}
+
+/* ── Foot: efficiency check, before/after, composer ──────────────────────── */
+
+.pfd-foot {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--rule);
+  padding: 12px clamp(16px, 4%, 40px) 14px;
+  background: var(--paper);
+}
+
+.pfd-check {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 9px 0 11px;
+  border-bottom: 1px solid var(--rule-soft);
+  margin-bottom: 12px;
+}
+.pfd-check.is-quiet, .pfd-check.is-clear { gap: 10px; }
+.pfd-check-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pfd-check-figures { display: flex; gap: 20px; margin-left: auto; }
+.pfd-check .pf2-btn { flex: none; }
+.pfd-check.is-clear .u-micro:last-child { color: var(--forest); }
+
+.pfd-fig { display: flex; flex-direction: column; gap: 3px; }
+.pfd-fig b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.pfd-fig b i { font-style: normal; font-size: 13px; color: var(--ink-muted); margin-left: 1px; }
+.pfd-fig.is-signal b { color: var(--forest); }
+
+/* ── Before / after ──────────────────────────────────────────────────────── */
+
+.pfd-ba { margin-bottom: 12px; }
+.pfd-ba-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule-soft);
+  padding: 10px 0;
+}
+.pfd-ba-strip > .pfd-fig {
+  padding: 0 18px;
+  border-left: 1px solid var(--rule);
+}
+.pfd-ba-strip > .pfd-fig:first-child { padding-left: 0; border-left: 0; }
+.pfd-ba-toggle { margin-left: auto; }
+
+.pfd-ba-diff {
+  font-size: 14.5px;
+  line-height: 1.7;
+  padding: 12px 0 2px;
+  color: var(--ink-soft);
+}
+.pfd-ba-diff del {
+  text-decoration: line-through;
+  text-decoration-color: var(--signal);
+  text-decoration-thickness: 1px;
+  color: var(--ink-faint);
+}
+.pfd-ba-diff ins {
+  text-decoration: none;
+  border-bottom: 1px solid var(--forest);
+  color: var(--forest);
+}
+
+/* ── Composer ────────────────────────────────────────────────────────────── */
+
+.pfd-composer {
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-composer);
+  background: var(--paper-raised);
+  padding: 12px 14px 10px;
+}
+.pfd-composer:focus-within { border-color: var(--ink); }
+
+.pfd-input,
+.pfd-marks {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.pfd-input {
+  border: 0;
+  background: transparent;
+  resize: none;
+  outline: none;
+  display: block;
+  min-height: 84px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.pfd-input::placeholder { color: var(--ink-faint); }
+
+.pfd-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--rule-soft);
+}
+.pfd-count { color: var(--ink-muted); }
+.pfd-composer-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+.pfd-privacy { margin-top: 9px; color: var(--ink-faint); }
+
+/* ── The reduction ───────────────────────────────────────────────────────── */
+
+.pfd-reduce {
+  position: relative;
+  overflow: hidden;
+  min-height: 84px;
+  /* The box closes on an ease-in-out while the words shrink on the sharper
+     product curve, so the paragraph is always a little shorter than the space
+     holding it. Sharing one curve clipped the last line mid-collapse. */
+  transition: height var(--t-reduce) cubic-bezier(0.65, 0, 0.35, 1);
+}
+.pfd-marks { margin: 0; }
+
+/* A removed run stays INLINE, so it wraps with the sentence it belongs to and
+   the paragraph reflows around it as it goes. It is struck first, then its type
+   size is driven to zero: the words physically contract and the text closes up
+   behind them. An inline-block would have been cheaper to animate and wrong —
+   a phrase would have been pushed onto a line of its own before it could
+   shrink, which is the opposite of what the motion is meant to say. */
+.pfd-cut {
+  display: inline;
+  white-space: pre-wrap;
+  transition:
+    font-size var(--t-reduce) var(--ease),
+    opacity 300ms var(--ease),
+    color 180ms var(--ease);
+}
+.is-marking .pfd-cut {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+  text-decoration-color: var(--signal);
+  text-decoration-thickness: 1px;
+}
+.is-collapsing .pfd-cut { font-size: 0; opacity: 0; }
+
+.pfd-add {
+  border-bottom: 1px solid var(--forest);
+  color: var(--forest);
+}
+
+/* Measured, never painted. */
+.pfd-ghost {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── This exchange ───────────────────────────────────────────────────────── */
+
+.pfd-exchange {
+  max-width: 68ch;
+  margin: 0 auto 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule-strong);
+}
+.pfd-exchange-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.pfd-bars { list-style: none; display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+.pfd-bars li {
+  display: grid;
+  grid-template-columns: 132px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  opacity: 0.55;
+  transition: opacity var(--t-mode) var(--ease);
+}
+.pfd-bars li.is-active { opacity: 1; }
+.pfd-mbar { height: 12px; background: var(--paper-sunk); display: block; }
+.pfd-mbar i {
+  display: block;
+  height: 100%;
+  transform-origin: left;
+  transition: transform var(--t-mode) var(--ease);
+}
+.pfd-mbar i.is-original { background: var(--signal); }
+.pfd-mbar i.is-optimized { background: var(--forest); }
+.pfd-bar-value {
+  font-family: var(--font-data);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.pfd-bar-value em { font-style: normal; font-size: 10px; color: var(--ink-muted); margin-left: 4px; }
+
+.pfd-exchange-strip { margin-bottom: 14px; }
+.pfd-exchange-strip .pf2-cell-value { font-size: 22px; }
+.pfd-exchange-note { font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); }
+
+@media (max-width: 560px) {
+  .pfd-bars li { grid-template-columns: 1fr auto; }
+  .pfd-bars li .pfd-mbar { grid-column: 1 / -1; }
+  .pfd-check-figures { gap: 16px; margin-left: 0; width: 100%; }
+  .pfd-ba-strip { flex-wrap: wrap; gap: 12px 0; }
+  .pfd-ba-toggle { margin-left: 0; }
+}
+
+/* ── Phone ───────────────────────────────────────────────────────────────
+   The demo stops being a fixed-height scroller and simply grows: a scroll
+   container inside a scrolling page competes with the thumb, and there is no
+   reason for the conversation to be trapped in a 600 px window when the page
+   below it is already scrolling. */
+@media (max-width: 1000px) {
+  .pfd { height: auto; }
+  .pfd-thread { overflow: visible; min-height: 120px; padding-block: 22px; }
+  .pfd-foot { overflow: visible; }
+  /* The composer grows with what is in it instead of scrolling inside itself —
+     on a phone a nested scroller is a trap, and the prompt is the thing the
+     visitor came to read. */
+  .pfd-input { max-height: none; overflow-y: hidden; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────
+   The collapse and the caret stop; the diff, the counts, and the finished
+   text are identical. Nothing here is the only way to learn a number. */
+@media (prefers-reduced-motion: reduce) {
+  .pfd-caret { animation: none; }
+  .pfd-rail.is-live .pfd-rail-mark { animation: none; }
+  .pfd-cut { transition: none; }
+  .pfd-reduce { transition: none; }
+}
+
+/* Idle readings: a stated absence, not a giant em-dash pretending to be one. */
+.pfd-rail-idle {
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* While the count is walking down it is the live reading, so it is inked. */
+.pfd-count { font-variant-numeric: tabular-nums; }
+.pfd-count.is-falling { color: var(--signal); }

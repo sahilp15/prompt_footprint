@@ -5,7 +5,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   padding: 22px 24px;
   margin: 0;
   transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
@@ -16,9 +16,9 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: radial-gradient(520px 200px at 100% 0%, rgba(193, 127, 36, 0.10), transparent 66%);
+  background: var(--paper-raised);
 }
-.hw-card:hover { border-color: var(--border); box-shadow: var(--shadow-md); }
+.hw-card:hover { border-color: var(--border); box-shadow: none; }
 /* Warm accent when it's actually hot near the region. */
 .hw-card-hot {
   border-color: color-mix(in srgb, var(--accent-red) 45%, var(--border-subtle));
@@ -80,7 +80,7 @@
   min-width: 0;
   padding: 8px 11px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--r-2);
   background: var(--bg-card);
   color: var(--text-primary);
   font-size: 13px;
@@ -115,9 +115,9 @@
   background: var(--grad-green);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(91, 124, 58, 0.24);
+  box-shadow: none;
 }
-.hw-btn-primary:hover { box-shadow: 0 8px 20px rgba(91, 124, 58, 0.32); }
+.hw-btn-primary:hover { box-shadow: none; }
 
 .hw-link {
   background: none;
@@ -163,7 +163,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--accent-amber) 6%, var(--bg-card));
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 .hw-temp {
   display: flex;

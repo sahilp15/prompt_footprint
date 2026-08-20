@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, Cloud, Cpu, Loader2, RotateCcw, Scissors, Sparkles, Undo2, Wand2,
+  AlertTriangle, ArrowRight, Cloud, Cpu, Loader2, RotateCcw, Scissors, Undo2,
 } from 'lucide-react'
 import { useTokenCutter } from '../../hooks/useTokenCutter'
 import { useCutterMemory } from '../../hooks/useCutterMemory'
@@ -217,7 +217,7 @@ export default function TokenCutter() {
 
           {!hasText && (
             <div className="tc-empty">
-              <Wand2 size={26} aria-hidden="true" />
+              <Scissors size={24} aria-hidden="true" />
               <h2>Nothing to cut yet</h2>
               <p>
                 Paste a prompt above, or try one that shows what the cutter does
@@ -243,7 +243,7 @@ export default function TokenCutter() {
             <>
               <div className="tc-actions">
                 <button type="button" className="tc-primary" onClick={applyToEditor} disabled={result.optimized === text}>
-                  <Sparkles size={14} aria-hidden="true" /> Use optimized prompt
+                  <ArrowRight size={14} aria-hidden="true" /> Use optimized prompt
                 </button>
                 <button type="button" className="tc-secondary" onClick={copyOptimized}>Copy result</button>
                 <button type="button" className="tc-secondary" onClick={undo} disabled={!canUndo}>
