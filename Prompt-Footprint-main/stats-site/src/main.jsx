@@ -16,6 +16,11 @@ import '@fontsource/source-serif-4/400.css'
 import '@fontsource/source-serif-4/500.css'
 import '@fontsource/source-serif-4/600.css'
 import '@fontsource/source-serif-4/700.css'
+// Public site type system: Newsreader (display, optical sizes) + Instrument Sans
+// (text/UI). Variable fonts, latin-subset files load only when first used.
+import '@fontsource-variable/newsreader/opsz.css'
+import '@fontsource-variable/newsreader/opsz-italic.css'
+import '@fontsource-variable/instrument-sans'
 import './index.css'
 import App from './App.jsx'
 

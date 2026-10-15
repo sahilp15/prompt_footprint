@@ -11,11 +11,29 @@ run it. Optional accounts (Supabase) can sync your settings and stats *summaries
 across devices — never your prompt text and never your Gemini key; see
 [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md).
 
-🏆 **3rd Place** — The Climate Change-Makers Challenge 2026 (nearly 300
-participants, 40+ countries) ·
-[Devpost](https://devpost.com/software/prompt-footprint)
-🏆 **4th Place** — Hoobit Hacks 2026 (570+ participants, international) ·
-[Devpost](https://devpost.com/software/promptfootprint)
+**Recognition (2026)** — four international hackathon placements:
+
+- **2nd Place** — NextStep Hacks 2026 (1,033+ registered participants) ·
+  [Project](https://devpost.com/software/promptfootprint-0map6i) ·
+  [Competition](https://nextstep2026.devpost.com/)
+- **3rd Place** — The Climate Change-Makers Challenge 2026 (nearly 300
+  participants, 40+ countries) ·
+  [Project](https://devpost.com/software/prompt-footprint) ·
+  [Competition](https://climatechangemakers2026.devpost.com/)
+- **4th Place** — Hoobit Hacks 2026 (570+ participants) ·
+  [Project](https://devpost.com/software/promptfootprint) ·
+  [Competition](https://hoobit-hacks-2026.devpost.com/)
+- **7th Place Finalist** — Hack the Habitat 2026 (about 325 participants) ·
+  [Competition](https://hack-the-habitat-2026.devpost.com/)
+
+**Research:** built on *A Token-Level Framework for Quantifying ChatGPT's
+Environmental Impacts and a Browser-Based Intervention for Reducing Prompt
+Resource Use*, published in Vanderbilt University's
+[Young Scientist Journal](https://wp0.vanderbilt.edu/youngscientistjournal/article/a-token-level-framework-for-quantifying-chatgpts-environ-mental-impacts-and-a-browser-based-intervention-for-reducing-prompt-resource-use/).
+Preliminary testing found a ~19% reduction in total session tokens (≈2,274 →
+1,847; 13 → 7 queries) — a small-scale result, not a guaranteed outcome.
+
+**150+ Chrome Web Store downloads.**
 
 ## Architecture
 
