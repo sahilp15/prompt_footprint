@@ -69,6 +69,8 @@ identical numbers, so the two halves of the product cannot drift apart.
 
 ## Adding an award
 
-Append one entry to `src/data/awards.js`. The Awards page derives its featured
-slot, timeline, and headline statistics from that array — no component changes
-needed.
+Append one entry to `src/data/awards.js`. The public `/recognition` page, the
+landing page's recognition ledger and hero line, and the dashboard's Awards view
+all derive from that array (plus `RESEARCH` and `MILESTONES` in the same file) —
+no component changes needed. The shared components live in
+`src/marketing/Recognition.jsx`.

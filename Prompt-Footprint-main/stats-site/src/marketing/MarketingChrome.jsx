@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Droplets, ArrowRight, Check, Menu, X, ExternalLink } from 'lucide-react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { ArrowRight, ArrowUpRight, Menu, X } from 'lucide-react'
 import { SITE, hasChromeStoreLink } from '../config/site'
-import { useScrollToSection } from './useScrollToSection'
+import { RESEARCH } from '../data/awards'
+import { useScrollToSection, useScrollTopOnRoute } from './useScrollToSection'
+import './theme.css'
 import './marketing.css'
 
+// In-page sections on the landing page, in reading order. Recognition is a
+// page of its own, so it is a route link rather than a scroll target.
 const SECTIONS = [
-  { id: 'features', label: 'Features' },
+  { id: 'product', label: 'Product' },
   { id: 'how', label: 'How it works' },
-  { id: 'demo', label: 'Demo' },
+  { id: 'research', label: 'Research' },
   { id: 'privacy', label: 'Privacy' },
 ]
 
@@ -25,25 +29,36 @@ export function Github({ size = 16 }) {
   )
 }
 
+/** The mark: a footprint-shaped leaf drawn as two strokes. */
+export function BrandMark({ size = 26 }) {
+  return (
+    <svg className="mk-mark" width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
+      <rect width="28" height="28" rx="7" fill="var(--pf-forest)" />
+      <path d="M14 21.5c-4.2-1.6-6-5.2-5.4-9.6C12.9 11.6 16.4 13 18 16.6" fill="none" stroke="var(--pf-on-forest)" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M14 21.5c.4-4.3 2.2-9 5.8-13" fill="none" stroke="#9cc27a" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // Primary download call-to-action. Until a real Chrome Web Store listing exists
 // (SITE.chromeStoreUrl), this renders as an intentional, styled "coming soon"
 // button: clearly not-yet-live, but not broken. Once the URL is set in
 // config/site.js it automatically becomes a real link that opens the listing.
-export function ChromeCTA({ size = 'lg', block = false }) {
+export function ChromeCTA({ size = 'lg', block = false, label = 'Get the Chrome Extension' }) {
   const live = hasChromeStoreLink()
   const cls = `btn btn-primary btn-${size}${block ? ' btn-block' : ''}${live ? '' : ' btn-soon'}`
 
   if (live) {
     return (
       <a className={cls} href={SITE.chromeStoreUrl} target="_blank" rel="noopener noreferrer">
-        <span className="btn-shine" aria-hidden="true" />
-        Add to Chrome, it&apos;s free <ArrowRight size={18} />
+        <span>{label}</span>
+        <ArrowUpRight className="btn-arrow" size={size === 'sm' ? 15 : 17} aria-hidden="true" />
       </a>
     )
   }
   return (
     <button className={cls} type="button" disabled aria-disabled="true">
-      Add to Chrome
+      {label}
       <span className="btn-soon-tag">Coming soon</span>
     </button>
   )
@@ -62,36 +77,44 @@ function useScrolled(threshold = 8) {
 }
 
 /**
- * Scroll-spy for the header. Marks whichever section currently owns the band
- * just under the header, so the nav always says where you are. Degrades to "no
- * section active" wherever IntersectionObserver is missing.
+ * Scroll-spy for the header: whichever section crosses a line 30% down the
+ * viewport is "current". A rAF-throttled scroll listener rather than an
+ * IntersectionObserver, because several sections are taller than the viewport
+ * and never reach an observer threshold, which left the marker stuck.
  */
-function useActiveSection(ids) {
+function useActiveSection(ids, enabled) {
   const [active, setActive] = useState(null)
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return
-    const nodes = ids.map((id) => document.getElementById(id)).filter(Boolean)
-    if (!nodes.length) return
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
-        if (visible) setActive(visible.target.id)
-      },
-      { rootMargin: '-25% 0px -60% 0px', threshold: [0, 0.15, 0.4] },
-    )
-    nodes.forEach((n) => io.observe(n))
-    return () => io.disconnect()
-  }, [ids])
-  return active
+    if (!enabled) return
+    let frame = 0
+    const measure = () => {
+      frame = 0
+      const line = window.innerHeight * 0.3
+      let current = null
+      for (const id of ids) {
+        const r = document.getElementById(id)?.getBoundingClientRect()
+        if (r && r.top <= line && r.bottom > line) current = id
+      }
+      setActive(current)
+    }
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(measure) }
+    measure()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [ids, enabled])
+  return enabled ? active : null
 }
 
 export function SiteNav() {
   const scrollTo = useScrollToSection()
   const scrolled = useScrolled()
-  const active = useActiveSection(SECTION_IDS)
+  const { pathname } = useLocation()
+  const active = useActiveSection(SECTION_IDS, pathname === '/')
   const [menuOpen, setMenuOpen] = useState(false)
 
   // Escape closes the sheet, and the page never scrolls behind it.
@@ -108,17 +131,21 @@ export function SiteNav() {
   }, [menuOpen])
 
   const go = (id) => { setMenuOpen(false); scrollTo(id) }
+  const navCls = ({ isActive }) => `mk-nav-link${isActive ? ' is-active' : ''}`
 
   return (
     <header className={`mk-nav${scrolled ? ' is-scrolled' : ''}`}>
+      <a className="mk-skip" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus() }}>
+        Skip to content
+      </a>
       <div className="mk-nav-inner">
         <Link to="/" className="mk-brand" aria-label="PromptFootprint home">
-          <span className="mk-brand-mark"><Droplets size={19} /></span>
+          <BrandMark />
           <span className="mk-brand-name">PromptFootprint</span>
         </Link>
 
-        <nav className="mk-nav-links" aria-label="Sections">
-          {SECTIONS.map((s) => (
+        <nav className="mk-nav-links" aria-label="Primary">
+          {SECTIONS.slice(0, 3).map((s) => (
             <a
               key={s.id}
               href={`#${s.id}`}
@@ -129,17 +156,29 @@ export function SiteNav() {
               {s.label}
             </a>
           ))}
-          <Link to="/support" className="mk-nav-link">Support</Link>
+          <NavLink to="/recognition" className={navCls}>Recognition</NavLink>
+          {SECTIONS.slice(3).map((s) => (
+            <a
+              key={s.id}
+              href={`#${s.id}`}
+              className={`mk-nav-link${active === s.id ? ' is-active' : ''}`}
+              aria-current={active === s.id ? 'true' : undefined}
+              onClick={(e) => { e.preventDefault(); go(s.id) }}
+            >
+              {s.label}
+            </a>
+          ))}
         </nav>
 
         <div className="mk-nav-cta">
           <Link className="mk-nav-demo" to="/app">Live demo</Link>
-          <ChromeCTA size="sm" />
+          <ChromeCTA size="sm" label="Get the extension" />
           <button
             type="button"
             className="mk-nav-burger"
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
+            aria-controls="mk-sheet"
             onClick={() => setMenuOpen((o) => !o)}
           >
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -147,19 +186,25 @@ export function SiteNav() {
         </div>
       </div>
 
-      {/* Mobile sheet. Below 720px the inline links are hidden, so this is the
+      {/* Mobile sheet. Below 900px the inline links are hidden, so this is the
           only way to reach the sections — it has to carry all of them. */}
       {menuOpen && (
         <>
           <button className="mk-sheet-scrim" aria-hidden="true" tabIndex={-1} onClick={() => setMenuOpen(false)} />
-          <div className="mk-sheet" role="dialog" aria-modal="true" aria-label="Menu">
-            {SECTIONS.map((s) => (
+          <div className="mk-sheet" id="mk-sheet" role="dialog" aria-modal="true" aria-label="Menu">
+            {SECTIONS.slice(0, 3).map((s) => (
               <a key={s.id} href={`#${s.id}`} className="mk-sheet-link" onClick={(e) => { e.preventDefault(); go(s.id) }}>
                 {s.label}
               </a>
             ))}
-            <Link to="/support" className="mk-sheet-link" onClick={() => setMenuOpen(false)}>Support</Link>
+            <Link to="/recognition" className="mk-sheet-link" onClick={() => setMenuOpen(false)}>Recognition</Link>
+            {SECTIONS.slice(3).map((s) => (
+              <a key={s.id} href={`#${s.id}`} className="mk-sheet-link" onClick={(e) => { e.preventDefault(); go(s.id) }}>
+                {s.label}
+              </a>
+            ))}
             <Link to="/app" className="mk-sheet-link" onClick={() => setMenuOpen(false)}>Live demo</Link>
+            <Link to="/support" className="mk-sheet-link" onClick={() => setMenuOpen(false)}>Support</Link>
             <div className="mk-sheet-cta"><ChromeCTA size="lg" block /></div>
           </div>
         </>
@@ -171,68 +216,83 @@ export function SiteNav() {
 export function SiteFooter() {
   const year = 2026 // static: build runs without Date access; bump on release
   const scrollTo = useScrollToSection()
+  const section = (id, label) => (
+    <a href={`#${id}`} onClick={(e) => { e.preventDefault(); scrollTo(id) }}>{label}</a>
+  )
   return (
     <footer className="mk-footer">
       <div className="mk-footer-inner">
         <div className="mk-footer-brand">
-          <div className="mk-brand">
-            <span className="mk-brand-mark"><Droplets size={18} /></span>
+          <Link to="/" className="mk-brand" aria-label="PromptFootprint home">
+            <BrandMark size={24} />
             <span className="mk-brand-name">PromptFootprint</span>
-          </div>
-          <p className="mk-footer-tag">{SITE.tagline}</p>
-          <p className="mk-footer-badge"><Check size={13} /> Local-first · No accounts required · Open source</p>
+          </Link>
+          <p className="mk-footer-tag">
+            A browser extension that makes prompts leaner and the estimated
+            environmental cost of AI visible. Local-first, free, and open source.
+          </p>
           <a className="mk-footer-gh-btn" href={SITE.githubUrl} target="_blank" rel="noopener noreferrer">
-            <Github size={15} /> Star it on GitHub <ExternalLink size={12} />
+            <Github size={15} /> Source on GitHub <ArrowUpRight size={13} aria-hidden="true" />
           </a>
         </div>
 
         <div className="mk-footer-cols">
           <div className="mk-footer-col">
-            <h4>Product</h4>
-            <a href="#features" onClick={(e) => { e.preventDefault(); scrollTo('features') }}>Features</a>
-            <a href="#how" onClick={(e) => { e.preventDefault(); scrollTo('how') }}>How it works</a>
+            <h2>Product</h2>
+            {section('product', 'What it does')}
+            {section('how', 'How it works')}
             <Link to="/app">Live demo</Link>
+            {hasChromeStoreLink() && (
+              <a href={SITE.chromeStoreUrl} target="_blank" rel="noopener noreferrer">Chrome Web Store</a>
+            )}
           </div>
           <div className="mk-footer-col">
-            <h4>Trust</h4>
+            <h2>Evidence</h2>
+            <a href={RESEARCH.href} target="_blank" rel="noopener noreferrer">Research paper</a>
+            <Link to="/app/learn">Methodology</Link>
+            <Link to="/recognition">Recognition</Link>
+          </div>
+          <div className="mk-footer-col">
+            <h2>Trust</h2>
             <Link to="/privacy">Privacy Policy</Link>
             <Link to="/terms">Terms of Use</Link>
-            <a href="#privacy" onClick={(e) => { e.preventDefault(); scrollTo('privacy') }}>Data &amp; privacy</a>
+            {section('privacy', 'Data & privacy')}
           </div>
           <div className="mk-footer-col">
-            <h4>Support</h4>
+            <h2>Support</h2>
             <Link to="/support">Help &amp; FAQ</Link>
             <Link to="/contact">Contact</Link>
             <a href={SITE.issuesUrl} target="_blank" rel="noopener noreferrer">Report an issue</a>
-          </div>
-          <div className="mk-footer-col">
-            <h4>Project</h4>
-            <a href={SITE.githubUrl} target="_blank" rel="noopener noreferrer" className="mk-footer-gh">
-              <Github size={14} /> GitHub
-            </a>
-            <Link to="/app/awards">Recognition</Link>
-            <Link to="/app/learn">Methodology</Link>
           </div>
         </div>
       </div>
       <div className="mk-footer-legal">
         <span>© {year} PromptFootprint</span>
-        <span className="mk-dot">·</span>
-        <span>{SITE.url.replace('https://', '')}</span>
-        <span className="mk-dot">·</span>
-        <span className="mk-footer-note">Estimates are approximations, not measurements.</span>
+        <span className="mk-footer-note">
+          Environmental figures are estimates from published sources, not measurements of any data center.
+        </span>
       </div>
     </footer>
   )
 }
 
 // Shared page wrapper for the non-landing marketing/legal pages.
-export function MarketingPage({ children }) {
+export function MarketingPage({ children, wide = false }) {
+  useScrollTopOnRoute()
   return (
     <div className="mk">
       <SiteNav />
-      <main className="mk-doc">{children}</main>
+      <main id="main" tabIndex={-1} className={wide ? 'mk-page' : 'mk-doc'}>{children}</main>
       <SiteFooter />
     </div>
   )
+}
+
+/** Inline text link with the animated underline, for internal routes. */
+export function ArrowLink({ to, href, children }) {
+  const inner = <>{children}<ArrowRight size={14} aria-hidden="true" /></>
+  if (href) {
+    return <a className="mk-arrow-link" href={href} target="_blank" rel="noopener noreferrer">{inner}</a>
+  }
+  return <Link className="mk-arrow-link" to={to}>{inner}</Link>
 }

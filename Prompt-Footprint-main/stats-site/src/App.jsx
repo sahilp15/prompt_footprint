@@ -12,6 +12,7 @@ import TokenCutter from './components/cutter/TokenCutter'
 import Awards from './components/Awards'
 import Settings from './components/Settings'
 import LandingPage from './marketing/LandingPage'
+import RecognitionPage from './marketing/Recognition'
 import { Privacy, Terms, Support, Contact, Confirmed } from './marketing/Pages'
 import { isDemoMode } from './lib/api'
 import './App.css'
@@ -139,6 +140,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/recognition" element={<RecognitionPage />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/support" element={<Support />} />

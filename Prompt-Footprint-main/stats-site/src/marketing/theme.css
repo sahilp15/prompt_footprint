@@ -1,0 +1,57 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Public-site tokens — the landing page, the recognition page, and the
+   recognition view inside the dashboard all read from these.
+
+   The identity is the same one the product has always had — paper, moss,
+   earth — pared back: one deep forest green carries the brand, the warm
+   parchment becomes a quieter off-white, and the brown ink becomes a green-
+   tinted charcoal so the green reads as the only colour on the page. Amber
+   and water-blue survive only where they encode data (energy, water).
+
+   Scoped to `.mk` (marketing pages) and `.rc` (the shared recognition
+   showcase), so the dashboard's own tokens in index.css are untouched.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.mk, .rc {
+  /* Paper */
+  --pf-paper: #f5f2ea;
+  --pf-paper-raised: #fbfaf6;
+  --pf-paper-sunk: #ece8dd;
+
+  /* Ink — every step clears WCAG AA on --pf-paper. */
+  --pf-ink: #1b1f1a;
+  --pf-ink-2: #434840;
+  --pf-ink-3: #62675d;
+
+  /* Rules */
+  --pf-rule: #dcd7ca;
+  --pf-rule-strong: #b9b2a1;
+
+  /* Brand */
+  --pf-forest: #1d3a2b;
+  --pf-forest-2: #29513b;
+  --pf-leaf: #4c7536;
+  --pf-leaf-wash: rgba(76, 117, 54, 0.1);
+  --pf-on-forest: #eef0e6;
+  --pf-on-forest-2: rgba(238, 240, 230, 0.7);
+  --pf-forest-rule: rgba(238, 240, 230, 0.16);
+
+  /* Data colours — used only where they label a quantity. */
+  --pf-energy: #8f5d18;
+  --pf-water: #2b6684;
+  --pf-carbon: #6b5a45;
+
+  /* Type */
+  --pf-display: 'Newsreader Variable', 'Newsreader', Georgia, 'Times New Roman', serif;
+  --pf-sans: 'Instrument Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pf-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Motion */
+  --pf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --pf-fast: 160ms;
+  --pf-med: 280ms;
+
+  /* Layout */
+  --pf-max: 1200px;
+  --pf-gutter: clamp(16px, 4vw, 40px);
+}

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 
 // In-page section navigation. HashRouter owns the URL hash, so plain "#id"
@@ -15,4 +16,13 @@ export function useScrollToSection() {
       requestAnimationFrame(() => setTimeout(scroll, 60))
     }
   }
+}
+
+/**
+ * HashRouter keeps the window's scroll position across routes, so a link from
+ * the bottom of one page would land mid-way down the next. Reset it.
+ */
+export function useScrollTopOnRoute() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
 }

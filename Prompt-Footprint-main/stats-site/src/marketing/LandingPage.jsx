@@ -1,491 +1,397 @@
-import { useRef } from 'react'
-import { motion as Motion, useReducedMotion, useScroll, useTransform } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import {
-  Droplets, Zap, Leaf, Gauge, PenLine, ShieldCheck, Thermometer,
-  MousePointerClick, LineChart, Lock, Eye, ArrowRight, Check, Trophy,
-  Globe2, Sparkles, ExternalLink,
-} from 'lucide-react'
+import { ArrowRight, ArrowDown } from 'lucide-react'
 import { SITE, demoUrl } from '../config/site'
-import { SiteNav, SiteFooter, ChromeCTA, Github } from './MarketingChrome'
-import { useScrollToSection } from './useScrollToSection'
+import { SiteNav, SiteFooter, ChromeCTA, ArrowLink } from './MarketingChrome'
+import { useScrollToSection, useScrollTopOnRoute } from './useScrollToSection'
 import { useCountUp, useReveal } from '../hooks/useMotion'
-import { AWARDS, featuredAward } from '../data/awards'
+import { AWARDS, MILESTONES, RESEARCH, featuredAward, countWord } from '../data/awards'
 import { REGIONS } from '../lib/regions'
-import Globe from '../components/ui/globe-cdn'
+import CutSpecimen from './CutSpecimen'
+import { AwardRows, ResearchFeature, Rise } from './Recognition'
+import './theme.css'
 import './marketing.css'
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
-}
-
-/**
- * Section entrance.
- *
- * `initial={false}` under reduced motion is what keeps the contract the rest
- * of the product follows: the element renders in its final state immediately
- * instead of waiting at opacity 0 for a scroll that may never come.
- */
-function Reveal({ children, delay = 0, className }) {
-  const reduced = useReducedMotion()
-  return (
-    <Motion.div
-      className={className}
-      variants={fadeUp}
-      initial={reduced ? false : 'hidden'}
-      whileInView="show"
-      viewport={{ once: true, margin: '-60px' }}
-      transition={{ delay }}
-    >
-      {children}
-    </Motion.div>
-  )
-}
+import './recognition.css'
 
 /* ── Content ──────────────────────────────────────────────────────────────── */
 
-// Figures from the published model (see extension/lib/constants.js and
-// METHODOLOGY.md). Rendered as counters so the numbers announce themselves.
+// The GPT-4o anchor from the published model (extension/lib/constants.js,
+// METHODOLOGY.md). The extension reports a range per detected model; these are
+// the reference figures that range is built around.
 const MODEL_FACTS = [
-  { id: 'energy', value: 1.06, decimals: 2, unit: 'Wh', label: 'per 1,000 tokens', caption: 'Electricity, from OpenAI’s 2025 disclosure', hex: '#C17F24' },
-  { id: 'water', value: 3.5, decimals: 1, unit: 'mL', label: 'per 1,000 tokens', caption: 'Fresh water evaporated for cooling', hex: '#2E6B8A' },
-  { id: 'co2', value: 0.38, decimals: 2, unit: 'g', label: 'CO₂ per 1,000 tokens', caption: 'At a mid-range grid intensity', hex: '#8B7355' },
-  { id: 'stored', value: 0, decimals: 0, unit: '', label: 'prompts stored', caption: 'Counting happens on your device', hex: '#5B7C3A' },
+  { id: 'energy', value: '1.06', unit: 'Wh', label: 'Electricity', note: 'From OpenAI’s 2025 disclosure', tone: 'energy' },
+  { id: 'water', value: '3.5', unit: 'mL', label: 'Cooling water', note: 'Fresh water evaporated on site and at the power plant', tone: 'water' },
+  { id: 'co2', value: '0.38', unit: 'g', label: 'CO₂e', note: 'At a mid-range grid intensity', tone: 'carbon' },
 ]
 
-// Bento layout: `span` drives how many columns each card claims on desktop.
 const FEATURES = [
   {
-    icon: Gauge,
-    span: 'wide',
-    title: 'Per-prompt impact, live',
-    body: 'A small overlay on ChatGPT and Claude shows the estimated energy, water, and CO₂ behind each message as you send it. No tab-switching, no setup.',
-    accent: 'amber',
+    title: 'An overlay that stays out of the way',
+    body: 'A small, draggable readout on ChatGPT and Claude shows the estimated energy, water, and CO₂ behind each exchange as it happens.',
   },
   {
-    icon: LineChart,
+    title: 'The Token Cutter',
+    body: 'Before you send, it suggests a leaner version of your draft — filler, hedges, repeated asks — and checks that every requirement survived the cut.',
+  },
+  {
+    title: 'Estimates that know the model',
+    body: 'It reads which model is selected and reports a range with the class of evidence behind it, instead of one confident-looking number.',
+  },
+  {
     title: 'A dashboard that adds up',
-    body: 'Weekly trends, per-session breakdowns, and running totals. See how your usage changes over time instead of guessing.',
-    accent: 'blue',
+    body: 'Weekly trends, per-session breakdowns, and the input tokens you’ve avoided, so the habit is visible over time — not just per message.',
   },
   {
-    icon: PenLine,
-    title: 'Shorter prompts, fewer tokens',
-    body: 'An offline writing checker cleans up drafts, and the optimizer suggests tighter phrasings, then totals the tokens you actually saved.',
-    accent: 'green',
+    title: 'Offline writing checks',
+    body: 'Spelling, grammar, and clarity checks run on a bundled dictionary. Nothing is uploaded to check your draft.',
   },
   {
-    icon: Thermometer,
-    title: 'Heatwave-aware estimates',
-    body: 'Cooling a data center costs more in hot weather. Opt in to a rough location and the estimate adjusts for local conditions, or stays a general figure.',
-    accent: 'red',
-  },
-  {
-    icon: Lock,
-    span: 'wide',
-    title: 'Private by default',
-    body: 'Your prompts and the models’ replies are never stored or uploaded. Counting happens on your device; the text stays in your browser.',
-    accent: 'green',
-  },
-  {
-    icon: Leaf,
-    title: 'Built to be understood',
-    body: 'Every number traces back to public disclosures and published research. The method, and its limits, are documented, not hidden.',
-    accent: 'green',
+    title: 'Heat-aware, if you want it',
+    body: 'Cooling costs more in hot weather. Share a rough location and the estimate adjusts for local conditions; skip it and you get the general figure.',
   },
 ]
 
 const STEPS = [
-  {
-    icon: MousePointerClick,
-    title: 'Add the extension',
-    body: 'Install from the Chrome Web Store. No account, no sign-up, nothing to configure to get started.',
-    aside: 'Works signed out, forever.',
-  },
-  {
-    icon: Zap,
-    title: 'Chat like you already do',
-    body: 'Open ChatGPT or Claude. PromptFootprint counts tokens from your messages and estimates the footprint in the background.',
-    aside: 'Only lengths are read — never the text.',
-  },
-  {
-    icon: LineChart,
-    title: 'Watch it add up',
-    body: 'Check the overlay for the current session, or open the dashboard for weekly trends, savings, and where your footprint comes from.',
-    aside: 'Then shrink it with the Token Cutter.',
-  },
+  { title: 'Install', body: 'Add PromptFootprint from the Chrome Web Store. No account, no setup.' },
+  { title: 'Chat as usual', body: 'Open ChatGPT or Claude. Tokens are counted in your browser, and each exchange gets an estimate.' },
+  { title: 'Trim before you send', body: 'The Token Cutter offers a shorter draft. Accept the edits you agree with, ignore the rest.' },
+  { title: 'Watch the habit change', body: 'The dashboard shows where your footprint comes from and how it moves week to week.' },
 ]
+
+// Dirtiest grid first, so the chart reads as a ranking.
+const byIntensity = [...REGIONS].sort((a, b) => b.intensity - a.intensity)
 
 /* ── Pieces ───────────────────────────────────────────────────────────────── */
 
-/** One counter in the model-facts band. Counts up when it scrolls into view. */
-function FactTile({ fact, index }) {
-  const [ref, visible] = useReveal({ threshold: 0.4 })
-  const animated = useCountUp(fact.value, visible, { duration: 1000 + index * 120 })
-
+function SectionLabel({ n, children }) {
   return (
-    <div
-      ref={ref}
-      className={`mk-fact${visible ? ' is-visible' : ''}`}
-      style={{ '--accent': fact.hex, '--reveal-delay': `${index * 80}ms` }}
-    >
-      <div className="mk-fact-value">
-        <span className="mk-fact-number">{animated.toFixed(fact.decimals)}</span>
-        {fact.unit && <span className="mk-fact-unit">{fact.unit}</span>}
-      </div>
-      <div className="mk-fact-label">{fact.label}</div>
-      <div className="mk-fact-caption">{fact.caption}</div>
-    </div>
+    <p className="lp-label">
+      <span className="lp-label-n">{n}</span>
+      <span className="lp-label-rule" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
   )
 }
 
-/**
- * A bento card that lights up under the pointer. The spotlight follows the
- * cursor through two CSS custom properties — no re-render, no state.
- */
-function FeatureCard({ feature }) {
-  const onMove = (e) => {
-    const r = e.currentTarget.getBoundingClientRect()
-    e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`)
-    e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`)
-  }
-  const Icon = feature.icon
-
+/** One figure in the credibility strip. Counts up once, on first view. */
+function Milestone({ value, suffix = '', label, note, index }) {
+  const [ref, visible] = useReveal({ threshold: 0.5 })
+  const n = useCountUp(value, visible, { duration: 900 + index * 150 })
   return (
-    <article
-      className={`mk-bento mk-bento-${feature.accent}${feature.span === 'wide' ? ' mk-bento-wide' : ''}`}
-      onPointerMove={onMove}
-    >
-      <span className="mk-bento-spot" aria-hidden="true" />
-      <span className="mk-card-icon"><Icon size={20} aria-hidden="true" /></span>
-      <h3>{feature.title}</h3>
-      <p>{feature.body}</p>
-    </article>
+    <div ref={ref} className="lp-mile">
+      <p className="lp-mile-num">
+        <span className="tabular">{Math.round(n)}</span>{suffix}
+        {note && <sup aria-hidden="true">*</sup>}
+      </p>
+      <p className="lp-mile-label">{label}</p>
+    </div>
   )
 }
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 
 export default function LandingPage() {
+  useScrollTopOnRoute()
   const scrollTo = useScrollToSection()
-  const reduced = useReducedMotion()
-  const heroRef = useRef(null)
-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] })
-
-  // Gentle parallax: the copy drifts up a little faster than the globe, and
-  // both fade as the hero leaves. Disabled outright under reduced motion.
-  const copyY = useTransform(scrollYProgress, [0, 1], [0, reduced ? 0 : -70])
-  const globeY = useTransform(scrollYProgress, [0, 1], [0, reduced ? 0 : -26])
-  const heroFade = useTransform(scrollYProgress, [0, 0.85], [1, reduced ? 1 : 0.25])
-
   const featured = featuredAward()
-  const totalCompetitors = AWARDS.reduce((n, a) => n + (a.participants || 0), 0)
 
   return (
     <div className="mk mk-landing">
       <SiteNav />
 
-      {/* ── Hero ─────────────────────────────────────────────── */}
-      <section className="mk-hero" ref={heroRef}>
-        <div className="mk-hero-glow" aria-hidden="true" />
-        <div className="mk-grid-lines" aria-hidden="true" />
-
-        <Motion.div className="mk-hero-inner" style={{ opacity: heroFade }}>
-          <Motion.div
-            initial={reduced ? false : 'hidden'}
-            animate="show"
-            variants={fadeUp}
-            className="mk-hero-copy"
-            style={{ y: copyY }}
-          >
-            <span className="mk-eyebrow">
-              <Leaf size={14} /> For ChatGPT &amp; Claude
-              <span className="mk-eyebrow-sep" aria-hidden="true" />
-              <span className="mk-eyebrow-quiet">Chrome extension</span>
-            </span>
-
-            <h1 className="mk-h1">
-              See the <span className="mk-underline">energy, water, and CO₂</span> behind every AI prompt.
-            </h1>
-
-            <p className="mk-lede">
-              PromptFootprint estimates the environmental cost of your AI chats: live,
-              on your device, and without ever storing what you type. Understand your
-              footprint, then shrink it.
-            </p>
-
-            <div className="mk-hero-cta">
-              <ChromeCTA size="lg" />
-              <button type="button" className="btn btn-ghost btn-lg" onClick={() => scrollTo('demo')}>
-                See the dashboard <ArrowRight size={18} />
-              </button>
-            </div>
-
-            <ul className="mk-hero-trust">
-              <li><Check size={15} /> Works without an account</li>
-              <li><Check size={15} /> No prompts stored or uploaded</li>
-              <li><Check size={15} /> Free &amp; open source</li>
-            </ul>
-
-            {featured && (
-              <Link to="/app/awards" className="mk-hero-award">
-                <Trophy size={14} aria-hidden="true" />
-                <span><strong>{featured.placement}</strong> · {featured.event}</span>
-                <ArrowRight size={13} aria-hidden="true" />
-              </Link>
-            )}
-          </Motion.div>
-
-          {/* The globe is the product's signature: eight major AI data-center
-              regions, slowly turning, draggable. The overlay mock-up floats in
-              front of it so the hero reads as depth rather than two columns. */}
-          <Motion.div
-            className="mk-hero-stage"
-            style={{ y: globeY }}
-            initial={reduced ? false : { opacity: 0, scale: 0.94 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-          >
-            <span className="mk-stage-rings" aria-hidden="true" />
-            <div className="mk-stage-globe">
-              <Globe />
-            </div>
-
-            <Motion.div
-              className="mk-capsule"
-              initial={reduced ? false : { opacity: 0, y: 22 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.45 }}
-            >
-              <div className="mk-capsule-head">
-                <Droplets size={15} /> This session
-                <span className="mk-live" aria-hidden="true"><i />live</span>
-              </div>
-              <div className="mk-capsule-grid">
-                <div className="mk-metric mk-metric-amber">
-                  <Zap size={15} /><span className="mk-metric-val">18.4</span><span className="mk-metric-unit">Wh</span>
-                </div>
-                <div className="mk-metric mk-metric-blue">
-                  <Droplets size={15} /><span className="mk-metric-val">62</span><span className="mk-metric-unit">mL</span>
-                </div>
-                <div className="mk-metric mk-metric-green">
-                  <Leaf size={15} /><span className="mk-metric-val">7.1</span><span className="mk-metric-unit">g CO₂</span>
-                </div>
-              </div>
-              <div className="mk-capsule-foot">
-                <span>≈ 3 min of a laptop</span>
-                <span className="mk-capsule-tag">42 prompts today</span>
-              </div>
-            </Motion.div>
-
-            <span className="mk-stage-caption">
-              <Globe2 size={13} aria-hidden="true" />
-              {REGIONS.length} major AI data-center regions · drag to spin
-            </span>
-          </Motion.div>
-        </Motion.div>
-      </section>
-
-      {/* ── The model, in numbers ────────────────────────────── */}
-      <section className="mk-facts">
-        <div className="mk-facts-inner">
-          <Reveal className="mk-facts-lead">
-            <p>
-              A single prompt looks weightless. Thousands of them aren’t.
-              <span> Here is what the model actually counts.</span>
-            </p>
-          </Reveal>
-          <div className="mk-facts-grid">
-            {MODEL_FACTS.map((f, i) => <FactTile fact={f} index={i} key={f.id} />)}
-          </div>
-          <Reveal delay={0.1}>
-            <p className="mk-facts-note">
-              ChatGPT is the anchor, from OpenAI’s published sustainability figures;
-              Claude is estimated 15% above it because Anthropic publishes none.{' '}
-              <Link to="/app/learn">Read the methodology <ArrowRight size={13} /></Link>
-            </p>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ── Features ─────────────────────────────────────────── */}
-      <section className="mk-section" id="features">
-        <div className="mk-section-inner">
-          <Reveal className="mk-section-head">
-            <span className="mk-kicker">What it does</span>
-            <h2 className="mk-h2">Everything runs where your data already is: in your browser.</h2>
-          </Reveal>
-          <div className="mk-bento-grid">
-            {FEATURES.map((f, i) => (
-              <Reveal key={f.title} delay={i * 0.05} className={f.span === 'wide' ? 'mk-bento-cell mk-bento-cell-wide' : 'mk-bento-cell'}>
-                <FeatureCard feature={f} />
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── How it works ─────────────────────────────────────── */}
-      <section className="mk-section mk-section-alt" id="how">
-        <div className="mk-section-inner">
-          <Reveal className="mk-section-head">
-            <span className="mk-kicker">How it works</span>
-            <h2 className="mk-h2">Three steps. No dashboards to wire up.</h2>
-          </Reveal>
-          <ol className="mk-steps">
-            {STEPS.map((s, i) => {
-              const Icon = s.icon
-              return (
-                <Motion.li
-                  key={s.title}
-                  className="mk-step"
-                  variants={fadeUp}
-                  initial={reduced ? false : 'hidden'}
-                  whileInView="show"
-                  viewport={{ once: true, margin: '-60px' }}
-                  transition={{ delay: i * 0.08 }}
-                >
-                  <span className="mk-step-rail" aria-hidden="true" />
-                  <div className="mk-step-num"><span>{i + 1}</span></div>
-                  <span className="mk-card-icon"><Icon size={20} aria-hidden="true" /></span>
-                  <h3>{s.title}</h3>
-                  <p>{s.body}</p>
-                  <p className="mk-step-aside">{s.aside}</p>
-                </Motion.li>
-              )
-            })}
-          </ol>
-        </div>
-      </section>
-
-      {/* ── Live demo embed ──────────────────────────────────── */}
-      <section className="mk-section" id="demo">
-        <div className="mk-section-inner">
-          <Reveal className="mk-section-head">
-            <span className="mk-kicker">See it in action</span>
-            <h2 className="mk-h2">The dashboard, running on sample data.</h2>
-            <p className="mk-section-sub">
-              This is the real PromptFootprint dashboard, the same one that opens from
-              the extension, loaded with example data so you can click around before you install.
-            </p>
-          </Reveal>
-          <Reveal delay={0.05}>
-            <div className="mk-demo">
-              <div className="mk-demo-chrome">
-                <span className="mk-dot-r" /><span className="mk-dot-y" /><span className="mk-dot-g" />
-                <span className="mk-demo-url">{SITE.url.replace('https://', '')}/#/app</span>
-                <span className="mk-demo-badge">Live demo · sample data</span>
-              </div>
-              <div className="mk-demo-frame">
-                <iframe
-                  title="PromptFootprint dashboard live demo"
-                  src={demoUrl()}
-                  loading="lazy"
-                />
-              </div>
-            </div>
-            <p className="mk-demo-note">
-              Prefer full screen?{' '}
-              <Link to="/app">Open the demo in its own tab <ArrowRight size={14} /></Link>
-            </p>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ── Privacy & trust ──────────────────────────────────── */}
-      <section className="mk-section mk-section-alt" id="privacy">
-        <div className="mk-section-inner mk-trust">
-          <Reveal className="mk-trust-copy">
-            <span className="mk-kicker">Privacy &amp; trust</span>
-            <h2 className="mk-h2">The honest default is on-device.</h2>
-            <p>
-              PromptFootprint was built local-first on purpose. The text of your prompts
-              and the models’ answers is read only to count its length. It is never
-              written to storage and never leaves your browser.
-            </p>
-            <ul className="mk-check-list">
-              <li><ShieldCheck size={17} /> No prompts or replies stored or uploaded</li>
-              <li><Eye size={17} /> No analytics, no telemetry, no third-party trackers</li>
-              <li><Lock size={17} /> Optional features (AI writing help, sync, location) are off until you turn them on</li>
-              <li><Check size={17} /> Accounts are optional: the extension works fully signed out</li>
-            </ul>
-            <div className="mk-trust-links">
-              <Link to="/privacy" className="btn btn-ghost btn-sm">Read the Privacy Policy</Link>
-              <Link to="/terms" className="btn btn-ghost btn-sm">Terms of Use</Link>
-            </div>
-          </Reveal>
-          <Reveal delay={0.08} className="mk-trust-aside">
-            <div className="mk-quote-card">
-              <span className="mk-quote-mark" aria-hidden="true">“</span>
-              <p className="mk-quote">
-                Everything works on your device by default, and your prompts and the
-                models’ replies are never stored or uploaded.
+      <main id="main" tabIndex={-1}>
+        {/* ── Hero ─────────────────────────────────────────────── */}
+        <section className="lp-hero" id="top" aria-labelledby="lp-hero-title">
+          <div className="lp-wrap lp-hero-grid">
+            <div className="lp-hero-copy">
+              <p className="mk-overline">
+                <span className="lp-pulse" aria-hidden="true" />
+                Chrome extension for ChatGPT and Claude
               </p>
-              <p className="mk-quote-src">From the PromptFootprint Privacy Policy</p>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ── Recognition ──────────────────────────────────────── */}
-      <section className="mk-section mk-awards-section">
-        <div className="mk-section-inner">
-          <Reveal className="mk-awards">
-            <div className="mk-awards-copy">
-              <span className="mk-kicker">Recognition</span>
-              <h2 className="mk-h2">Judged in international competition.</h2>
-              <p>
-                PromptFootprint has placed in {AWARDS.length} international competitions,
-                against a combined field of more than {totalCompetitors.toLocaleString()} entrants —
-                for making the hidden cost of everyday AI use visible, and reproducible.
+              <h1 id="lp-hero-title" className="lp-display">
+                <span>Better prompts.</span>{' '}
+                <em>Smaller footprints.</em>
+              </h1>
+              <p className="lp-lede">
+                Reduce wasted tokens, understand your AI’s estimated environmental
+                impact, and make every interaction more efficient.
               </p>
-              <Link to="/app/awards" className="btn btn-ghost btn-sm">
-                See the recognition <ArrowRight size={15} />
-              </Link>
-            </div>
-            <ul className="mk-awards-list">
-              {[...AWARDS].sort((a, b) => a.rank - b.rank).map((a) => (
-                <li className="mk-award" key={a.id}>
-                  <span className="mk-award-rank">{a.placement.split(' ')[0]}</span>
-                  <span className="mk-award-body">
-                    <span className="mk-award-event">{a.event}</span>
-                    <span className="mk-award-scope">{a.scope}</span>
-                  </span>
-                  <a className="mk-award-link" href={a.href} target="_blank" rel="noopener noreferrer" aria-label={`${a.event} on Devpost`}>
-                    <ExternalLink size={14} aria-hidden="true" />
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ── Final CTA ────────────────────────────────────────── */}
-      <section className="mk-section mk-final-section">
-        <div className="mk-section-inner">
-          <Reveal>
-            <div className="mk-final">
-              <span className="mk-final-glow" aria-hidden="true" />
-              <span className="mk-eyebrow mk-eyebrow-center">
-                <Sparkles size={13} /> Thirty seconds to install
-              </span>
-              <h2 className="mk-h2">Start seeing your AI footprint today.</h2>
-              <p>Free, private, and it starts counting the moment you open a chat.</p>
-              <div className="mk-hero-cta mk-center">
+              <div className="lp-cta">
                 <ChromeCTA size="lg" />
-                <a className="btn btn-ghost btn-lg" href={SITE.githubUrl} target="_blank" rel="noopener noreferrer">
-                  <Github size={18} /> View on GitHub
+                <a
+                  className="btn btn-quiet btn-lg"
+                  href="#how"
+                  onClick={(e) => { e.preventDefault(); scrollTo('how') }}
+                >
+                  Explore How It Works <ArrowDown className="btn-arrow-down" size={16} aria-hidden="true" />
                 </a>
               </div>
-              <p className="mk-final-note">
-                Download now and take your first steps to a cleaner future!
-              </p>
+
+              <ul className="lp-proof" aria-label="Milestones">
+                <li><Link to="/recognition">{featured.placement} — {featured.event}</Link></li>
+                <li>{MILESTONES.downloads}+ Chrome downloads</li>
+                <li>
+                  <a href={RESEARCH.href} target="_blank" rel="noopener noreferrer">
+                    Research published in {RESEARCH.publisher}’s {RESEARCH.journal}
+                  </a>
+                </li>
+              </ul>
             </div>
-          </Reveal>
+
+            <figure className="lp-hero-fig">
+              <CutSpecimen />
+              <figcaption>
+                <span className="lp-fig-n">Fig. 1</span>
+                The extension’s Token Cutter, running live in this page on sample drafts.
+                Figures cover input tokens only; replies usually cost more.
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        {/* ── Credibility strip ────────────────────────────────── */}
+        <section className="lp-strip" aria-label="PromptFootprint in numbers">
+          <div className="lp-wrap">
+            <div className="lp-strip-row">
+              <Milestone index={0} value={MILESTONES.downloads} suffix="+" label={MILESTONES.downloadsLabel} />
+              <Milestone index={1} value={MILESTONES.recognitions} label="Hackathon recognitions" />
+              <Milestone index={2} value={RESEARCH.result.reductionPct} suffix="%" note label="Fewer tokens in preliminary testing" />
+            </div>
+            <p className="lp-strip-note">
+              * Total session tokens fell from about {RESEARCH.result.tokensBefore.toLocaleString()} to{' '}
+              {RESEARCH.result.tokensAfter.toLocaleString()} in the study’s preliminary test. Results will vary.
+            </p>
+          </div>
+        </section>
+
+        {/* ── 01 · Why ─────────────────────────────────────────── */}
+        <section className="lp-section" id="why" aria-labelledby="lp-why-title">
+          <div className="lp-wrap lp-why">
+            <Rise className="lp-why-copy">
+              <SectionLabel n="01">Why PromptFootprint</SectionLabel>
+              <h2 id="lp-why-title" className="lp-h2">
+                Every token you send is work a data center <em>still has to do.</em>
+              </h2>
+              <div className="lp-prose">
+                <p>
+                  A language model processes every token in your prompt and every token
+                  it writes back. Greetings, hedges, pasted context, and regenerated
+                  answers all add tokens — and each one carries an estimated cost in
+                  electricity, cooling water, and carbon.
+                </p>
+                <p>
+                  One prompt is tiny. The habit, repeated every day, is not. PromptFootprint
+                  makes that cost visible where you write, then helps you spend less of it.
+                </p>
+              </div>
+
+              <table className="lp-table">
+                <caption>
+                  <span className="lp-fig-n">Table 1</span>
+                  Reference estimate per 1,000 tokens (GPT-4o anchor)
+                </caption>
+                <tbody>
+                  {MODEL_FACTS.map((f) => (
+                    <tr key={f.id}>
+                      <th scope="row">{f.label}</th>
+                      <td className={`lp-table-val is-${f.tone}`}>{f.value}<span> {f.unit}</span></td>
+                      <td className="lp-table-note">{f.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="lp-small">
+                Estimates, not meter readings — no provider publishes per-prompt telemetry.{' '}
+                <ArrowLink to="/app/learn">Read the methodology</ArrowLink>
+              </p>
+            </Rise>
+
+            <Rise as="figure" className="lp-grid-fig" delay={120}>
+              <p className="lp-grid-fig-head">
+                <span>Region</span><span>gCO₂e / kWh</span>
+              </p>
+              <ol className="lp-regions">
+                {byIntensity.map((r) => (
+                  <li key={r.id}>
+                    <span className="lp-regions-name">{r.label}</span>
+                    <span className="lp-regions-bar" aria-hidden="true">
+                      <span style={{ '--w': `${(r.intensity / byIntensity[0].intensity) * 100}%` }} />
+                    </span>
+                    <span className="lp-regions-val">{r.intensity}</span>
+                  </li>
+                ))}
+              </ol>
+              <figcaption>
+                <span className="lp-fig-n">Fig. 2</span>
+                The same token costs a different amount of carbon depending on the grid
+                behind it. Approximate annual grid intensity in {REGIONS.length} regions that
+                host much of today’s AI inference capacity. Illustrative — no prompt is
+                traced to a location.
+              </figcaption>
+            </Rise>
+          </div>
+        </section>
+
+        {/* ── 02 · Product ─────────────────────────────────────── */}
+        <section className="lp-section lp-section-sunk" id="product" aria-labelledby="lp-product-title">
+          <div className="lp-wrap">
+            <Rise className="lp-split-head">
+              <div>
+                <SectionLabel n="02">The product</SectionLabel>
+                <h2 id="lp-product-title" className="lp-h2">
+                  It lives where you already type.
+                </h2>
+              </div>
+              <p className="lp-sub">
+                Everything below runs inside your browser, on the chat page you already
+                use. There is no separate app to remember to open.
+              </p>
+            </Rise>
+
+            <ol className="lp-features">
+              {FEATURES.map((f, i) => (
+                <Rise as="li" key={f.title} className="lp-feature" delay={(i % 3) * 70}>
+                  <span className="lp-feature-n" aria-hidden="true">{String.fromCharCode(97 + i)}.</span>
+                  <h3>{f.title}</h3>
+                  <p>{f.body}</p>
+                </Rise>
+              ))}
+            </ol>
+
+            <Rise as="figure" className="lp-demo">
+              <div className="lp-demo-bar">
+                <span className="lp-demo-dots" aria-hidden="true"><i /><i /><i /></span>
+                <span className="lp-demo-url">{SITE.url.replace('https://', '')}/#/app</span>
+                <span className="lp-demo-tag">Sample data</span>
+              </div>
+              <div className="lp-demo-frame">
+                <iframe title="PromptFootprint dashboard, live demo with sample data" src={demoUrl()} loading="lazy" />
+              </div>
+              <figcaption>
+                <span className="lp-fig-n">Fig. 3</span>
+                The real dashboard — the one the extension opens — loaded with example data.{' '}
+                <ArrowLink to="/app">Open it full screen</ArrowLink>
+              </figcaption>
+            </Rise>
+          </div>
+        </section>
+
+        {/* ── 03 · How it works ────────────────────────────────── */}
+        <section className="lp-section" id="how" aria-labelledby="lp-how-title">
+          <div className="lp-wrap">
+            <Rise className="lp-how-head">
+              <SectionLabel n="03">How it works</SectionLabel>
+              <h2 id="lp-how-title" className="lp-h2">From install to a leaner habit, in four steps.</h2>
+            </Rise>
+            <ol className="lp-steps">
+              {STEPS.map((s, i) => (
+                <Rise as="li" key={s.title} className="lp-step" delay={i * 90}>
+                  <span className="lp-step-n" aria-hidden="true">{i + 1}</span>
+                  <h3>{s.title}</h3>
+                  <p>{s.body}</p>
+                </Rise>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        {/* ── 04 · Research ────────────────────────────────────── */}
+        <div className="lp-section lp-section-rule">
+          <div className="lp-wrap">
+            <SectionLabel n="04">Research</SectionLabel>
+            <ResearchFeature id="research" overline={false} />
+          </div>
         </div>
-      </section>
+
+        {/* ── 05 · Recognition ─────────────────────────────────── */}
+        <section className="lp-section lp-section-sunk" id="recognition" aria-labelledby="lp-rec-title">
+          <div className="lp-wrap lp-rec">
+            <Rise className="lp-rec-copy">
+              <SectionLabel n="05">Recognition</SectionLabel>
+              <h2 id="lp-rec-title" className="lp-h2">
+                Recognized by {countWord(AWARDS.length).toLowerCase()} international hackathons <em>in a single season.</em>
+              </h2>
+              <p className="lp-sub">
+                Most recently, second place overall at {featured.event}, against a field
+                of more than 1,000 registered participants.
+              </p>
+              <p className="lp-rec-link"><ArrowLink to="/recognition">See the full recognition</ArrowLink></p>
+            </Rise>
+            <Rise delay={100}>
+              <AwardRows />
+            </Rise>
+          </div>
+        </section>
+
+        {/* ── 06 · Privacy ─────────────────────────────────────── */}
+        <section className="lp-section" id="privacy" aria-labelledby="lp-privacy-title">
+          <div className="lp-wrap">
+            <Rise className="lp-split-head">
+              <div>
+                <SectionLabel n="06">Privacy &amp; transparency</SectionLabel>
+                <h2 id="lp-privacy-title" className="lp-h2">On-device by default. Anything else, you switch on.</h2>
+              </div>
+              <p className="lp-sub">
+                This is how the extension behaves today, as set out in the Privacy Policy.
+                Nothing in the right-hand column happens until you turn it on.
+              </p>
+            </Rise>
+
+            <div className="lp-privacy">
+              <Rise className="lp-privacy-col">
+                <h3>Always stays in your browser</h3>
+                <ul>
+                  <li>The text of your prompts and the models’ replies — read in the page to count and check it, never stored or uploaded.</li>
+                  <li>Token counts, timings, and estimates, kept in the extension’s local storage.</li>
+                  <li>The Token Cutter and the spelling and grammar checks, which run offline.</li>
+                  <li>Your usage. There are no analytics, telemetry, or third-party trackers.</li>
+                </ul>
+              </Rise>
+              <Rise className="lp-privacy-col is-optin" delay={100}>
+                <h3>Leaves only if you turn it on</h3>
+                <dl>
+                  <div>
+                    <dt>AI writing help</dt>
+                    <dd>Sends the draft you are typing to a Gemini proxy you configure. Off until you enable it and add the proxy URL.</dd>
+                  </div>
+                  <div>
+                    <dt>Account sync</dt>
+                    <dd>Syncs settings and numbers-only session summaries. Never prompt or reply text.</dd>
+                  </div>
+                  <div>
+                    <dt>Heat-aware estimate</dt>
+                    <dd>Sends a rounded location (about 11 km) or the city you type to Open-Meteo for weather.</dd>
+                  </div>
+                </dl>
+              </Rise>
+            </div>
+            <p className="lp-privacy-links">
+              <ArrowLink to="/privacy">Read the Privacy Policy</ArrowLink>
+              <ArrowLink to="/terms">Terms of Use</ArrowLink>
+            </p>
+          </div>
+        </section>
+
+        {/* ── Final CTA ────────────────────────────────────────── */}
+        <section className="lp-final" aria-labelledby="lp-final-title">
+          <div className="lp-wrap lp-final-grid">
+            <Rise>
+              <h2 id="lp-final-title" className="lp-final-title">
+                Start with your next prompt.
+              </h2>
+              <p className="lp-final-text">
+                Free, open source, and private by default. Install it, open a chat, and
+                see what your AI use actually costs — then make it smaller.
+              </p>
+            </Rise>
+            <Rise className="lp-final-cta" delay={100}>
+              <ChromeCTA size="lg" />
+              <Link className="lp-final-link" to="/app">
+                Or try the live demo first <ArrowRight size={15} aria-hidden="true" />
+              </Link>
+            </Rise>
+          </div>
+        </section>
+      </main>
 
       <SiteFooter />
     </div>
