@@ -40,8 +40,7 @@ measurements.
 
 ## Privacy policy URL
 
-`https://<host-the-policy-here>/PRIVACY` — host `docs/PRIVACY.md` publicly (for
-example on the project's GitHub Pages site) and paste the URL here.
+`https://promptfootprint.app/#/privacy`
 
 ## Permission justifications (per-permission fields)
 
@@ -89,7 +88,7 @@ Certification checkboxes to confirm:
 
 ## Pre-submission checklist
 
-- [ ] Host the privacy policy at a public URL and paste it into the listing.
+- [x] Host the privacy policy at a public URL and paste it into the listing.
 - [ ] Complete the data-use disclosures above.
 - [ ] Confirm the manifest `connect-src`/`host_permissions` list only the real
       Supabase project origin (no wildcard) before packing.
